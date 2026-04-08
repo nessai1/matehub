@@ -1,0 +1,14 @@
+{
+  "name": "matehub",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:frontend": "npm -w @matehub/frontend run dev",
+    "build:frontend": "npm -w @matehub/frontend run build",
+    "lint:frontend": "npm -w @matehub/frontend run lint",
+    "typecheck": "npm -w @matehub/frontend run typecheck"
+  }
+}

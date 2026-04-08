@@ -1,0 +1,44 @@
+[package]
+name = "matehub-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# WebRTC
+str0m.workspace = true
+
+# Async runtime & networking
+tokio.workspace = true
+axum.workspace = true
+
+# Crypto
+ring.workspace = true
+rustls.workspace = true
+
+# Data & coordination
+redis.workspace = true
+async-nats.workspace = true
+
+# Concurrency
+crossbeam.workspace = true
+parking_lot.workspace = true
+
+# Observability
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+prost.workspace = true
+
+# Auth
+jsonwebtoken.workspace = true
+
+# Utils
+uuid.workspace = true
+rand.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true

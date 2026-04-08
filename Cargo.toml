@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "services/video",
+    "services/chat",
+    "services/general",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/matehub/matehub"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tonic = "0.13"
+prost = "0.13"
+
+# WebRTC (video service)
+str0m = "0.7"
+
+# Crypto
+ring = "0.17"
+rustls = "0.23"
+
+# Data & coordination
+redis = { version = "0.28", features = ["tokio-comp"] }
+async-nats = "0.38"
+
+# Concurrency
+crossbeam = "0.8"
+parking_lot = "0.12"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth
+jsonwebtoken = "9"
+
+# Utils
+uuid = { version = "1", features = ["v4", "serde"] }
+rand = "0.9"
+bytes = "1"
+thiserror = "2"
+anyhow = "1"
