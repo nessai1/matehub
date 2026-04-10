@@ -20,7 +20,7 @@
 | **webrtc-rs** | Rust | Библиотека | N/A | MIT/Apache 2.0 | Порт Pion, менее активен |
 | **atm0s-media** | Rust | SFU (experimental) | Mesh SFU-нод | N/A | Концепт, не production |
 
-**Ключевой вывод:** Production-ready open-source SFU на Rust не существует. Это одновременно и вызов, и возможность -- мы строим то, чего ещё нет на рынке.
+**Ключевой вывод:** Production-ready open-source SFU на Rust не существует. Есть WebRTC transport library (str0m), но SFU -- это всё что поверх транспорта: media routing, simulcast selection, room management, signaling, multi-node cascading, recording. Этого слоя на Rust нет ни у кого. Мы строим его, используя str0m как фундамент -- так же как LiveKit построен поверх Pion, а не является "Pion с обёрткой".
 
 ### 1.2 Как устроен Zoom (эталон индустрии)
 
@@ -179,10 +179,15 @@ Rust даёт memory safety как у Go + производительность 
 | WebRTC стек | **str0m** | Sans-I/O дизайн, Rust-native, максимальный контроль над I/O |
 | Async runtime | **tokio** | Control plane: signaling, API, координация |
 | Media I/O | Dedicated threads + **io_uring** (Linux) | Предсказуемая латентность, batched syscalls |
-| Crypto (SRTP) | **ring** | BoringSSL assembly, AES-GCM hardware acceleration |
-| TLS/DTLS | **rustls** | Интегрируется с str0m |
+| Crypto (DTLS/SRTP) | **openssl** (через str0m) | AES-NI hardware acceleration, str0m 0.7 использует openssl для DTLS и SRTP |
+| Signaling TLS | **rustls** | Для axum HTTP/WS (signaling), не для media path |
+| Crypto (Phase 3 custom SRTP) | **ring** | Для zero-copy forwarding pipeline в обход str0m (Phase 3 оптимизация) |
 | Signaling transport | **axum** (HTTP/WS) | Совместим с tokio, production-ready |
 | Serialization | **protobuf** (prost) | Signaling messages, inter-node communication |
+| Allocator | **jemalloc** / **mimalloc** | str0m аллоцирует на forwarding path -- нужен быстрый allocator |
+
+> **Важно:** str0m 0.7 использует OpenSSL (FFI), не ring/rustls для DTLS и SRTP.
+> Docker images: `debian:bookworm-slim` (не Alpine). Подробный анализ: [str0m-analysis.md](./str0m-analysis.md)
 
 ### 3.2 Infrastructure
 
@@ -220,7 +225,7 @@ Rust даёт memory safety как у Go + производительность 
 - [ ] STUN client/server: Binding requests/responses для connectivity checks
 - [ ] DTLS handshake: key exchange через rustls, fingerprint verification из SDP
 - [ ] SRTP key derivation: DTLS-SRTP exporter для получения медиа-ключей
-- [ ] SRTP encrypt/decrypt: AES-128-CM + HMAC-SHA1-80 (in-place, zero-copy)
+- [ ] SRTP encrypt/decrypt: AES-128-CM + HMAC-SHA1-80 (in-place внутри str0m, 1 copy на входе из recv buffer)
 - [ ] SCTP over DTLS: Data channels для signaling metadata
 - [ ] BUNDLE: мультиплексирование всех медиа через один transport
 - [ ] rtcp-mux: RTP и RTCP на одном порту
@@ -745,17 +750,33 @@ Client          General Service              Video Service
   │ <────────────────────────────────────────────>│
 ```
 
-### 6.4 Модель каналов (Discord-style) -- ОСНОВНАЯ МОДЕЛЬ
+### 6.4 Модель данных -- Hub, Channel, Session
 
-#### Три уровня абстракции
+#### Терминология
+
+| Термин | Что это | Владелец |
+|--------|---------|----------|
+| **Hub** | Верхнеуровневая сущность -- "рабочее пространство" клиента. Содержит каналы, участников, настройки. Аналог Discord Server / Slack Workspace. Пользователь нажимает "создать Hub" и получает своё пространство. | General Service |
+| **Channel** | Канал внутри Hub -- voice, text, stage, DM. Persistent entity с чатом. | General Service |
+| **SFU Session** | Transient медиа-сессия, привязанная к channel_id. Живёт пока есть участники. | Video Service |
+
+#### Четыре уровня абстракции
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
+│  Hub (General Service)                                          │
+│  - Верхнеуровневая сущность, создаётся клиентом                 │
+│  - Содержит: channels, members, roles, settings, plan           │
+│  - Одна shared инфраструктура обслуживает все Hub'ы (SaaS)      │
+│  - Enterprise tier: dedicated ресурсы для изоляции               │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │ hub_id (1:N)
+┌──────────────────────────────▼──────────────────────────────────┐
 │  Channel (General Service)                                      │
 │  - Persistent entity, живёт от создания до удаления             │
 │  - Хранит: name, type, permissions, chat history                │
-│  - Принадлежит workspace (серверу)                              │
-│  - Типы: voice, stage, DM-call                                  │
+│  - Принадлежит Hub                                              │
+│  - Типы: voice, stage, text, DM-call                            │
 │  - НЕ знает о медиа, SFU, WebRTC                               │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ channel_id (1:0..1)
@@ -772,15 +793,34 @@ Client          General Service              Video Service
 │  SFU Node (Infrastructure)                                      │
 │  - Kubernetes Pod, обслуживает десятки-сотни сессий              │
 │  - Масштабируется HPA по метрикам нагрузки                      │
-│  - Одна нода = пул для множества каналов                        │
+│  - Одна нода обслуживает сессии из РАЗНЫХ Hub'ов (multi-tenant) │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+#### Multi-tenancy модель
+
+```
+Default (SaaS): shared infrastructure
+  Hub "Acme Corp"   ──┐
+  Hub "StartupX"    ──┼──> Shared SFU Node Pool (N нод)
+  Hub "BigCo"       ──┘    Шардирование по нагрузке, не по tenant
+
+Enterprise tier: dedicated resources
+  Hub "Bank Corp"   ──────> Dedicated SFU Node(s) + DB schema
+                            Физическая изоляция для compliance
+```
+
+Video Service **не знает** что такое Hub. Он оперирует `channel_id` и `session_id`.
+`hub_id` передаётся как metadata для:
+- Routing (enterprise tier -> dedicated nodes)
+- Billing (учёт потребления per hub)
+- Rate limiting (per hub quotas)
 
 #### Типы каналов
 
 | Тип канала | Поведение | SFU Session lifecycle |
 |------------|-----------|----------------------|
-| **Voice Channel** | Persistent. Список участников виден всем в workspace. Нет "звонка" -- просто join/leave. Chat привязан к каналу. | Создаётся при первом join, уничтожается при последнем leave. Channel продолжает жить. |
+| **Voice Channel** | Persistent. Список участников виден всем в Hub. Нет "звонка" -- просто join/leave. Chat привязан к каналу. | Создаётся при первом join, уничтожается при последнем leave. Channel продолжает жить. |
 | **Stage Channel** | Persistent. Роли: speaker (canPublish) / listener (subscribe only). Модерация: "поднять руку", approve/reject. | Аналогично voice. Speakers отдельно от listeners в permissions. |
 | **DM Call** | Ephemeral. Один user звонит другому (или группе). Рингтон, accept/reject. Channel создаётся ad-hoc, удаляется после звонка. | Создаётся при инициации, уничтожается при завершении. Channel тоже удаляется (или переходит в "ended" state). |
 

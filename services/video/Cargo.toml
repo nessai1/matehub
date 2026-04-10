@@ -11,17 +11,9 @@ str0m.workspace = true
 # Async runtime & networking
 tokio.workspace = true
 axum.workspace = true
-
-# Crypto
-ring.workspace = true
-rustls.workspace = true
-
-# Data & coordination
-redis.workspace = true
-async-nats.workspace = true
+tower-http.workspace = true
 
 # Concurrency
-crossbeam.workspace = true
 parking_lot.workspace = true
 
 # Observability
@@ -31,14 +23,17 @@ tracing-subscriber.workspace = true
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
-prost.workspace = true
-
-# Auth
-jsonwebtoken.workspace = true
 
 # Utils
 uuid.workspace = true
-rand.workspace = true
 bytes.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+tokio-tungstenite.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true

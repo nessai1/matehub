@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 tokio.workspace = true
 axum.workspace = true
+sqlx.workspace = true
 redis.workspace = true
 async-nats.workspace = true
 tracing.workspace = true
@@ -15,5 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 jsonwebtoken.workspace = true
 uuid.workspace = true
+chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+tower-http.workspace = true

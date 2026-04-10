@@ -1,0 +1,87 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: matehub-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  ingressClassName: nginx
+  rules:
+    # Frontend
+    - host: matehub.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-frontend
+                port:
+                  name: http
+
+    # API Gateway routing
+    - host: api.matehub.dev
+      http:
+        paths:
+          # Video Service (signaling + management API)
+          - path: /v1/sessions
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-video
+                port:
+                  name: signaling
+          - path: /v1/token
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-video
+                port:
+                  name: signaling
+          - path: /v1/recordings
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-video
+                port:
+                  name: signaling
+
+          # Video Service WebSocket (signaling)
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-video
+                port:
+                  name: signaling
+
+          # Chat Service
+          - path: /v1/messages
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-chat
+                port:
+                  name: http
+          - path: /v1/chat
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-chat
+                port:
+                  name: http
+
+          # General Service (everything else)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: matehub-general
+                port:
+                  name: http

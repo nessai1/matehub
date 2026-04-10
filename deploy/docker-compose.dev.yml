@@ -1,0 +1,63 @@
+## MateHub -- local development infrastructure
+## Usage: docker compose -f deploy/docker-compose.dev.yml up -d
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  nats:
+    image: nats:2-alpine
+    ports:
+      - "4222:4222"   # client connections
+      - "8222:8222"   # monitoring
+    command: ["--jetstream", "--store_dir=/data"]
+    volumes:
+      - nats-data:/data
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+    environment:
+      MINIO_ROOT_USER: matehub
+      MINIO_ROOT_PASSWORD: matehub-dev
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: matehub
+      POSTGRES_PASSWORD: matehub-dev
+      POSTGRES_DB: matehub
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  coturn:
+    image: coturn/coturn:latest
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+    command: >
+      -n
+      --realm=matehub.local
+      --fingerprint
+      --lt-cred-mech
+      --user=matehub:matehub-dev
+      --no-tls
+      --no-dtls
+      --log-file=stdout
+
+volumes:
+  redis-data:
+  nats-data:
+  minio-data:
+  pg-data:

@@ -1,0 +1,35 @@
+## Staging overrides
+## Image tags updated automatically by CI (update-deploy job)
+
+global:
+  tag: "latest"
+
+video:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+chat:
+  replicaCount: 1
+
+general:
+  replicaCount: 1
+
+frontend:
+  replicaCount: 1
+
+# Staging uses in-cluster infra
+redis:
+  enabled: true
+nats:
+  enabled: true
+postgres:
+  enabled: true
+  storage: 5Gi
+coturn:
+  enabled: true

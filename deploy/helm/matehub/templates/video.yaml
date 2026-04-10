@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matehub-video
+  labels:
+    app: matehub-video
+    {{- include "matehub.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.video.replicaCount }}
+  selector:
+    matchLabels:
+      app: matehub-video
+  template:
+    metadata:
+      labels:
+        app: matehub-video
+    spec:
+      {{- if .Values.video.service.media.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      containers:
+        - name: video
+          image: {{ include "matehub.image" (dict "global" .Values.global "image" .Values.video.image) }}
+          ports:
+            - name: signaling
+              containerPort: {{ .Values.video.service.signaling.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.video.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.video.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /v1/ready
+              port: signaling
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: signaling
+            initialDelaySeconds: 10
+            periodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matehub-video
+  labels:
+    app: matehub-video
+spec:
+  type: ClusterIP
+  ports:
+    - name: signaling
+      port: {{ .Values.video.service.signaling.port }}
+      targetPort: signaling
+      protocol: TCP
+  selector:
+    app: matehub-video

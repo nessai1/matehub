@@ -1,0 +1,37 @@
+## Production overrides
+
+global:
+  tag: "latest"  # pinned to specific sha in real deployment
+
+video:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 1Gi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+  # hostNetwork: true for production SFU (avoids kube-proxy NAT on UDP)
+  service:
+    media:
+      hostNetwork: true
+
+chat:
+  replicaCount: 2
+
+general:
+  replicaCount: 2
+
+frontend:
+  replicaCount: 2
+
+# Production uses Yandex Managed Services
+redis:
+  enabled: false   # -> Yandex Managed Redis
+nats:
+  enabled: true    # no managed NATS in Yandex, run in-cluster
+postgres:
+  enabled: false   # -> Yandex Managed PostgreSQL
+coturn:
+  enabled: true    # run on dedicated node with hostNetwork

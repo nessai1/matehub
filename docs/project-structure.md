@@ -175,9 +175,9 @@ npx shadcn@latest add avatar
 
 ### matehub-general (services/general/)
 
-Владеет: пользователями, workspace'ами, каналами (channels), permissions.
+Владеет: Hub'ами, пользователями, каналами (channels), permissions.
 
-Channel -- persistent-сущность. Voice channel существует от создания до удаления, к нему привязан чат. Когда пользователь нажимает "Join Voice", General Service запрашивает SFU Session у Video Service и возвращает клиенту connection info.
+Hub -- верхнеуровневая сущность (аналог Discord Server). Пользователь создаёт Hub и получает пространство с каналами, участниками, настройками. Channel -- persistent-сущность внутри Hub. Voice channel существует от создания до удаления, к нему привязан чат. Когда пользователь нажимает "Join Voice", General Service запрашивает SFU Session у Video Service и возвращает клиенту connection info.
 
 ### matehub-video (services/video/)
 
@@ -325,26 +325,58 @@ matehub-shared = { path = "../shared" }
 
 ---
 
-## Infrastructure (будущее)
+## Infrastructure & Deploy
 
 ```
 matehub/
-├── deploy/                    # Docker, K8s manifests
-│   ├── docker/
-│   │   ├── Dockerfile.video
-│   │   ├── Dockerfile.chat
-│   │   └── Dockerfile.general
-│   └── k8s/
-│       ├── video.yaml
-│       ├── chat.yaml
-│       └── general.yaml
-├── proto/                     # Protobuf definitions (shared)
-│   ├── video.proto
-│   ├── chat.proto
-│   └── events.proto
-└── scripts/                   # Dev scripts
-    ├── dev-up.sh              # docker-compose up (Redis, NATS, MinIO)
-    └── generate-proto.sh      # protoc -> Rust + TS
+├── deploy/
+│   ├── docker-compose.dev.yml        # Local dev infra (Redis, NATS, PG, MinIO, TURN)
+│   └── docker/
+│       ├── Dockerfile.video           # Rust multi-stage, debian:bookworm-slim (needs libssl)
+│       ├── Dockerfile.chat
+│       ├── Dockerfile.general
+│       └── Dockerfile.frontend        # Next.js standalone
+│
+└── scripts/
+    ├── dev-up.sh                      # Start local infra
+    └── dev-down.sh                    # Stop local infra
 ```
 
-Создавать по мере необходимости, не заранее.
+### Local development workflow
+
+```bash
+# 1. Start infrastructure
+./scripts/dev-up.sh
+#    Redis:    localhost:6379
+#    NATS:     localhost:4222
+#    Postgres: localhost:5432
+#    MinIO:    localhost:9000
+#    TURN:     localhost:3478
+
+# 2. Run services (each in separate terminal)
+cargo run -p matehub-general
+cargo run -p matehub-video
+cargo run -p matehub-chat
+npm run dev:frontend       # http://localhost:3000
+
+# 3. Stop infrastructure
+./scripts/dev-down.sh
+```
+
+### Docker build
+
+```bash
+# Build from repo root (context = repo root for Cargo workspace access)
+docker build -f deploy/docker/Dockerfile.video -t matehub-video .
+docker build -f deploy/docker/Dockerfile.chat -t matehub-chat .
+docker build -f deploy/docker/Dockerfile.general -t matehub-general .
+docker build -f deploy/docker/Dockerfile.frontend -t matehub-frontend .
+```
+
+Rust Dockerfiles используют multi-stage build с кешированием зависимостей:
+первый слой компилирует только Cargo.toml (dependencies), второй -- source.
+Это значит что rebuild после изменения кода = ~30 секунд, а не 5 минут.
+
+**Важно:** Rust-сервисы собираются с `debian:bookworm-slim` (не Alpine), потому что
+str0m зависит от OpenSSL (libssl). Alpine использует musl libc, и сборка OpenSSL
+там требует дополнительной возни.

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matehub-frontend
+  labels:
+    app: matehub-frontend
+    {{- include "matehub.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: matehub-frontend
+  template:
+    metadata:
+      labels:
+        app: matehub-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ include "matehub.image" (dict "global" .Values.global "image" .Values.frontend.image) }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.service.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matehub-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+  selector:
+    app: matehub-frontend

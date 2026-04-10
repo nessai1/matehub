@@ -1,0 +1,118 @@
+## Default values for MateHub
+## Override per environment in values-staging.yaml / values-prod.yaml
+
+global:
+  registry: cr.yandex/YOUR_REGISTRY_ID
+  tag: "latest"
+
+# ── Video Service (SFU) ──────────────────────────
+video:
+  replicaCount: 1
+  image:
+    repository: matehub-video
+    tag: ""  # defaults to global.tag
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: 4000m
+      memory: 2Gi
+  service:
+    signaling:
+      port: 3000          # WebSocket + REST API
+    media:
+      # UDP port range for WebRTC media
+      # hostNetwork: true is recommended for SFU to avoid NAT on media ports
+      hostNetwork: false
+      udpPortRange: "10000-10100"
+  env:
+    RUST_LOG: "info,str0m=warn"
+    REDIS_URL: "redis://redis:6379"
+    NATS_URL: "nats://nats:4222"
+    TURN_HOST: "turn:3478"
+
+# ── Chat Service ──────────────────────────────────
+chat:
+  replicaCount: 1
+  image:
+    repository: matehub-chat
+    tag: ""
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  service:
+    port: 3001
+  env:
+    RUST_LOG: "info"
+    REDIS_URL: "redis://redis:6379"
+    NATS_URL: "nats://nats:4222"
+    DATABASE_URL: "postgresql://matehub:matehub@postgres:5432/matehub"
+
+# ── General Service ───────────────────────────────
+general:
+  replicaCount: 1
+  image:
+    repository: matehub-general
+    tag: ""
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  service:
+    port: 3002
+  env:
+    RUST_LOG: "info"
+    REDIS_URL: "redis://redis:6379"
+    NATS_URL: "nats://nats:4222"
+    DATABASE_URL: "postgresql://matehub:matehub@postgres:5432/matehub"
+
+# ── Frontend ──────────────────────────────────────
+frontend:
+  replicaCount: 1
+  image:
+    repository: matehub-frontend
+    tag: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  service:
+    port: 3000
+
+# ── Infrastructure (in-cluster) ───────────────────
+# For staging. In prod, use Yandex Managed Redis/PostgreSQL/S3.
+redis:
+  enabled: true
+  image: redis:7-alpine
+
+nats:
+  enabled: true
+  image: nats:2-alpine
+
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  storage: 10Gi
+  credentials:
+    user: matehub
+    password: matehub-staging
+    database: matehub
+
+coturn:
+  enabled: true
+  image: coturn/coturn:latest
+  realm: matehub.dev
+  credentials:
+    user: matehub
+    password: matehub-staging
