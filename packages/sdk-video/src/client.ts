@@ -25,6 +25,8 @@ export class VideoClient {
   private participantId: string | null = null;
   private micEnabled = false;
   private camEnabled = false;
+  private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
+  private joined = false;
 
   // Audio level detection
   private audioContext: AudioContext | null = null;
@@ -103,36 +105,86 @@ export class VideoClient {
   private setupPeerConnection() {
     const pc = this.pc!;
 
-    // Send ICE candidates to server
+    // Send ICE candidates to server (buffer until joined)
     pc.onicecandidate = (e) => {
       if (e.candidate) {
-        this.send({
-          type: "ice_candidate",
+        this.log("ICE candidate (local):", e.candidate.candidate);
+        const candidate = {
           candidate: e.candidate.candidate,
-          sdp_mid: e.candidate.sdpMid,
-          sdp_mline_index: e.candidate.sdpMLineIndex,
-        });
+          sdpMid: e.candidate.sdpMid,
+          sdpMLineIndex: e.candidate.sdpMLineIndex,
+        };
+        if (this.joined) {
+          this.send({
+            type: "ice_candidate",
+            candidate: candidate.candidate,
+            sdp_mid: candidate.sdpMid,
+            sdp_mline_index: candidate.sdpMLineIndex,
+          });
+        } else {
+          this.log("buffering ICE candidate (not yet joined)");
+          this.pendingCandidates.push(candidate);
+        }
+      } else {
+        this.log("ICE gathering complete");
       }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      this.log("ICE connection state:", pc.iceConnectionState);
     };
 
     // Handle remote tracks (from other participants via SFU)
     pc.ontrack = (e) => {
-      const stream = e.streams[0] ?? new MediaStream([e.track]);
+      this.log("ontrack!", {
+        kind: e.track.kind,
+        trackId: e.track.id,
+        streamCount: e.streams.length,
+        streamIds: e.streams.map((s) => s.id),
+      });
+
+      // Ignore tracks without an associated stream (from initial SDP transceivers)
+      if (e.streams.length === 0) {
+        this.log("ignoring ontrack with no streams (initial transceiver)");
+        return;
+      }
+
+      const stream = e.streams[0];
       const streamId = stream.id;
 
-      // streamId maps to the origin participant (SFU sets this)
+      // Try to match stream to a known participant.
+      // SFU sets stream_id = origin participant's UUID.
       let participant = this.findParticipantByStreamId(streamId);
+
+      // If not found by streamId, try to find a participant without tracks
+      // (from participant_joined but no ontrack yet)
       if (!participant) {
-        // Create placeholder -- will be matched when we get participant info
+        for (const p of this.participants.values()) {
+          if (!p.audioTrack && !p.videoTrack && p.participantId !== "local") {
+            this.log("matching ontrack stream to participant", {
+              streamId,
+              participantId: p.participantId,
+            });
+            participant = p;
+            participant.stream = stream;
+            break;
+          }
+        }
+      }
+
+      if (!participant) {
+        // Last resort: create placeholder and emit participant_joined
+        this.log("creating placeholder participant for stream", { streamId });
         participant = {
           participantId: streamId,
-          userId: streamId,
+          userId: "remote",
           audioTrack: null,
           videoTrack: null,
           isSpeaking: false,
           stream,
         };
         this.participants.set(streamId, participant);
+        this.emit({ type: "participant_joined", participant });
       }
 
       if (e.track.kind === "audio") {
@@ -160,16 +212,61 @@ export class VideoClient {
   private async createAndSendOffer() {
     const pc = this.pc!;
 
-    // Add transceivers for receiving audio/video even if we're not sending yet
-    pc.addTransceiver("audio", { direction: "recvonly" });
-    pc.addTransceiver("video", { direction: "recvonly" });
+    // Get user media BEFORE creating offer so tracks are in the SDP.
+    // This ensures str0m sees actual sending tracks, not empty sendrecv transceivers.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: { width: 640, height: 480 },
+      });
+      this.localStream = stream;
+
+      for (const track of stream.getTracks()) {
+        pc.addTrack(track, stream);
+        this.log("added local track to PC before offer", { kind: track.kind, id: track.id });
+      }
+
+      this.micEnabled = true;
+      this.camEnabled = true;
+    } catch (e) {
+      this.log("getUserMedia failed, falling back to recvonly", e);
+      // Fallback: receive-only if no camera/mic available
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("video", { direction: "recvonly" });
+    }
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
+    // Wait for ICE gathering to complete so we can send all candidates with the offer.
+    // This avoids the race where str0m starts ICE checking before candidates arrive.
+    if (pc.iceGatheringState !== "complete") {
+      this.log("waiting for ICE gathering to complete...");
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (pc.iceGatheringState === "complete") {
+            resolve();
+          }
+        };
+        pc.onicegatheringstatechange = () => {
+          this.log("ICE gathering state:", pc.iceGatheringState);
+          check();
+        };
+        check(); // in case it's already complete
+        // Safety timeout -- don't wait forever
+        setTimeout(resolve, 5000);
+      });
+    }
+
+    // localDescription now contains all ICE candidates inline
+    const sdpWithCandidates = pc.localDescription?.sdp ?? offer.sdp;
+    this.log("sending join with complete SDP (candidates inline)", {
+      candidateCount: (sdpWithCandidates?.match(/a=candidate:/g) || []).length,
+    });
+
     this.send({
       type: "join",
-      sdp_offer: offer.sdp,
+      sdp_offer: sdpWithCandidates,
     });
   }
 
@@ -182,6 +279,20 @@ export class VideoClient {
           sdp: msg.sdp_answer as string,
         });
         this.participantId = msg.participant_id as string;
+        this.joined = true;
+
+        // Flush buffered ICE candidates
+        this.log(`flushing ${this.pendingCandidates.length} buffered ICE candidates`);
+        for (const c of this.pendingCandidates) {
+          this.send({
+            type: "ice_candidate",
+            candidate: c.candidate,
+            sdp_mid: c.sdpMid,
+            sdp_mline_index: c.sdpMLineIndex,
+          });
+        }
+        this.pendingCandidates = [];
+
         this.emit({ type: "connected", participantId: this.participantId });
         break;
       }

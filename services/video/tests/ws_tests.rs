@@ -261,3 +261,141 @@ async fn ws_get_session_shows_participants() {
     assert_eq!(participants.len(), 1);
     assert_eq!(participants[0]["user_id"], "alice");
 }
+
+#[tokio::test]
+async fn ws_ice_candidate_does_not_crash() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws, _) = connect_async(&ws_url).await.unwrap();
+
+    // Send join first
+    ws.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let _ = ws.next().await; // drain response
+
+    // Send ICE candidate
+    ws.send(Message::Text(
+        json!({
+            "type": "ice_candidate",
+            "candidate": "candidate:1 1 udp 2130706431 192.168.1.1 5000 typ host",
+            "sdp_mid": "0",
+            "sdp_mline_index": 0
+        })
+        .to_string()
+        .into(),
+    ))
+    .await
+    .unwrap();
+
+    // Connection should still be alive -- send leave
+    ws.send(Message::Text(json!({"type": "leave"}).to_string().into()))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn ws_answer_does_not_crash() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws, _) = connect_async(&ws_url).await.unwrap();
+
+    ws.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let _ = ws.next().await;
+
+    // Send answer (even though no offer was sent -- should not crash)
+    ws.send(Message::Text(
+        json!({"type": "answer", "sdp_answer": "v=0\r\n"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+
+    ws.send(Message::Text(json!({"type": "leave"}).to_string().into()))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn ws_duplicate_user_id_creates_separate_participants() {
+    let base = common::spawn_app().await;
+    let client = reqwest::Client::new();
+    let session_id = create_test_session(&base).await;
+
+    // Two connections with same user_id
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
+    let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
+
+    // Both join
+    ws1.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let _ = ws1.next().await; // drain error
+
+    ws2.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let _ = ws2.next().await;
+
+    // REST should show 2 participants
+    let resp: Value = client
+        .get(format!("{base}/v1/sessions/{session_id}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let participants = resp["participants"].as_array().unwrap();
+    assert_eq!(participants.len(), 2);
+
+    // Both should have user_id "alice" but different participant_ids
+    assert_eq!(participants[0]["user_id"], "alice");
+    assert_eq!(participants[1]["user_id"], "alice");
+
+    let ids: std::collections::HashSet<_> = participants
+        .iter()
+        .map(|p| p["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "participant IDs should be unique");
+}
+
+#[tokio::test]
+async fn ws_binary_frame_ignored() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws, _) = connect_async(&ws_url).await.unwrap();
+
+    // Send binary frame -- should be ignored, not crash
+    ws.send(Message::Binary(vec![0x00, 0x01, 0x02].into()))
+        .await
+        .unwrap();
+
+    // Connection should still work
+    ws.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+
+    let msg = ws.next().await.unwrap().unwrap();
+    let parsed: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+    assert_eq!(parsed["type"], "error"); // SFU not available in test
+}

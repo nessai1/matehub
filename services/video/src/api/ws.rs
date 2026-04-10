@@ -99,10 +99,12 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
             _ => continue,
         };
 
+        tracing::info!(%participant_id, raw = %text.chars().take(120).collect::<String>(), "WS raw message");
+
         let client_msg: ClientMessage = match serde_json::from_str(&text) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!(%participant_id, "invalid message: {e}");
+                tracing::warn!(%participant_id, %e, raw = %text.chars().take(200).collect::<String>(), "failed to parse WS message");
                 let _ = ws_tx.send(ServerMessage::Error {
                     message: format!("invalid message: {e}"),
                 });
@@ -144,7 +146,7 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                 sdp_mid,
                 sdp_mline_index: _,
             } => {
-                tracing::debug!(%participant_id, "received ICE candidate");
+                tracing::info!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
                 let _ = sfu_tx.send(SfuCommand::IceCandidate {
                     session_id,
                     participant_id,
