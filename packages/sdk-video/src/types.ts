@@ -25,6 +25,7 @@ export type VideoClientEvent =
   | { type: "participant_joined"; participant: Participant }
   | { type: "participant_left"; participantId: string; userId: string }
   | { type: "track_added"; participantId: string; track: MediaStreamTrack; stream: MediaStream }
+  | { type: "track_muted"; participantId: string; trackKind: string; muted: boolean }
   | { type: "speaking_changed"; participantId: string; speaking: boolean }
   | { type: "disconnected"; reason: string }
   | { type: "error"; message: string };

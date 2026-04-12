@@ -62,6 +62,12 @@ export class VideoClient {
 
   /** Connect to the session: open WebSocket, create PeerConnection */
   async connect() {
+    // Prevent double connect (React Strict Mode, HMR)
+    if (this.ws || this.pc) {
+      this.log("connect called but already connected, ignoring");
+      return;
+    }
+
     const wsProto = this.opts.serverUrl.startsWith("https") ? "wss" : "ws";
     const host = this.opts.serverUrl.replace(/^https?:\/\//, "");
     const wsUrl = `${wsProto}://${host}/ws/${this.opts.sessionId}?user_id=${this.opts.userId}&token=${this.opts.token}`;
@@ -141,40 +147,33 @@ export class VideoClient {
         trackId: e.track.id,
         streamCount: e.streams.length,
         streamIds: e.streams.map((s) => s.id),
+        joined: this.joined,
       });
 
-      // Ignore tracks without an associated stream (from initial SDP transceivers)
+      // Ignore tracks that arrive before we're joined (from initial SDP answer).
+      // Real remote tracks come via renegotiation offers AFTER join.
+      if (!this.joined) {
+        this.log("ignoring ontrack before join completed");
+        return;
+      }
+
+      // Ignore tracks without an associated stream
       if (e.streams.length === 0) {
-        this.log("ignoring ontrack with no streams (initial transceiver)");
+        this.log("ignoring ontrack with no streams");
         return;
       }
 
       const stream = e.streams[0];
       const streamId = stream.id;
 
-      // Try to match stream to a known participant.
-      // SFU sets stream_id = origin participant's UUID.
-      let participant = this.findParticipantByStreamId(streamId);
-
-      // If not found by streamId, try to find a participant without tracks
-      // (from participant_joined but no ontrack yet)
-      if (!participant) {
-        for (const p of this.participants.values()) {
-          if (!p.audioTrack && !p.videoTrack && p.participantId !== "local") {
-            this.log("matching ontrack stream to participant", {
-              streamId,
-              participantId: p.participantId,
-            });
-            participant = p;
-            participant.stream = stream;
-            break;
-          }
-        }
-      }
+      // Match stream to participant.
+      // Stream_id mapping is registered when we receive "offer" with tracks array.
+      // The mapping adds participant under stream_id key in this.participants.
+      let participant = this.participants.get(streamId);
 
       if (!participant) {
-        // Last resort: create placeholder and emit participant_joined
-        this.log("creating placeholder participant for stream", { streamId });
+        // Fallback: create placeholder (shouldn't happen if offer has tracks mapping)
+        this.log("creating placeholder participant for stream (no mapping)", { streamId });
         participant = {
           participantId: streamId,
           userId: "remote",
@@ -192,6 +191,27 @@ export class VideoClient {
         this.setupAudioLevelDetection(participant.participantId, e.track);
       } else if (e.track.kind === "video") {
         participant.videoTrack = e.track;
+
+        // Listen for mute/unmute on remote video track.
+        // Browser fires these when media data stops/resumes arriving.
+        e.track.onmute = () => {
+          this.log("remote video track muted", { participantId: participant!.participantId });
+          this.emit({
+            type: "track_muted",
+            participantId: participant!.participantId,
+            trackKind: "video",
+            muted: true,
+          });
+        };
+        e.track.onunmute = () => {
+          this.log("remote video track unmuted", { participantId: participant!.participantId });
+          this.emit({
+            type: "track_muted",
+            participantId: participant!.participantId,
+            trackKind: "video",
+            muted: false,
+          });
+        };
       }
 
       this.emit({
@@ -214,6 +234,7 @@ export class VideoClient {
 
     // Get user media BEFORE creating offer so tracks are in the SDP.
     // This ensures str0m sees actual sending tracks, not empty sendrecv transceivers.
+    // Tracks are added but MUTED by default -- user enables them explicitly.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
@@ -222,12 +243,13 @@ export class VideoClient {
       this.localStream = stream;
 
       for (const track of stream.getTracks()) {
+        track.enabled = false; // muted by default
         pc.addTrack(track, stream);
-        this.log("added local track to PC before offer", { kind: track.kind, id: track.id });
+        this.log("added local track to PC (muted)", { kind: track.kind, id: track.id });
       }
 
-      this.micEnabled = true;
-      this.camEnabled = true;
+      this.micEnabled = false;
+      this.camEnabled = false;
     } catch (e) {
       this.log("getUserMedia failed, falling back to recvonly", e);
       // Fallback: receive-only if no camera/mic available
@@ -298,6 +320,28 @@ export class VideoClient {
       }
 
       case "offer": {
+        // Register stream_id -> participant mapping from SFU
+        const tracks = msg.tracks as Array<{
+          stream_id: string;
+          participant_id: string;
+          user_id: string;
+        }> | undefined;
+
+        if (tracks) {
+          for (const t of tracks) {
+            this.log("registering stream mapping", t);
+            // Store mapping so ontrack can find participant by stream_id
+            if (!this.participants.has(t.stream_id)) {
+              // Check if participant exists under participant_id
+              const existing = this.participants.get(t.participant_id);
+              if (existing) {
+                // Also index by stream_id for ontrack lookup
+                this.participants.set(t.stream_id, existing);
+              }
+            }
+          }
+        }
+
         // SFU renegotiation (new tracks available)
         await this.pc!.setRemoteDescription({
           type: "offer",

@@ -51,7 +51,15 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
             return;
         };
 
-        // Broadcast to existing participants
+        // Send existing participants to the new participant
+        for p in session.participants.values() {
+            let _ = ws_tx.send(ServerMessage::ParticipantJoined {
+                participant_id: p.id,
+                user_id: p.user_id.clone(),
+            });
+        }
+
+        // Broadcast new participant to existing participants
         let join_msg = ServerMessage::ParticipantJoined {
             participant_id,
             user_id: user_id.clone(),

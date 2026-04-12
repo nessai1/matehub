@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Maps a stream_id in SDP to its origin participant
+#[derive(Debug, Serialize, Clone)]
+pub struct TrackMapping {
+    pub stream_id: String,
+    pub participant_id: Uuid,
+    pub user_id: String,
+}
+
 /// Client -> Server messages
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -29,6 +37,9 @@ pub enum ServerMessage {
     },
     Offer {
         sdp_offer: String,
+        /// Maps stream_id (used in SDP) to participant info for track matching
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tracks: Option<Vec<TrackMapping>>,
     },
     IceCandidate {
         candidate: String,

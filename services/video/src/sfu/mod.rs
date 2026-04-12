@@ -573,12 +573,32 @@ impl SfuEngine {
             let Some(session) = self.sessions.get_mut(&session_id) else {
                 continue;
             };
+
+            // Pre-collect track mapping (before mutable borrow of participant)
+            let track_mappings: Vec<crate::signaling::messages::TrackMapping> = session
+                .participants
+                .get(&pid)
+                .map(|p| {
+                    p.tracks_out
+                        .iter()
+                        .filter_map(|t| {
+                            let origin_p = session.participants.get(&t.origin)?;
+                            Some(crate::signaling::messages::TrackMapping {
+                                stream_id: t.origin.to_string(),
+                                participant_id: t.origin,
+                                user_id: origin_p.user_id.clone(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
             let Some(participant) = session.participants.get_mut(&pid) else {
                 continue;
             };
 
             if participant.pending_offer.is_some() {
-                continue; // Already negotiating
+                continue;
             }
 
             let mut change = participant.rtc.sdp_api();
@@ -606,8 +626,10 @@ impl SfuEngine {
                 Some((offer, pending)) => {
                     participant.pending_offer = Some(pending);
                     let offer_str = offer.to_sdp_string();
+
                     let _ = participant.ws_tx.send(ServerMessage::Offer {
                         sdp_offer: offer_str,
+                        tracks: if track_mappings.is_empty() { None } else { Some(track_mappings.clone()) },
                     });
                     tracing::info!(%pid, "sent renegotiation offer");
                 }
