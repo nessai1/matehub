@@ -13,13 +13,10 @@ pub async fn spawn_app() -> String {
     // Mock SFU: responds to Join, drains everything else
     tokio::spawn(async move {
         while let Some(cmd) = sfu_cmd_rx.recv().await {
-            match cmd {
-                SfuCommand::Join { reply_tx, .. } => {
-                    let _ = reply_tx.send(ServerMessage::Error {
-                        message: "SFU engine not available in test mode".into(),
-                    });
-                }
-                _ => {}
+            if let SfuCommand::Join { reply_tx, .. } = cmd {
+                let _ = reply_tx.send(ServerMessage::Error {
+                    message: "SFU engine not available in test mode".into(),
+                });
             }
         }
     });
@@ -37,6 +34,7 @@ pub async fn spawn_app() -> String {
     format!("http://{addr}")
 }
 
+#[allow(dead_code)] // used by ws_tests, not by api_tests
 pub fn ws_url(http_base: &str, path: &str) -> String {
     http_base.replace("http://", "ws://") + path
 }

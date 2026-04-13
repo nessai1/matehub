@@ -57,7 +57,7 @@ chat:
 general:
   replicaCount: 1
   image:
-    repository: matehub-general
+    repository: matehub-hub
     tag: ""
   resources:
     requests:

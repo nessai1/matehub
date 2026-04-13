@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "services/video",
     "services/chat",
-    "services/general",
+    "services/hub",
 ]
 
 [workspace.package]

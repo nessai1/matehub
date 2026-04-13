@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         .route("/health", axum::routing::get(|| async { "ok" }));
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    tracing::info!(%port, %dev_mode, "matehub-general started");
+    tracing::info!(%port, %dev_mode, "matehub-hub started");
 
     axum::serve(listener, app).await?;
     Ok(())

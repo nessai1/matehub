@@ -9,13 +9,13 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY services/video/Cargo.toml services/video/Cargo.toml
 COPY services/chat/Cargo.toml services/chat/Cargo.toml
-COPY services/general/Cargo.toml services/general/Cargo.toml
+COPY services/hub/Cargo.toml services/hub/Cargo.toml
 
 # Create dummy source files for dependency caching
-RUN mkdir -p services/video/src services/chat/src services/general/src && \
+RUN mkdir -p services/video/src services/chat/src services/hub/src && \
     echo "fn main() {}" > services/video/src/main.rs && \
     echo "fn main() {}" > services/chat/src/main.rs && \
-    echo "fn main() {}" > services/general/src/main.rs
+    echo "fn main() {}" > services/hub/src/main.rs
 
 # Build dependencies only (cached layer)
 RUN cargo build --release -p matehub-video 2>/dev/null || true

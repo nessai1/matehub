@@ -82,6 +82,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: matehub-general
+                name: matehub-hub
                 port:
                   name: http

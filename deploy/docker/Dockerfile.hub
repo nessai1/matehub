@@ -1,4 +1,4 @@
-## matehub-chat -- multi-stage build
+## matehub-hub -- multi-stage build
 
 FROM rust:1.87-bookworm AS builder
 
@@ -14,11 +14,11 @@ RUN mkdir -p services/video/src services/chat/src services/hub/src && \
     echo "fn main() {}" > services/chat/src/main.rs && \
     echo "fn main() {}" > services/hub/src/main.rs
 
-RUN cargo build --release -p matehub-chat 2>/dev/null || true
+RUN cargo build --release -p matehub-hub 2>/dev/null || true
 
-COPY services/chat/src services/chat/src
-RUN touch services/chat/src/main.rs && \
-    cargo build --release -p matehub-chat
+COPY services/hub/src services/hub/src
+RUN touch services/hub/src/main.rs && \
+    cargo build --release -p matehub-hub
 
 FROM debian:bookworm-slim
 
@@ -26,10 +26,10 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates libssl3 && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/matehub-chat /usr/local/bin/matehub-chat
+COPY --from=builder /app/target/release/matehub-hub /usr/local/bin/matehub-hub
 
-EXPOSE 3001/tcp
+EXPOSE 3002/tcp
 
 ENV RUST_LOG=info
 
-ENTRYPOINT ["matehub-chat"]
+ENTRYPOINT ["matehub-hub"]

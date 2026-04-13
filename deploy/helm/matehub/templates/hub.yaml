@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: matehub-general
+  name: matehub-hub
   labels:
-    app: matehub-general
+    app: matehub-hub
     {{- include "matehub.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.general.replicaCount }}
   selector:
     matchLabels:
-      app: matehub-general
+      app: matehub-hub
   template:
     metadata:
       labels:
-        app: matehub-general
+        app: matehub-hub
     spec:
       containers:
         - name: general
@@ -45,7 +45,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: matehub-general
+  name: matehub-hub
 spec:
   type: ClusterIP
   ports:
@@ -53,4 +53,4 @@ spec:
       port: {{ .Values.general.service.port }}
       targetPort: http
   selector:
-    app: matehub-general
+    app: matehub-hub

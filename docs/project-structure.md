@@ -23,7 +23,7 @@ matehub/
 │   ├── chat/                  # matehub-chat    -- чат-сервис
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   └── general/               # matehub-general -- профили, каналы, auth
+│   └── general/               # matehub-hub -- профили, каналы, auth
 │       ├── Cargo.toml
 │       └── src/
 │
@@ -61,7 +61,7 @@ matehub/
 ```toml
 # Cargo.toml (root)
 [workspace]
-members = ["services/video", "services/chat", "services/general"]
+members = ["services/video", "services/chat", "services/hub"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -107,12 +107,12 @@ cargo build
 # Собрать конкретный сервис
 cargo build -p matehub-video
 cargo build -p matehub-chat
-cargo build -p matehub-general
+cargo build -p matehub-hub
 
 # Запустить конкретный сервис
 cargo run -p matehub-video
 cargo run -p matehub-chat
-cargo run -p matehub-general
+cargo run -p matehub-hub
 
 # Тесты
 cargo test                    # все тесты
@@ -173,7 +173,7 @@ npx shadcn@latest add avatar
 
 ## Сервисы -- кто за что отвечает
 
-### matehub-general (services/general/)
+### matehub-hub (services/hub/)
 
 Владеет: Hub'ами, пользователями, каналами (channels), permissions.
 
@@ -251,7 +251,7 @@ axum.workspace = true
 members = [
     "services/video",
     "services/chat",
-    "services/general",
+    "services/hub",
     "services/newservice",   # <-- добавить
 ]
 ```
@@ -334,7 +334,7 @@ matehub/
 │   └── docker/
 │       ├── Dockerfile.video           # Rust multi-stage, debian:bookworm-slim (needs libssl)
 │       ├── Dockerfile.chat
-│       ├── Dockerfile.general
+│       ├── Dockerfile.hub
 │       └── Dockerfile.frontend        # Next.js standalone
 │
 └── scripts/
@@ -354,7 +354,7 @@ matehub/
 #    TURN:     localhost:3478
 
 # 2. Run services (each in separate terminal)
-cargo run -p matehub-general
+cargo run -p matehub-hub
 cargo run -p matehub-video
 cargo run -p matehub-chat
 npm run dev:frontend       # http://localhost:3000
@@ -369,7 +369,7 @@ npm run dev:frontend       # http://localhost:3000
 # Build from repo root (context = repo root for Cargo workspace access)
 docker build -f deploy/docker/Dockerfile.video -t matehub-video .
 docker build -f deploy/docker/Dockerfile.chat -t matehub-chat .
-docker build -f deploy/docker/Dockerfile.general -t matehub-general .
+docker build -f deploy/docker/Dockerfile.hub -t matehub-hub .
 docker build -f deploy/docker/Dockerfile.frontend -t matehub-frontend .
 ```
 
