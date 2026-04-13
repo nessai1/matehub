@@ -72,6 +72,7 @@ fn server_answer_serializes_with_type_tag() {
 fn server_offer_serializes() {
     let msg = ServerMessage::Offer {
         sdp_offer: "v=0\r\n".into(),
+        tracks: None,
     };
     let json = serde_json::to_value(&msg).unwrap();
     assert_eq!(json["type"], "offer");
@@ -107,4 +108,59 @@ fn server_error_serializes() {
     let json = serde_json::to_value(&msg).unwrap();
     assert_eq!(json["type"], "error");
     assert_eq!(json["message"], "something broke");
+}
+
+// ── Mute signaling (Stage 2) ────────────────────
+
+#[test]
+fn client_mute_changed_deserializes() {
+    let json = r#"{"type":"mute_changed","kind":"video","muted":true}"#;
+    let msg: ClientMessage = serde_json::from_str(json).unwrap();
+    match msg {
+        ClientMessage::MuteChanged { kind, muted } => {
+            assert_eq!(kind, "video");
+            assert!(muted);
+        }
+        _ => panic!("expected MuteChanged"),
+    }
+}
+
+#[test]
+fn client_mute_changed_audio_unmute() {
+    let json = r#"{"type":"mute_changed","kind":"audio","muted":false}"#;
+    let msg: ClientMessage = serde_json::from_str(json).unwrap();
+    match msg {
+        ClientMessage::MuteChanged { kind, muted } => {
+            assert_eq!(kind, "audio");
+            assert!(!muted);
+        }
+        _ => panic!("expected MuteChanged"),
+    }
+}
+
+#[test]
+fn server_participant_muted_serializes() {
+    let msg = ServerMessage::ParticipantMuted {
+        participant_id: Uuid::nil(),
+        kind: "video".into(),
+        muted: false,
+    };
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["type"], "participant_muted");
+    assert_eq!(json["kind"], "video");
+    assert_eq!(json["muted"], false);
+    assert!(json["participant_id"].is_string());
+}
+
+#[test]
+fn server_participant_muted_audio() {
+    let msg = ServerMessage::ParticipantMuted {
+        participant_id: Uuid::nil(),
+        kind: "audio".into(),
+        muted: true,
+    };
+    let json = serde_json::to_value(&msg).unwrap();
+    assert_eq!(json["type"], "participant_muted");
+    assert_eq!(json["kind"], "audio");
+    assert_eq!(json["muted"], true);
 }

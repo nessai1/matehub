@@ -24,6 +24,10 @@ pub enum ClientMessage {
         sdp_mid: Option<String>,
         sdp_mline_index: Option<u16>,
     },
+    MuteChanged {
+        kind: String,
+        muted: bool,
+    },
     Leave,
 }
 
@@ -53,6 +57,11 @@ pub enum ServerMessage {
     ParticipantLeft {
         participant_id: Uuid,
         user_id: String,
+    },
+    ParticipantMuted {
+        participant_id: Uuid,
+        kind: String,
+        muted: bool,
     },
     Error {
         message: String,

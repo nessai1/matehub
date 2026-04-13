@@ -375,6 +375,204 @@ async fn ws_duplicate_user_id_creates_separate_participants() {
     assert_eq!(ids.len(), 2, "participant IDs should be unique");
 }
 
+// ── Mute signaling tests (Stage 2) ──────────────
+
+#[tokio::test]
+async fn ws_mute_changed_broadcasts_to_others() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Alice connects
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+    ws_alice
+        .send(Message::Text(
+            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        ))
+        .await
+        .unwrap();
+    let _ = ws_alice.next().await; // drain error
+
+    // Bob connects
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+    let _ = ws_alice.next().await; // drain participant_joined for bob
+
+    // Drain Bob's participant_joined for Alice
+    let _ = ws_bob.next().await;
+
+    // Bob enables camera
+    ws_bob
+        .send(Message::Text(
+            json!({"type": "mute_changed", "kind": "video", "muted": false})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+
+    // Alice should receive participant_muted
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout waiting for participant_muted")
+        .unwrap()
+        .unwrap();
+
+    let parsed: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+    assert_eq!(parsed["type"], "participant_muted");
+    assert_eq!(parsed["kind"], "video");
+    assert_eq!(parsed["muted"], false);
+    assert_eq!(parsed["user_id"], Value::Null); // no user_id in this message
+}
+
+#[tokio::test]
+async fn ws_mute_changed_not_echoed_to_sender() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Alice connects alone
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws, _) = connect_async(&ws_url).await.unwrap();
+    ws.send(Message::Text(
+        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let _ = ws.next().await; // drain error
+
+    // Alice sends mute_changed
+    ws.send(Message::Text(
+        json!({"type": "mute_changed", "kind": "video", "muted": false})
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+
+    // Alice should NOT receive her own mute event (timeout = no message)
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await;
+    assert!(result.is_err(), "sender should not receive own mute_changed");
+}
+
+#[tokio::test]
+async fn ws_mute_state_sent_on_join() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Bob connects and enables camera
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+    ws_bob
+        .send(Message::Text(
+            json!({"type": "mute_changed", "kind": "video", "muted": false})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+
+    // Alice connects -- should receive participant_joined AND participant_muted for Bob
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+
+    // First message: participant_joined for Bob
+    let msg1 = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout waiting for participant_joined")
+        .unwrap()
+        .unwrap();
+    let p1: Value = serde_json::from_str(&msg1.into_text().unwrap()).unwrap();
+    assert_eq!(p1["type"], "participant_joined");
+    assert_eq!(p1["user_id"], "bob");
+
+    // Second message: participant_muted (Bob's camera is on)
+    let msg2 = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout waiting for participant_muted")
+        .unwrap()
+        .unwrap();
+    let p2: Value = serde_json::from_str(&msg2.into_text().unwrap()).unwrap();
+    assert_eq!(p2["type"], "participant_muted");
+    assert_eq!(p2["kind"], "video");
+    assert_eq!(p2["muted"], false);
+}
+
+#[tokio::test]
+async fn ws_mute_state_not_sent_when_muted() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Bob connects but does NOT enable camera (default: muted)
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (_ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+
+    // Alice connects -- should receive participant_joined but NO participant_muted
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+
+    // First message: participant_joined for Bob
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout waiting for participant_joined")
+        .unwrap()
+        .unwrap();
+    let parsed: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+    assert_eq!(parsed["type"], "participant_joined");
+
+    // No second message (Bob's camera is off by default)
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
+    assert!(
+        result.is_err(),
+        "should not receive participant_muted when camera is off"
+    );
+}
+
+#[tokio::test]
+async fn ws_mute_toggle_sequence() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Alice connects
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+    ws_alice
+        .send(Message::Text(
+            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        ))
+        .await
+        .unwrap();
+    let _ = ws_alice.next().await; // drain error
+
+    // Bob connects
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+    let _ = ws_alice.next().await; // drain participant_joined
+    let _ = ws_bob.next().await; // drain participant_joined for alice
+
+    // Bob: camera on -> off -> on
+    for muted in [false, true, false] {
+        ws_bob
+            .send(Message::Text(
+                json!({"type": "mute_changed", "kind": "video", "muted": muted})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+            .await
+            .expect("timeout")
+            .unwrap()
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+        assert_eq!(parsed["type"], "participant_muted");
+        assert_eq!(parsed["muted"], muted);
+    }
+}
+
 #[tokio::test]
 async fn ws_binary_frame_ignored() {
     let base = common::spawn_app().await;

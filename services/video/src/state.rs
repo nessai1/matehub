@@ -52,6 +52,8 @@ pub struct Participant {
     pub user_id: String,
     pub state: ParticipantState,
     pub ws_tx: mpsc::UnboundedSender<ServerMessage>,
+    pub video_muted: bool,
+    pub audio_muted: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

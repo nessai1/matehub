@@ -27,6 +27,7 @@ export class VideoClient {
   private camEnabled = false;
   private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private joined = false;
+  private videoSender: RTCRtpSender | null = null;
 
   // Audio level detection
   private audioContext: AudioContext | null = null;
@@ -192,24 +193,17 @@ export class VideoClient {
       } else if (e.track.kind === "video") {
         participant.videoTrack = e.track;
 
-        // Listen for mute/unmute on remote video track.
-        // Browser fires these when media data stops/resumes arriving.
+        // Browser mute/unmute events are unreliable for camera state
+        // (RTCP triggers onunmute even with replaceTrack(null)).
+        // We use explicit signaling instead -- see "participant_muted" handler.
         e.track.onmute = () => {
-          this.log("remote video track muted", { participantId: participant!.participantId });
-          this.emit({
-            type: "track_muted",
+          this.log("remote video track muted (browser event, ignoring)", {
             participantId: participant!.participantId,
-            trackKind: "video",
-            muted: true,
           });
         };
         e.track.onunmute = () => {
-          this.log("remote video track unmuted", { participantId: participant!.participantId });
-          this.emit({
-            type: "track_muted",
+          this.log("remote video track unmuted (browser event, ignoring)", {
             participantId: participant!.participantId,
-            trackKind: "video",
-            muted: false,
           });
         };
       }
@@ -244,7 +238,14 @@ export class VideoClient {
 
       for (const track of stream.getTracks()) {
         track.enabled = false; // muted by default
-        pc.addTrack(track, stream);
+        const sender = pc.addTrack(track, stream);
+        if (track.kind === "video") {
+          this.videoSender = sender;
+          // track.enabled=false still sends black-frame RTP, which triggers
+          // onunmute on the receiver -> grey tile instead of avatar.
+          // replaceTrack(null) stops RTP entirely -> receiver track stays muted.
+          sender.replaceTrack(null);
+        }
         this.log("added local track to PC (muted)", { kind: track.kind, id: track.id });
       }
 
@@ -387,6 +388,20 @@ export class VideoClient {
         break;
       }
 
+      case "participant_muted": {
+        const pid = msg.participant_id as string;
+        const kind = msg.kind as string;
+        const muted = msg.muted as boolean;
+        this.log("participant_muted (signaling)", { pid, kind, muted });
+        this.emit({
+          type: "track_muted",
+          participantId: pid,
+          trackKind: kind,
+          muted,
+        });
+        break;
+      }
+
       case "error": {
         this.emit({ type: "error", message: msg.message as string });
         break;
@@ -425,6 +440,7 @@ export class VideoClient {
       }
     }
     this.micEnabled = true;
+    this.send({ type: "mute_changed", kind: "audio", muted: false });
   }
 
   /** Disable microphone (mutes track, keeps it in PeerConnection) */
@@ -433,6 +449,7 @@ export class VideoClient {
     this.log("disableMic", { trackExists: !!track, enabled: track?.enabled, readyState: track?.readyState });
     if (track) track.enabled = false;
     this.micEnabled = false;
+    this.send({ type: "mute_changed", kind: "audio", muted: true });
   }
 
   /** Enable camera: first call acquires device, subsequent calls re-enable track */
@@ -445,7 +462,8 @@ export class VideoClient {
 
     if (existingTrack && existingTrack.readyState === "live") {
       existingTrack.enabled = true;
-      this.log("enableCamera re-enabled existing track");
+      await this.videoSender?.replaceTrack(existingTrack);
+      this.log("enableCamera re-enabled existing track via replaceTrack");
     } else {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
@@ -455,11 +473,16 @@ export class VideoClient {
       if (track && this.pc) {
         if (!this.localStream) this.localStream = new MediaStream();
         this.localStream.addTrack(track);
-        this.pc.addTrack(track, this.localStream);
-        this.log("enableCamera added track to PC, senders:", this.pc.getSenders().length);
+        if (this.videoSender) {
+          await this.videoSender.replaceTrack(track);
+        } else {
+          this.videoSender = this.pc.addTrack(track, this.localStream);
+        }
+        this.log("enableCamera track on PC, senders:", this.pc.getSenders().length);
       }
     }
     this.camEnabled = true;
+    this.send({ type: "mute_changed", kind: "video", muted: false });
   }
 
   /** Disable camera (mutes track, keeps it in PeerConnection) */
@@ -467,7 +490,10 @@ export class VideoClient {
     const track = this.localStream?.getVideoTracks()[0];
     this.log("disableCamera", { trackExists: !!track, enabled: track?.enabled, readyState: track?.readyState });
     if (track) track.enabled = false;
+    // Stop RTP entirely so receiver shows avatar, not black tile
+    this.videoSender?.replaceTrack(null);
     this.camEnabled = false;
+    this.send({ type: "mute_changed", kind: "video", muted: true });
   }
 
   /** Toggle mic on/off */
@@ -622,6 +648,7 @@ export class VideoClient {
 
     this.pc?.close();
     this.pc = null;
+    this.videoSender = null;
 
     this.participants.clear();
   }

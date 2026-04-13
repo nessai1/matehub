@@ -51,12 +51,27 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
             return;
         };
 
-        // Send existing participants to the new participant
+        // Send existing participants to the new participant (+ their mute state)
         for p in session.participants.values() {
             let _ = ws_tx.send(ServerMessage::ParticipantJoined {
                 participant_id: p.id,
                 user_id: p.user_id.clone(),
             });
+            // Send current mute state so new joiner knows who has camera/mic on
+            if !p.video_muted {
+                let _ = ws_tx.send(ServerMessage::ParticipantMuted {
+                    participant_id: p.id,
+                    kind: "video".into(),
+                    muted: false,
+                });
+            }
+            if !p.audio_muted {
+                let _ = ws_tx.send(ServerMessage::ParticipantMuted {
+                    participant_id: p.id,
+                    kind: "audio".into(),
+                    muted: false,
+                });
+            }
         }
 
         // Broadcast new participant to existing participants
@@ -75,6 +90,8 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                 user_id: user_id.clone(),
                 state: ParticipantState::Connecting,
                 ws_tx: ws_tx.clone(),
+                video_muted: true,
+                audio_muted: true,
             },
         );
     }
@@ -161,6 +178,32 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                     candidate,
                     sdp_mid,
                 });
+            }
+
+            ClientMessage::MuteChanged { kind, muted } => {
+                tracing::info!(%participant_id, %kind, %muted, "mute changed");
+                let mut inner = state.inner.lock();
+                if let Some(session) = inner.sessions.get_mut(&session_id) {
+                    // Persist mute state so new joiners get it
+                    if let Some(me) = session.participants.get_mut(&participant_id) {
+                        match kind.as_str() {
+                            "video" => me.video_muted = muted,
+                            "audio" => me.audio_muted = muted,
+                            _ => {}
+                        }
+                    }
+                    // Broadcast to other participants
+                    let msg = ServerMessage::ParticipantMuted {
+                        participant_id,
+                        kind,
+                        muted,
+                    };
+                    for (pid, p) in &session.participants {
+                        if *pid != participant_id {
+                            let _ = p.ws_tx.send(msg.clone());
+                        }
+                    }
+                }
             }
 
             ClientMessage::Leave => {
