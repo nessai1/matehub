@@ -150,10 +150,10 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
 
                 // Update state
                 let mut inner = state.inner.lock();
-                if let Some(session) = inner.sessions.get_mut(&session_id) {
-                    if let Some(p) = session.participants.get_mut(&participant_id) {
-                        p.state = ParticipantState::Connected;
-                    }
+                if let Some(session) = inner.sessions.get_mut(&session_id)
+                    && let Some(p) = session.participants.get_mut(&participant_id)
+                {
+                    p.state = ParticipantState::Connected;
                 }
             }
 

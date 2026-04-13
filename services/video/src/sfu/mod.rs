@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use str0m::change::SdpOffer;
 use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
-use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
+use str0m::{Candidate, Event, Input, Output, Rtc};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -398,7 +398,7 @@ impl SfuEngine {
 
         // Remove stale TrackOut entries
         let mut cleaned = 0usize;
-        for (_, remaining) in &mut session.participants {
+        for remaining in session.participants.values_mut() {
             let before = remaining.tracks_out.len();
             remaining.tracks_out.retain(|t| t.origin != participant_id);
             cleaned += before - remaining.tracks_out.len();
@@ -593,14 +593,12 @@ impl SfuEngine {
                                                 }
                                             })
                                         });
-                                    if let Some((origin_pid, origin_mid)) = origin {
-                                        if let Some(origin_p) =
+                                    if let Some((origin_pid, origin_mid)) = origin
+                                        && let Some(origin_p) =
                                             session.participants.get_mut(&origin_pid)
-                                        {
-                                            if let Some(mut w) = origin_p.rtc.writer(origin_mid) {
-                                                let _ = w.request_keyframe(req.rid, req.kind);
-                                            }
-                                        }
+                                        && let Some(mut w) = origin_p.rtc.writer(origin_mid)
+                                    {
+                                        let _ = w.request_keyframe(req.rid, req.kind);
                                     }
                                 }
                             }
@@ -609,10 +607,10 @@ impl SfuEngine {
                         Ok(Output::Timeout(_)) => break,
                         Err(e) => {
                             tracing::warn!(%source_pid, "poll_output error: {e}");
-                            if let Some(session) = self.sessions.get_mut(&session_id) {
-                                if let Some(p) = session.participants.get_mut(&source_pid) {
-                                    p.rtc.disconnect();
-                                }
+                            if let Some(session) = self.sessions.get_mut(&session_id)
+                                && let Some(p) = session.participants.get_mut(&source_pid)
+                            {
+                                p.rtc.disconnect();
                             }
                             break;
                         }

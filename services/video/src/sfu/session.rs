@@ -12,6 +12,7 @@ use crate::signaling::ServerMessage;
 pub type SessionId = Uuid;
 
 pub struct SfuSession {
+    #[allow(dead_code)] // used for logging, will be used for Redis in Stage 2
     pub id: SessionId,
     pub participants: HashMap<ParticipantId, SfuParticipant>,
 }

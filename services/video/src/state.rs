@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
+
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -61,6 +61,7 @@ pub struct Participant {
 pub enum ParticipantState {
     Connecting,
     Connected,
+    #[allow(dead_code)] // will be used for graceful disconnect tracking
     Disconnected,
 }
 

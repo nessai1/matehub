@@ -22,6 +22,7 @@ pub enum ClientMessage {
     IceCandidate {
         candidate: String,
         sdp_mid: Option<String>,
+        #[allow(dead_code)] // deserialized from JSON, forwarded to SFU
         sdp_mline_index: Option<u16>,
     },
     MuteChanged {
@@ -45,6 +46,7 @@ pub enum ServerMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         tracks: Option<Vec<TrackMapping>>,
     },
+    #[allow(dead_code)] // will be used for trickle ICE from SFU to client
     IceCandidate {
         candidate: String,
         sdp_mid: Option<String>,
