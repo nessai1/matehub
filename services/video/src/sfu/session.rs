@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
+use str0m::Rtc;
 use str0m::change::SdpPendingOffer;
 use str0m::media::{MediaKind, Mid};
-use str0m::Rtc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::signaling::ServerMessage;
 use crate::sfu::ParticipantId;
+use crate::signaling::ServerMessage;
 
 pub type SessionId = Uuid;
 

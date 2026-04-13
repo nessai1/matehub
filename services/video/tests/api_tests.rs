@@ -1,7 +1,7 @@
 mod common;
 
 use pretty_assertions::assert_eq;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[tokio::test]
 async fn health_check() {
@@ -216,7 +216,10 @@ async fn create_session_ws_url_contains_host() {
         .unwrap();
 
     let ws_url = resp["ws_url"].as_str().unwrap();
-    assert!(ws_url.starts_with("ws://"), "ws_url should start with ws://");
+    assert!(
+        ws_url.starts_with("ws://"),
+        "ws_url should start with ws://"
+    );
     assert!(
         ws_url.contains(&format!("/ws/{}", resp["session_id"].as_str().unwrap())),
         "ws_url should contain /ws/session_id"

@@ -222,11 +222,7 @@ impl SfuEngine {
         let existing_tracks: Vec<(ParticipantId, Mid, MediaKind)> = session
             .participants
             .values()
-            .flat_map(|p| {
-                p.tracks_in
-                    .iter()
-                    .map(|t| (p.id, t.mid, t.kind))
-            })
+            .flat_map(|p| p.tracks_in.iter().map(|t| (p.id, t.mid, t.kind)))
             .collect();
 
         // Add participant
@@ -315,10 +311,7 @@ impl SfuEngine {
                 for (origin_pid, origin_mid) in newly_opened {
                     if let Some(origin) = session.participants.get_mut(&origin_pid) {
                         if let Some(mut writer) = origin.rtc.writer(origin_mid) {
-                            match writer.request_keyframe(
-                                None,
-                                KeyframeRequestKind::Pli,
-                            ) {
+                            match writer.request_keyframe(None, KeyframeRequestKind::Pli) {
                                 Ok(()) => {
                                     tracing::info!(
                                         subscriber = %participant_id,
@@ -567,8 +560,7 @@ impl SfuEngine {
                                             });
                                         } else {
                                             let already = p.tracks_out.iter().any(|t| {
-                                                t.origin == source_pid
-                                                    && t.origin_mid == e.mid
+                                                t.origin == source_pid && t.origin_mid == e.mid
                                             });
                                             if !already {
                                                 p.tracks_out.push(TrackOut {
@@ -591,10 +583,8 @@ impl SfuEngine {
                                 // req.mid is on the subscriber's Rtc. Find which TrackOut
                                 // it belongs to and request from the origin.
                                 if let Some(session) = self.sessions.get_mut(&session_id) {
-                                    let origin = session
-                                        .participants
-                                        .get(&source_pid)
-                                        .and_then(|p| {
+                                    let origin =
+                                        session.participants.get(&source_pid).and_then(|p| {
                                             p.tracks_out.iter().find_map(|t| {
                                                 if t.open_mid() == Some(req.mid) {
                                                     Some((t.origin, t.origin_mid))
@@ -607,12 +597,8 @@ impl SfuEngine {
                                         if let Some(origin_p) =
                                             session.participants.get_mut(&origin_pid)
                                         {
-                                            if let Some(mut w) =
-                                                origin_p.rtc.writer(origin_mid)
-                                            {
-                                                let _ = w.request_keyframe(
-                                                    req.rid, req.kind,
-                                                );
+                                            if let Some(mut w) = origin_p.rtc.writer(origin_mid) {
+                                                let _ = w.request_keyframe(req.rid, req.kind);
                                             }
                                         }
                                     }
@@ -624,9 +610,7 @@ impl SfuEngine {
                         Err(e) => {
                             tracing::warn!(%source_pid, "poll_output error: {e}");
                             if let Some(session) = self.sessions.get_mut(&session_id) {
-                                if let Some(p) =
-                                    session.participants.get_mut(&source_pid)
-                                {
+                                if let Some(p) = session.participants.get_mut(&source_pid) {
                                     p.rtc.disconnect();
                                 }
                             }
@@ -685,9 +669,7 @@ impl SfuEngine {
                 continue;
             };
 
-            if let Err(e) =
-                writer.write(pt, data.network_time, data.time, data.data.clone())
-            {
+            if let Err(e) = writer.write(pt, data.network_time, data.time, data.data.clone()) {
                 tracing::trace!(pid = %target_pid, "media write skip: {e}");
                 continue;
             }
@@ -696,9 +678,7 @@ impl SfuEngine {
             loop {
                 match target.rtc.poll_output() {
                     Ok(Output::Transmit(t)) => {
-                        let _ = self
-                            .udp_socket
-                            .try_send_to(&t.contents, t.destination);
+                        let _ = self.udp_socket.try_send_to(&t.contents, t.destination);
                     }
                     Ok(Output::Timeout(_)) => break,
                     Ok(Output::Event(_)) => {} // events handled in main poll loop

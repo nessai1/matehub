@@ -2,7 +2,7 @@ mod common;
 
 use futures_util::{SinkExt, StreamExt};
 use pretty_assertions::assert_eq;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 /// Helper: create a session and return (base_url, session_id)
@@ -30,7 +30,9 @@ async fn ws_connect_and_receive_error_on_join() {
 
     // Send join
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake-sdp"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake-sdp"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -55,7 +57,9 @@ async fn ws_participant_joined_broadcast() {
     // Send join so Alice is registered
     ws_alice
         .send(Message::Text(
-            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+            json!({"type": "join", "sdp_offer": "fake"})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -89,7 +93,9 @@ async fn ws_participant_left_broadcast() {
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
-            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+            json!({"type": "join", "sdp_offer": "fake"})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -190,7 +196,7 @@ async fn ws_connect_to_nonexistent_session_closes() {
     match result {
         Ok(Some(Ok(Message::Close(_)))) | Ok(None) => {} // clean close
         Ok(Some(Err(_))) => {} // reset without handshake -- also acceptable (server dropped connection)
-        Err(_) => {} // timeout -- server silently dropped
+        Err(_) => {}           // timeout -- server silently dropped
         other => panic!("expected close/error/timeout, got {other:?}"),
     }
 }
@@ -205,7 +211,9 @@ async fn ws_abrupt_disconnect_triggers_cleanup() {
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
-            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+            json!({"type": "join", "sdp_offer": "fake"})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -241,7 +249,9 @@ async fn ws_get_session_shows_participants() {
     let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -272,7 +282,9 @@ async fn ws_ice_candidate_does_not_crash() {
 
     // Send join first
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -307,7 +319,9 @@ async fn ws_answer_does_not_crash() {
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -315,7 +329,9 @@ async fn ws_answer_does_not_crash() {
 
     // Send answer (even though no offer was sent -- should not crash)
     ws.send(Message::Text(
-        json!({"type": "answer", "sdp_answer": "v=0\r\n"}).to_string().into(),
+        json!({"type": "answer", "sdp_answer": "v=0\r\n"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -338,14 +354,18 @@ async fn ws_duplicate_user_id_creates_separate_participants() {
 
     // Both join
     ws1.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
     let _ = ws1.next().await; // drain error
 
     ws2.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -387,7 +407,9 @@ async fn ws_mute_changed_broadcasts_to_others() {
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
-            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+            json!({"type": "join", "sdp_offer": "fake"})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -434,7 +456,9 @@ async fn ws_mute_changed_not_echoed_to_sender() {
     let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -450,9 +474,11 @@ async fn ws_mute_changed_not_echoed_to_sender() {
     .unwrap();
 
     // Alice should NOT receive her own mute event (timeout = no message)
-    let result =
-        tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await;
-    assert!(result.is_err(), "sender should not receive own mute_changed");
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), ws.next()).await;
+    assert!(
+        result.is_err(),
+        "sender should not receive own mute_changed"
+    );
 }
 
 #[tokio::test]
@@ -521,8 +547,7 @@ async fn ws_mute_state_not_sent_when_muted() {
     assert_eq!(parsed["type"], "participant_joined");
 
     // No second message (Bob's camera is off by default)
-    let result =
-        tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
     assert!(
         result.is_err(),
         "should not receive participant_muted when camera is off"
@@ -539,7 +564,9 @@ async fn ws_mute_toggle_sequence() {
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
-            json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+            json!({"type": "join", "sdp_offer": "fake"})
+                .to_string()
+                .into(),
         ))
         .await
         .unwrap();
@@ -674,9 +701,11 @@ async fn ws_mute_state_updates_after_toggle_off() {
     assert_eq!(p["type"], "participant_joined");
 
     // No more messages -- camera is off
-    let result =
-        tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
-    assert!(result.is_err(), "should not get participant_muted when camera was toggled off");
+    let result = tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
+    assert!(
+        result.is_err(),
+        "should not get participant_muted when camera was toggled off"
+    );
 }
 
 #[tokio::test]
@@ -694,7 +723,9 @@ async fn ws_binary_frame_ignored() {
 
     // Connection should still work
     ws.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"}).to_string().into(),
+        json!({"type": "join", "sdp_offer": "fake"})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();

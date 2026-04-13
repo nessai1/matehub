@@ -12,8 +12,8 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::signaling::{ClientMessage, ServerMessage};
 use crate::sfu::SfuCommand;
+use crate::signaling::{ClientMessage, ServerMessage};
 use crate::state::{AppState, Participant, ParticipantState, SessionId};
 
 pub fn routes() -> Router<AppState> {

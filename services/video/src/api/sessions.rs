@@ -1,16 +1,15 @@
 use axum::{
-    Router,
+    Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
-    Json,
 };
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::{
-    AppState, ChannelId, Session, SessionId, SessionInfoResponse, SessionResponse,
-    ParticipantInfoResponse,
+    AppState, ChannelId, ParticipantInfoResponse, Session, SessionId, SessionInfoResponse,
+    SessionResponse,
 };
 
 pub fn routes() -> Router<AppState> {
@@ -77,7 +76,10 @@ async fn get_session(
     Path(session_id): Path<SessionId>,
 ) -> Result<Json<SessionInfoResponse>, StatusCode> {
     let inner = state.inner.lock();
-    let session = inner.sessions.get(&session_id).ok_or(StatusCode::NOT_FOUND)?;
+    let session = inner
+        .sessions
+        .get(&session_id)
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     let participants = session
         .participants

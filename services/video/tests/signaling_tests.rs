@@ -1,5 +1,4 @@
 /// Unit tests for signaling message serialization/deserialization.
-
 use matehub_video::signaling::{ClientMessage, ServerMessage};
 use uuid::Uuid;
 
@@ -29,7 +28,11 @@ fn client_ice_candidate_optional_fields() {
     let json = r#"{"type":"ice_candidate","candidate":"candidate:123 1 udp 2130706431 192.168.1.1 5000 typ host"}"#;
     let msg: ClientMessage = serde_json::from_str(json).unwrap();
     match msg {
-        ClientMessage::IceCandidate { sdp_mid, sdp_mline_index, .. } => {
+        ClientMessage::IceCandidate {
+            sdp_mid,
+            sdp_mline_index,
+            ..
+        } => {
             assert!(sdp_mid.is_none());
             assert!(sdp_mline_index.is_none());
         }
