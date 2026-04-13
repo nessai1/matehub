@@ -315,15 +315,31 @@ impl SfuEngine {
                 for (origin_pid, origin_mid) in newly_opened {
                     if let Some(origin) = session.participants.get_mut(&origin_pid) {
                         if let Some(mut writer) = origin.rtc.writer(origin_mid) {
-                            let _ = writer.request_keyframe(
+                            match writer.request_keyframe(
                                 None,
                                 KeyframeRequestKind::Pli,
-                            );
-                            tracing::info!(
-                                %participant_id,
-                                %origin_pid,
-                                %origin_mid,
-                                "requested keyframe after track opened"
+                            ) {
+                                Ok(()) => {
+                                    tracing::info!(
+                                        subscriber = %participant_id,
+                                        publisher = %origin_pid,
+                                        %origin_mid,
+                                        "PLI requested after track opened"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        subscriber = %participant_id,
+                                        publisher = %origin_pid,
+                                        %origin_mid,
+                                        "PLI request failed: {e}"
+                                    );
+                                }
+                            }
+                        } else {
+                            tracing::warn!(
+                                %origin_pid, %origin_mid,
+                                "no writer for origin (cannot request PLI)"
                             );
                         }
                     }

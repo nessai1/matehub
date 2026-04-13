@@ -574,6 +574,112 @@ async fn ws_mute_toggle_sequence() {
 }
 
 #[tokio::test]
+async fn ws_mute_state_persists_across_reconnect() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Bob connects and enables camera
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+    ws_bob
+        .send(Message::Text(
+            json!({"type": "mute_changed", "kind": "video", "muted": false})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+
+    // Alice connects first time, gets Bob's mute state
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+    let _ = ws_alice.next().await; // participant_joined(bob)
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout")
+        .unwrap()
+        .unwrap();
+    let p: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+    assert_eq!(p["type"], "participant_muted");
+    assert_eq!(p["muted"], false);
+
+    // Alice disconnects
+    ws_alice
+        .send(Message::Text(json!({"type": "leave"}).to_string().into()))
+        .await
+        .unwrap();
+    drop(ws_alice);
+
+    // Drain Bob's participant_joined + participant_left for Alice
+    let _ = ws_bob.next().await;
+    let _ = ws_bob.next().await;
+
+    // Alice reconnects -- should STILL get Bob's camera state
+    let (mut ws_alice2, _) = connect_async(&ws_url_alice).await.unwrap();
+    let msg1 = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice2.next())
+        .await
+        .expect("timeout")
+        .unwrap()
+        .unwrap();
+    let p1: Value = serde_json::from_str(&msg1.into_text().unwrap()).unwrap();
+    assert_eq!(p1["type"], "participant_joined");
+    assert_eq!(p1["user_id"], "bob");
+
+    let msg2 = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice2.next())
+        .await
+        .expect("timeout")
+        .unwrap()
+        .unwrap();
+    let p2: Value = serde_json::from_str(&msg2.into_text().unwrap()).unwrap();
+    assert_eq!(p2["type"], "participant_muted");
+    assert_eq!(p2["kind"], "video");
+    assert_eq!(p2["muted"], false);
+}
+
+#[tokio::test]
+async fn ws_mute_state_updates_after_toggle_off() {
+    let base = common::spawn_app().await;
+    let session_id = create_test_session(&base).await;
+
+    // Bob connects, enables camera, then disables it
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
+    ws_bob
+        .send(Message::Text(
+            json!({"type": "mute_changed", "kind": "video", "muted": false})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+    ws_bob
+        .send(Message::Text(
+            json!({"type": "mute_changed", "kind": "video", "muted": true})
+                .to_string()
+                .into(),
+        ))
+        .await
+        .unwrap();
+
+    // Alice connects -- should NOT get participant_muted (camera is off now)
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
+
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
+        .await
+        .expect("timeout")
+        .unwrap()
+        .unwrap();
+    let p: Value = serde_json::from_str(&msg.into_text().unwrap()).unwrap();
+    assert_eq!(p["type"], "participant_joined");
+
+    // No more messages -- camera is off
+    let result =
+        tokio::time::timeout(std::time::Duration::from_millis(200), ws_alice.next()).await;
+    assert!(result.is_err(), "should not get participant_muted when camera was toggled off");
+}
+
+#[tokio::test]
 async fn ws_binary_frame_ignored() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;

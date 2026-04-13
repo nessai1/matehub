@@ -28,6 +28,8 @@ export class VideoClient {
   private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private joined = false;
   private videoSender: RTCRtpSender | null = null;
+  /** Sequential processing queue -- prevents concurrent setRemoteDescription calls */
+  private msgQueue: Promise<void> = Promise.resolve();
 
   // Audio level detection
   private audioContext: AudioContext | null = null;
@@ -94,7 +96,10 @@ export class VideoClient {
     this.ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
-        this.handleServerMessage(msg);
+        // Chain onto queue so messages are processed sequentially.
+        // Without this, concurrent setRemoteDescription calls race
+        // when answer + offer arrive in the same tick.
+        this.msgQueue = this.msgQueue.then(() => this.handleServerMessage(msg));
       } catch (err) {
         console.error("Failed to parse server message:", err);
       }
@@ -649,6 +654,7 @@ export class VideoClient {
     this.pc?.close();
     this.pc = null;
     this.videoSender = null;
+    this.msgQueue = Promise.resolve();
 
     this.participants.clear();
   }
