@@ -1,9 +1,8 @@
 use axum::{
-    Router,
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::get,
-    Json,
 };
 use serde::Serialize;
 use sqlx::PgPool;
@@ -36,13 +35,12 @@ async fn get_channels(
     State(pool): State<PgPool>,
     Path(hub_id): Path<Uuid>,
 ) -> Result<Json<Vec<Channel>>, StatusCode> {
-    let channels = sqlx::query_as::<_, Channel>(
-        "SELECT * FROM channels WHERE hub_id = $1 ORDER BY position",
-    )
-    .bind(hub_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let channels =
+        sqlx::query_as::<_, Channel>("SELECT * FROM channels WHERE hub_id = $1 ORDER BY position")
+            .bind(hub_id)
+            .fetch_all(&pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(channels))
 }
 

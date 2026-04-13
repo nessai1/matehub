@@ -1,9 +1,8 @@
 use axum::{
-    Router,
+    Json, Router,
     extract::{Query, State},
     http::StatusCode,
     routing::get,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -77,9 +76,7 @@ async fn dev_me(
 }
 
 /// GET /dev/users -- list all dev users
-async fn dev_users(
-    State(pool): State<PgPool>,
-) -> Result<Json<Vec<User>>, StatusCode> {
+async fn dev_users(State(pool): State<PgPool>) -> Result<Json<Vec<User>>, StatusCode> {
     let users = sqlx::query_as::<_, User>("SELECT * FROM users ORDER BY username")
         .fetch_all(&pool)
         .await
