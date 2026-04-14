@@ -26,3 +26,10 @@ aws-config.workspace = true
 aws-credential-types.workspace = true
 axum-extra = { version = "0.10", features = ["multipart"] }
 dotenvy.workspace = true
+futures-util.workspace = true
+bcrypt = "0.17"
+
+[dev-dependencies]
+reqwest.workspace = true
+pretty_assertions.workspace = true
+tokio-tungstenite.workspace = true

@@ -186,6 +186,7 @@ export class VideoClient {
           audioTrack: null,
           videoTrack: null,
           isSpeaking: false,
+          isMicMuted: true,
           stream,
         };
         this.participants.set(streamId, participant);
@@ -378,6 +379,7 @@ export class VideoClient {
           audioTrack: null,
           videoTrack: null,
           isSpeaking: false,
+          isMicMuted: true,
           stream: new MediaStream(),
         };
         this.participants.set(p.participantId, p);

@@ -17,6 +17,7 @@ export interface Participant {
   audioTrack: MediaStreamTrack | null;
   videoTrack: MediaStreamTrack | null;
   isSpeaking: boolean;
+  isMicMuted: boolean;
   stream: MediaStream;
 }
 

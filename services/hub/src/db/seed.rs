@@ -67,20 +67,26 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // Users
+    // Users (password: 123123 for all dev users)
+    let password_hash = bcrypt::hash("123123", bcrypt::DEFAULT_COST)?;
     let users = [
-        (DEV_USER_ALICE, "alice", "Alice"),
-        (DEV_USER_BOB, "bob", "Bob"),
-        (DEV_USER_CHARLIE, "charlie", "Charlie"),
+        (DEV_USER_ALICE, "alice", "Alice", "alice@matehub.dev"),
+        (DEV_USER_BOB, "bob", "Bob", "bob@matehub.dev"),
+        (DEV_USER_CHARLIE, "charlie", "Charlie", "charlie@matehub.dev"),
     ];
-    for (id, username, display_name) in &users {
+    for (id, username, display_name, email) in &users {
         sqlx::query(
-            "INSERT INTO users (id, username, display_name) VALUES ($1, $2, $3)
-             ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO users (id, username, display_name, email, password_hash)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id) DO UPDATE SET
+                password_hash = COALESCE(users.password_hash, $5),
+                email = COALESCE(users.email, $4)",
         )
         .bind(id)
         .bind(username)
         .bind(display_name)
+        .bind(email)
+        .bind(&password_hash)
         .execute(pool)
         .await?;
     }

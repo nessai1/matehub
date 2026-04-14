@@ -16,6 +16,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "002_groups_permissions_temp_users",
         include_str!("../../migrations/002_groups_permissions_temp_users.sql"),
     ),
+    (
+        "003_presence",
+        include_str!("../../migrations/003_presence.sql"),
+    ),
+    (
+        "004_user_password",
+        include_str!("../../migrations/004_user_password.sql"),
+    ),
+    (
+        "005_user_email",
+        include_str!("../../migrations/005_user_email.sql"),
+    ),
 ];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {

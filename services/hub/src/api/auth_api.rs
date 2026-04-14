@@ -8,15 +8,14 @@ use crate::auth::{Claims, create_token};
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
         .route("/auth/login", post(login))
-        .route("/auth/dev-login", post(dev_login))
         .with_state(pool)
 }
 
-// ── Dev login (no password, just username) ──────────
-
 #[derive(Deserialize)]
-struct DevLoginRequest {
-    username: String,
+struct LoginRequest {
+    /// Username or email
+    login: String,
+    password: String,
     hub_id: Uuid,
 }
 
@@ -31,10 +30,10 @@ struct LoginResponse {
     hub_slug: String,
 }
 
-/// POST /v1/auth/dev-login -- dev mode only, no password
-async fn dev_login(
+/// POST /v1/auth/login -- username + password -> JWT
+async fn login(
     State(pool): State<PgPool>,
-    Json(body): Json<DevLoginRequest>,
+    Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
     #[derive(sqlx::FromRow)]
     struct UserRow {
@@ -42,16 +41,41 @@ async fn dev_login(
         username: String,
         display_name: String,
         avatar_url: Option<String>,
+        password_hash: Option<String>,
     }
 
-    let user = sqlx::query_as::<_, UserRow>("SELECT id, username, display_name, avatar_url FROM users WHERE username = $1")
-        .bind(&body.username)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let user = sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, display_name, avatar_url, password_hash FROM users
+         WHERE username = $1 OR email = $1",
+    )
+    .bind(&body.login)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Get user's groups in this hub
+    // Verify password
+    let hash = user.password_hash.as_deref().ok_or(StatusCode::UNAUTHORIZED)?;
+    let valid = bcrypt::verify(&body.password, hash).unwrap_or(false);
+    if !valid {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Verify user is member of this hub
+    let is_member: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM hub_members WHERE hub_id = $1 AND user_id = $2)",
+    )
+    .bind(body.hub_id)
+    .bind(user.id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if !is_member {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Get groups
     let groups: Vec<Uuid> = sqlx::query_scalar(
         "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
     )
@@ -62,12 +86,11 @@ async fn dev_login(
     .unwrap_or_default();
 
     // Get hub slug
-    let hub_slug: String =
-        sqlx::query_scalar("SELECT slug FROM hubs WHERE id = $1")
-            .bind(body.hub_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|_| StatusCode::NOT_FOUND)?;
+    let hub_slug: String = sqlx::query_scalar("SELECT slug FROM hubs WHERE id = $1")
+        .bind(body.hub_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
 
     let now = chrono::Utc::now().timestamp();
     let claims = Claims {
@@ -77,10 +100,12 @@ async fn dev_login(
         hub_id: body.hub_id,
         groups,
         iat: now,
-        exp: now + 86400, // 24h
+        exp: now + 86400,
     };
 
     let token = create_token(&claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    tracing::info!(username = %user.username, %body.hub_id, "user logged in");
 
     Ok(Json(LoginResponse {
         token,
@@ -91,22 +116,4 @@ async fn dev_login(
         hub_id: body.hub_id,
         hub_slug,
     }))
-}
-
-// ── Real login (email + password) -- placeholder ────
-
-#[derive(Deserialize)]
-struct LoginRequest {
-    #[allow(dead_code)]
-    email: String,
-    #[allow(dead_code)]
-    password: String,
-}
-
-/// POST /v1/auth/login -- real auth (TODO: implement password hashing)
-async fn login(
-    Json(_body): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, StatusCode> {
-    // TODO: lookup user by email, verify bcrypt hash, issue JWT
-    Err(StatusCode::NOT_IMPLEMENTED)
 }

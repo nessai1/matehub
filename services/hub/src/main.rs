@@ -2,6 +2,7 @@ mod api;
 mod auth;
 mod db;
 mod models;
+mod presence;
 mod storage;
 
 use std::sync::Arc;
@@ -12,7 +13,6 @@ use tower_http::trace::TraceLayer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Load .env -- try workspace root, then current dir, then search upward
     let _ = dotenvy::from_path("../../.env")
         .or_else(|_| dotenvy::from_path(".env"))
         .or_else(|_| dotenvy::dotenv().map(|_| ()));
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
         db::seed::run_dev_seed(&pool).await?;
     }
 
-    // S3 storage (optional -- skip if no credentials)
+    // S3 storage (optional)
     let s3 = if std::env::var("S3_ACCESS_KEY_ID").is_ok() {
         Some(Arc::new(storage::S3Storage::from_env().await))
     } else {
@@ -49,7 +49,10 @@ async fn main() -> Result<()> {
         None
     };
 
-    let app = api::routes(pool, s3, dev_mode)
+    // Redis for presence (optional)
+    let redis = presence::connect_redis().await;
+
+    let app = api::routes(pool, s3, redis, dev_mode)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .route("/health", axum::routing::get(|| async { "ok" }));
