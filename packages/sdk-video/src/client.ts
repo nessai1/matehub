@@ -589,23 +589,36 @@ export class VideoClient {
 
     const source = this.audioContext.createMediaStreamSource(new MediaStream([track]));
     const analyser = this.audioContext.createAnalyser();
-    analyser.fftSize = 256;
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.3; // less smoothing = faster response
     source.connect(analyser);
     this.analyserNodes.set(participantId, analyser);
 
     if (!this.speakingInterval) {
-      this.speakingInterval = setInterval(() => this.checkSpeakingLevels(), 200);
+      // 60ms poll -- fast response, low CPU (just reading a buffer)
+      this.speakingInterval = setInterval(() => this.checkSpeakingLevels(), 60);
     }
   }
 
   private checkSpeakingLevels() {
-    const threshold = 30; // audio level threshold for "speaking"
-    const data = new Uint8Array(128);
+    // Voice energy concentrates in 85-1000 Hz.
+    // With fftSize=512 at 48kHz sample rate, each bin = ~94 Hz.
+    // Bins 1-11 cover roughly 94-1034 Hz (the voice fundamental range).
+    const VOICE_BIN_START = 1;
+    const VOICE_BIN_END = 12;
+    const THRESHOLD = 15; // lowered: catches quiet speech
+    const data = new Uint8Array(256); // fftSize/2
 
     for (const [pid, analyser] of this.analyserNodes) {
       analyser.getByteFrequencyData(data);
-      const avg = data.reduce((sum, val) => sum + val, 0) / data.length;
-      const speaking = avg > threshold;
+
+      // Average only the voice-frequency bins, not the whole spectrum
+      let sum = 0;
+      for (let i = VOICE_BIN_START; i < VOICE_BIN_END; i++) {
+        sum += data[i];
+      }
+      const avg = sum / (VOICE_BIN_END - VOICE_BIN_START);
+      const speaking = avg > THRESHOLD;
 
       const participant = this.participants.get(pid);
       if (participant && participant.isSpeaking !== speaking) {
