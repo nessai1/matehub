@@ -17,6 +17,46 @@ Before building UI, check if a suitable component exists. Install with `npx shad
 **Overlay & Feedback:** alert, alert-dialog, dialog, drawer, dropdown-menu, context-menu, hover-card, popover, sheet, sonner (toast), toast, tooltip
 **Data Display:** avatar, badge, breadcrumb, chart, data-table, empty, item, kbd, pagination, progress, skeleton, spinner, table, typography
 **Navigation:** command, menubar, navigation-menu, direction
+**Other:** direction, empty, field, input-group, item, kbd, native-select, spinner, typography
+
+Full component reference with descriptions:
+- accordion: vertically stacked interactive headings revealing content
+- alert / alert-dialog: callout for attention / modal expecting response
+- avatar: image with fallback for representing users
+- badge: small status indicator
+- breadcrumb: path hierarchy links
+- button / button-group: clickable actions / grouped buttons
+- calendar / date-picker: date selection components
+- card: header + content + footer container
+- carousel: swipeable content (Embla)
+- chart: Recharts-based visualizations
+- checkbox / radio-group / switch / toggle / toggle-group: selection controls
+- collapsible: expand/collapse panel
+- combobox: autocomplete input with suggestions
+- command: search and quick actions menu
+- context-menu / dropdown-menu / menubar: action menus (right-click / button / persistent)
+- data-table: TanStack Table powered datagrids
+- dialog / drawer / sheet: overlay content panels
+- empty: empty state placeholder
+- field: accessible form field composition (label + control + help text)
+- hover-card / popover / tooltip: contextual information overlays
+- input / input-group / input-otp / textarea: text entry components
+- item: content with media, title, description, actions
+- kbd: keyboard shortcut display
+- label: accessible form labels
+- navigation-menu: website navigation links
+- pagination: page navigation controls
+- progress / skeleton / spinner: loading indicators
+- resizable: draggable panel layouts
+- scroll-area: custom cross-browser scrollbars
+- select / native-select: option pickers
+- separator: visual content divider
+- sidebar: composable themeable sidebar
+- slider: range value input
+- sonner / toast: temporary notification messages
+- table: responsive data tables
+- tabs: layered content panels
+- typography: heading/paragraph/list styles
 
 Full docs: https://ui.shadcn.com/docs/components
 Community components: https://ui.shadcn.com/docs/directory

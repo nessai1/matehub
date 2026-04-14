@@ -20,8 +20,40 @@ pub const DEV_USER_CHARLIE: Uuid = Uuid::from_bytes([
     0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03,
 ]);
 
+// Groups
+const DEV_GROUP_EVERYONE: Uuid = Uuid::from_bytes([
+    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x01,
+]);
+
+const DEV_GROUP_ADMIN: Uuid = Uuid::from_bytes([
+    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02,
+]);
+
+const DEV_GROUP_GUESTS: Uuid = Uuid::from_bytes([
+    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x03,
+]);
+
+// Permission bits
+const READ: i32 = 1;
+const WRITE: i32 = 2;
+const CONNECT: i32 = 4;
+const SPEAK: i32 = 8;
+const VIDEO: i32 = 16;
+const MANAGE: i32 = 32;
+const ADMIN: i32 = 64;
+
+const ALL_PERMS: i32 = READ | WRITE | CONNECT | SPEAK | VIDEO | MANAGE | ADMIN;
+const MEMBER_PERMS: i32 = READ | WRITE | CONNECT | SPEAK | VIDEO;
+const GUEST_PERMS: i32 = READ | CONNECT | SPEAK;
+
 pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     tracing::info!("running dev seed...");
+
+    // Bypass RLS for seeding (superuser or set hub context)
+    sqlx::raw_sql(&format!("SET LOCAL app.current_hub_id = '{}'", DEV_HUB_ID))
+        .execute(pool)
+        .await
+        .ok(); // ignore if RLS not yet active
 
     // Hub
     sqlx::query(
@@ -53,7 +85,7 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .await?;
     }
 
-    // Members
+    // Members (keep old table for backwards compat, role = group name)
     let roles = [
         (DEV_USER_ALICE, "admin"),
         (DEV_USER_BOB, "member"),
@@ -71,7 +103,51 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .await?;
     }
 
-    // Channels
+    // ── Groups ──────────────────────────────────────
+    let groups = [
+        (DEV_GROUP_EVERYONE, "everyone", "#99AAB5", 0, true),
+        (DEV_GROUP_ADMIN, "admin", "#E74C3C", 1, false),
+        (DEV_GROUP_GUESTS, "guests", "#95A5A6", 2, false),
+    ];
+    for (id, name, color, position, is_default) in &groups {
+        sqlx::query(
+            "INSERT INTO groups (id, hub_id, name, color, position, is_default)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (id) DO NOTHING",
+        )
+        .bind(id)
+        .bind(DEV_HUB_ID)
+        .bind(name)
+        .bind(color)
+        .bind(position)
+        .bind(is_default)
+        .execute(pool)
+        .await?;
+    }
+
+    // ── Member <-> Group assignments ────────────────
+    let member_groups = [
+        // Alice: everyone + admin
+        (DEV_USER_ALICE, DEV_GROUP_EVERYONE),
+        (DEV_USER_ALICE, DEV_GROUP_ADMIN),
+        // Bob: everyone
+        (DEV_USER_BOB, DEV_GROUP_EVERYONE),
+        // Charlie: everyone
+        (DEV_USER_CHARLIE, DEV_GROUP_EVERYONE),
+    ];
+    for (user_id, group_id) in &member_groups {
+        sqlx::query(
+            "INSERT INTO member_groups (hub_id, user_id, group_id) VALUES ($1, $2, $3)
+             ON CONFLICT (hub_id, user_id, group_id) DO NOTHING",
+        )
+        .bind(DEV_HUB_ID)
+        .bind(user_id)
+        .bind(group_id)
+        .execute(pool)
+        .await?;
+    }
+
+    // ── Channels ────────────────────────────────────
     let channels: &[(&str, &str, i32)] = &[
         ("general", "text", 0),
         ("random", "text", 1),
@@ -94,9 +170,61 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .await?;
     }
 
+    // ── Channel permissions ─────────────────────────
+    // Fetch channel IDs (they're auto-generated, not deterministic)
+    let channel_rows: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT id, name FROM channels WHERE hub_id = $1")
+            .bind(DEV_HUB_ID)
+            .fetch_all(pool)
+            .await?;
+
+    for (ch_id, ch_name) in &channel_rows {
+        // admin group: full access everywhere
+        upsert_perm(pool, *ch_id, DEV_GROUP_ADMIN, ALL_PERMS, 0).await?;
+
+        // everyone group: standard member access
+        upsert_perm(pool, *ch_id, DEV_GROUP_EVERYONE, MEMBER_PERMS, 0).await?;
+
+        // guests: read-only in text, connect+speak in voice, no access to stage
+        match ch_name.as_str() {
+            "general" | "random" => {
+                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, READ, 0).await?;
+            }
+            "voice-test" => {
+                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, GUEST_PERMS, 0).await?;
+            }
+            "stage-test" => {
+                // guests have no access to stage -- no row = deny
+            }
+            _ => {}
+        }
+    }
+
     tracing::info!(
         hub_id = %DEV_HUB_ID,
-        "dev seed complete: hub 'Dev Hub', 3 users, 4 channels"
+        "dev seed complete: hub 'Dev Hub', 3 users, 3 groups, 4 channels with permissions"
     );
+    Ok(())
+}
+
+async fn upsert_perm(
+    pool: &PgPool,
+    channel_id: Uuid,
+    group_id: Uuid,
+    allow: i32,
+    deny: i32,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO channel_permissions (channel_id, group_id, allow_bits, deny_bits)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (channel_id, group_id)
+         DO UPDATE SET allow_bits = $3, deny_bits = $4",
+    )
+    .bind(channel_id)
+    .bind(group_id)
+    .bind(allow)
+    .bind(deny)
+    .execute(pool)
+    .await?;
     Ok(())
 }
