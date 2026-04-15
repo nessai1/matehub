@@ -25,8 +25,8 @@ export class VideoClient {
   private participantId: string | null = null;
   private micEnabled = false;
   private camEnabled = false;
-  private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private joined = false;
+  private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private videoSender: RTCRtpSender | null = null;
   /** Sequential processing queue -- prevents concurrent setRemoteDescription calls */
   private msgQueue: Promise<void> = Promise.resolve();
@@ -117,28 +117,27 @@ export class VideoClient {
   private setupPeerConnection() {
     const pc = this.pc!;
 
-    // Send ICE candidates to server (buffer until joined)
+    // Trickle ICE: send candidates as they're discovered.
+    // Buffer until joined (SFU needs Rtc to exist before accepting candidates).
     pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        this.log("ICE candidate (local):", e.candidate.candidate);
-        const candidate = {
-          candidate: e.candidate.candidate,
-          sdpMid: e.candidate.sdpMid,
-          sdpMLineIndex: e.candidate.sdpMLineIndex,
-        };
-        if (this.joined) {
-          this.send({
-            type: "ice_candidate",
-            candidate: candidate.candidate,
-            sdp_mid: candidate.sdpMid,
-            sdp_mline_index: candidate.sdpMLineIndex,
-          });
-        } else {
-          this.log("buffering ICE candidate (not yet joined)");
-          this.pendingCandidates.push(candidate);
-        }
-      } else {
+      if (!e.candidate) {
         this.log("ICE gathering complete");
+        return;
+      }
+      const c = {
+        candidate: e.candidate.candidate,
+        sdpMid: e.candidate.sdpMid,
+        sdpMLineIndex: e.candidate.sdpMLineIndex,
+      };
+      if (this.joined) {
+        this.send({
+          type: "ice_candidate",
+          candidate: c.candidate,
+          sdp_mid: c.sdpMid,
+          sdp_mline_index: c.sdpMLineIndex,
+        });
+      } else {
+        this.pendingCandidates.push(c);
       }
     };
 
@@ -267,35 +266,13 @@ export class VideoClient {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // Wait for ICE gathering to complete so we can send all candidates with the offer.
-    // This avoids the race where str0m starts ICE checking before candidates arrive.
-    if (pc.iceGatheringState !== "complete") {
-      this.log("waiting for ICE gathering to complete...");
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          if (pc.iceGatheringState === "complete") {
-            resolve();
-          }
-        };
-        pc.onicegatheringstatechange = () => {
-          this.log("ICE gathering state:", pc.iceGatheringState);
-          check();
-        };
-        check(); // in case it's already complete
-        // Safety timeout -- don't wait forever
-        setTimeout(resolve, 5000);
-      });
-    }
-
-    // localDescription now contains all ICE candidates inline
-    const sdpWithCandidates = pc.localDescription?.sdp ?? offer.sdp;
-    this.log("sending join with complete SDP (candidates inline)", {
-      candidateCount: (sdpWithCandidates?.match(/a=candidate:/g) || []).length,
-    });
+    // Trickle ICE: send offer immediately, candidates will follow via ice_candidate messages.
+    // No waiting for gathering -- shaves seconds off connect time.
+    this.log("sending join (trickle ICE, candidates sent separately)");
 
     this.send({
       type: "join",
-      sdp_offer: sdpWithCandidates,
+      sdp_offer: offer.sdp,
     });
   }
 
@@ -310,7 +287,7 @@ export class VideoClient {
         this.participantId = msg.participant_id as string;
         this.joined = true;
 
-        // Flush buffered ICE candidates
+        // Flush buffered ICE candidates (collected before answer arrived)
         this.log(`flushing ${this.pendingCandidates.length} buffered ICE candidates`);
         for (const c of this.pendingCandidates) {
           this.send({

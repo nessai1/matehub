@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use str0m::change::SdpOffer;
 use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
-use str0m::{Candidate, Event, Input, Output, Rtc};
+use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -60,6 +60,10 @@ pub struct SfuEngine {
     /// The public-facing candidate address (real IP + UDP port)
     candidate_addr: SocketAddr,
     cmd_rx: mpsc::UnboundedReceiver<SfuCommand>,
+    /// Media forwarding stats (logged periodically)
+    stats_audio_fwd: u64,
+    stats_video_fwd: u64,
+    stats_last_log: Instant,
 }
 
 impl SfuEngine {
@@ -76,13 +80,18 @@ impl SfuEngine {
             local_addr,
             candidate_addr,
             cmd_rx,
+            stats_audio_fwd: 0,
+            stats_video_fwd: 0,
+            stats_last_log: Instant::now(),
         }
     }
 
     /// Main SFU event loop. Call this from a spawned tokio task.
     pub async fn run(mut self) {
         let mut buf = vec![0u8; 2000];
-        let mut interval = tokio::time::interval(Duration::from_millis(50));
+        // 20ms tick aligns with Opus audio frame rate (50 frames/sec).
+        // Lower = less jitter for audio forwarding, more CPU.
+        let mut interval = tokio::time::interval(Duration::from_millis(20));
 
         tracing::info!(local_addr = %self.local_addr, "SFU engine started");
 
@@ -121,6 +130,21 @@ impl SfuEngine {
                 // 3. Timer tick -- drive all Rtc instances forward
                 _ = interval.tick() => {
                     self.tick();
+
+                    // Log forwarding stats every 5 seconds
+                    if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
+                        if self.stats_audio_fwd > 0 || self.stats_video_fwd > 0 {
+                            let elapsed = self.stats_last_log.elapsed().as_secs_f32();
+                            tracing::info!(
+                                audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
+                                video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
+                                "media forwarding stats"
+                            );
+                        }
+                        self.stats_audio_fwd = 0;
+                        self.stats_video_fwd = 0;
+                        self.stats_last_log = Instant::now();
+                    }
                 }
             }
 
@@ -234,6 +258,8 @@ impl SfuEngine {
             tracks_in: Vec::new(),
             tracks_out: Vec::new(),
             pending_offer: None,
+            last_activity_at: Instant::now(),
+            ice_disconnected: false,
         };
         session.participants.insert(participant_id, participant);
 
@@ -468,6 +494,7 @@ impl SfuEngine {
         for session in self.sessions.values_mut() {
             for participant in session.participants.values_mut() {
                 if participant.rtc.accepts(&input) {
+                    participant.last_activity_at = Instant::now();
                     if let Err(e) = participant.rtc.handle_input(input) {
                         tracing::warn!(id = %participant.id, "rtc handle_input error: {e}");
                         participant.rtc.disconnect();
@@ -482,15 +509,36 @@ impl SfuEngine {
 
     fn tick(&mut self) {
         let now = Instant::now();
-        for session in self.sessions.values_mut() {
+
+        // Collect zombies: ICE disconnected + no media for 30s.
+        // At 500 participants this is a single O(N) scan per tick.
+        let mut zombies: Vec<(SessionId, ParticipantId)> = Vec::new();
+
+        for (session_id, session) in &mut self.sessions {
             for participant in session.participants.values_mut() {
-                // Drive time forward even if ICE is disconnected --
-                // it might recover when STUN packets arrive
                 let _ = participant.rtc.handle_input(Input::Timeout(now));
+
+                if participant.ice_disconnected
+                    && participant.last_activity_at.elapsed() > Duration::from_secs(30)
+                {
+                    tracing::warn!(
+                        pid = %participant.id,
+                        secs_since_activity = participant.last_activity_at.elapsed().as_secs(),
+                        "zombie participant (ICE disconnected, no UDP activity)"
+                    );
+                    zombies.push((*session_id, participant.id));
+                }
             }
         }
-        // Don't clean up here -- participants are removed via SfuCommand::Leave
-        // triggered by WebSocket close
+
+        // Disconnect zombies (will be cleaned up by WS close or next Leave command)
+        for (session_id, pid) in zombies {
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                if let Some(p) = session.participants.get_mut(&pid) {
+                    p.rtc.disconnect();
+                }
+            }
+        }
     }
 
     /// Poll all Rtc instances and forward media IMMEDIATELY (interleaved).
@@ -535,13 +583,24 @@ impl SfuEngine {
                                 bytes = transmit.contents.len(),
                                 "UDP SEND"
                             );
-                            let _ = self
+                            if let Err(e) = self
                                 .udp_socket
-                                .try_send_to(&transmit.contents, transmit.destination);
+                                .try_send_to(&transmit.contents, transmit.destination)
+                            {
+                                tracing::warn!("UDP send dropped: {e}");
+                            }
                         }
                         Ok(Output::Event(event)) => match event {
                             Event::IceConnectionStateChange(state) => {
                                 tracing::info!(%source_pid, ?state, "ICE state changed");
+                                if let Some(session) = self.sessions.get_mut(&session_id) {
+                                    if let Some(p) = session.participants.get_mut(&source_pid) {
+                                        p.ice_disconnected = matches!(
+                                            state,
+                                            IceConnectionState::Disconnected
+                                        );
+                                    }
+                                }
                             }
                             Event::MediaAdded(e) => {
                                 tracing::info!(
@@ -575,7 +634,19 @@ impl SfuEngine {
                                 }
                             }
                             Event::MediaData(data) => {
-                                // P-1 fix: forward to subscribers NOW, not later
+                                // Count stats by kind
+                                if let Some(session) = self.sessions.get_mut(&session_id) {
+                                    if let Some(p) = session.participants.get_mut(&source_pid) {
+                                        let is_audio = p.tracks_in.iter().any(|t| {
+                                            t.mid == data.mid && t.kind == MediaKind::Audio
+                                        });
+                                        if is_audio {
+                                            self.stats_audio_fwd += 1;
+                                        } else {
+                                            self.stats_video_fwd += 1;
+                                        }
+                                    }
+                                }
                                 self.forward_media_now(session_id, source_pid, &data);
                             }
                             Event::KeyframeRequest(req) => {
@@ -676,7 +747,9 @@ impl SfuEngine {
             loop {
                 match target.rtc.poll_output() {
                     Ok(Output::Transmit(t)) => {
-                        let _ = self.udp_socket.try_send_to(&t.contents, t.destination);
+                        if let Err(e) = self.udp_socket.try_send_to(&t.contents, t.destination) {
+                            tracing::warn!("UDP drain dropped: {e}");
+                        }
                     }
                     Ok(Output::Timeout(_)) => break,
                     Ok(Output::Event(_)) => {} // events handled in main poll loop

@@ -60,6 +60,8 @@ tokio-tungstenite = "0.28"
 reqwest = { version = "0.12", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+socket2 = "0.5"
 dotenvy = "0.15"
 
 # S3 (Yandex Object Storage / MinIO / AWS)

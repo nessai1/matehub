@@ -34,8 +34,18 @@ async fn main() -> Result<()> {
 
     // Bind UDP socket for media
     let udp_addr = format!("0.0.0.0:{}", config.udp_port);
-    let udp_socket = Arc::new(UdpSocket::bind(&udp_addr).await?);
-    tracing::info!(addr = %udp_addr, "UDP media socket bound");
+    let udp_socket = UdpSocket::bind(&udp_addr).await?;
+
+    // Increase send buffer to reduce packet drops under load.
+    // Default ~200KB, set to 2MB. Covers burst of video keyframes + audio.
+    let sock_ref = socket2::SockRef::from(&udp_socket);
+    let _ = sock_ref.set_send_buffer_size(2 * 1024 * 1024);
+    let _ = sock_ref.set_recv_buffer_size(2 * 1024 * 1024);
+    let actual_send = sock_ref.send_buffer_size().unwrap_or(0);
+    let actual_recv = sock_ref.recv_buffer_size().unwrap_or(0);
+
+    let udp_socket = Arc::new(udp_socket);
+    tracing::info!(addr = %udp_addr, send_buf = actual_send, recv_buf = actual_recv, "UDP media socket bound");
 
     // Start SFU engine
     let engine = SfuEngine::new(udp_socket, config.public_ip, sfu_cmd_rx);

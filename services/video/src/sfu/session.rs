@@ -37,6 +37,10 @@ pub struct SfuParticipant {
     pub tracks_out: Vec<TrackOut>,
     /// Pending SDP offer awaiting answer from client
     pub pending_offer: Option<SdpPendingOffer>,
+    /// Last time we received ANY UDP packet from this participant (STUN/DTLS/RTP/RTCP)
+    pub last_activity_at: std::time::Instant,
+    /// ICE is disconnected (consent check failed)
+    pub ice_disconnected: bool,
 }
 
 #[derive(Debug, Clone)]
