@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
 
     // S3 storage (optional)
     let s3 = if std::env::var("S3_ACCESS_KEY_ID").is_ok() {
-        Some(Arc::new(storage::S3Storage::from_env().await))
+        Some(Arc::new(storage::S3Storage::from_env("S3_BUCKET_HUB_ASSETS").await))
     } else {
         tracing::warn!("S3_ACCESS_KEY_ID not set, avatar uploads disabled");
         None

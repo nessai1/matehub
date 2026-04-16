@@ -4,6 +4,7 @@ members = [
     "services/video",
     "services/chat",
     "services/hub",
+    "packages/common-rust",
 ]
 
 [workspace.package]
@@ -62,6 +63,18 @@ chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 socket2 = "0.5"
+
+# Fast WebSocket (hot-path for gateway)
+fastwebsockets = { version = "0.10", features = ["upgrade", "unstable-split", "with_axum"] }
+
+# Workspace crates
+matehub-common = { path = "packages/common-rust" }
+
+# ScyllaDB / Cassandra
+scylla = "1"
+
+# Snowflake IDs
+sonyflake = "0.2"
 dotenvy = "0.15"
 
 # S3 (Yandex Object Storage / MinIO / AWS)

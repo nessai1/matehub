@@ -41,6 +41,15 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
 
+  scylladb:
+    image: scylladb/scylla:6.2
+    ports:
+      - "9042:9042"   # CQL native transport
+      - "9160:9160"   # Thrift (legacy, optional)
+    command: --smp 2 --memory 1G --overprovisioned 1 --developer-mode 1
+    volumes:
+      - scylla-data:/var/lib/scylla
+
   coturn:
     image: coturn/coturn:latest
     ports:
@@ -61,3 +70,4 @@ volumes:
   nats-data:
   minio-data:
   pg-data:
+  scylla-data:

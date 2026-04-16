@@ -5,15 +5,48 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# Async runtime & networking
 tokio.workspace = true
 axum.workspace = true
-redis.workspace = true
+tower-http.workspace = true
+futures-util.workspace = true
+fastwebsockets.workspace = true
+
+# ScyllaDB
+scylla.workspace = true
+
+# Pub/Sub
 async-nats.workspace = true
+
+# Redis (presence, read state, rate limiting)
+redis.workspace = true
+
+# Auth
+jsonwebtoken.workspace = true
+
+# IDs
+sonyflake.workspace = true
+uuid.workspace = true
+
+# Observability
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
-jsonwebtoken.workspace = true
-uuid.workspace = true
+
+# Utils
+chrono.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
+parking_lot.workspace = true
+dotenvy.workspace = true
+matehub-common.workspace = true
+rand.workspace = true
+axum-extra = { version = "0.10", features = ["multipart"] }
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+reqwest.workspace = true
+tokio-tungstenite.workspace = true
