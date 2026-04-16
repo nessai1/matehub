@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use axum::{
@@ -24,6 +25,18 @@ pub struct AppState {
     pub sessions: crate::session::SessionStore,
 }
 
+/// Convert hub_id from JWT (UUID string or numeric) to i64 for ScyllaDB.
+/// Tries i64 parse first, falls back to deterministic hash of the string.
+pub fn hub_id_to_i64(s: &str) -> i64 {
+    if let Ok(n) = s.parse::<i64>() {
+        return n;
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut hasher);
+    // Ensure positive by masking sign bit
+    (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64
+}
+
 pub fn routes(state: AppState) -> Router {
     Router::new()
         .route("/v1/channels/{channel_id}/messages", post(send_message).get(get_history))
@@ -44,7 +57,7 @@ async fn send_message(
     auth: AuthUser,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<Message>), StatusCode> {
-    let hub_id = auth.0.hub_id.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
 
     if body.content.trim().is_empty() && body.attachments.as_ref().is_none_or(|a| a.is_empty()) {
         return Err(StatusCode::BAD_REQUEST);
@@ -116,7 +129,7 @@ async fn edit_message(
     auth: AuthUser,
     Json(body): Json<EditRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = auth.0.hub_id.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
 
     if body.content.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
@@ -156,7 +169,7 @@ async fn delete_message(
     Path((channel_id, message_id)): Path<(i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = auth.0.hub_id.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
     let bucket = snowflake::current_bucket();
 
     state.data
@@ -182,8 +195,8 @@ async fn typing(
     Path(channel_id): Path<i64>,
     auth: AuthUser,
 ) -> StatusCode {
-    let hub_id = auth.0.hub_id.parse::<i64>().unwrap_or(0);
-    state.fanout.publish_typing(hub_id, channel_id, &auth.0.username).await;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    state.fanout.publish_typing(hub_id, channel_id, &auth.0.sub).await;
     StatusCode::NO_CONTENT
 }
 
@@ -223,7 +236,7 @@ async fn get_history(
     auth: AuthUser,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<Message>>, StatusCode> {
-    let hub_id = auth.0.hub_id.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
     let limit = query.limit.clamp(1, 100);
 
     let messages = state.data
@@ -267,7 +280,7 @@ async fn sync(
     auth: AuthUser,
     Json(body): Json<SyncRequest>,
 ) -> Result<Json<SyncResponse>, StatusCode> {
-    let hub_id = auth.0.hub_id.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = hub_id_to_i64(&auth.0.hub_id);
 
     if body.channels.len() > 50 {
         return Err(StatusCode::BAD_REQUEST);

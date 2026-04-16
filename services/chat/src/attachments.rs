@@ -42,11 +42,7 @@ async fn upload_attachment(
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<AttachmentResponse>, StatusCode> {
-    let hub_id = auth
-        .0
-        .hub_id
-        .parse::<i64>()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let hub_id = crate::api::hub_id_to_i64(&auth.0.hub_id);
 
     let field = multipart
         .next_field()
