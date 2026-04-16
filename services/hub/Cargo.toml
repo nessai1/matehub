@@ -28,6 +28,7 @@ axum-extra = { version = "0.10", features = ["multipart"] }
 dotenvy.workspace = true
 futures-util.workspace = true
 bcrypt = "0.17"
+sha2 = "0.10"
 
 [dev-dependencies]
 reqwest.workspace = true

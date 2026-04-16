@@ -28,6 +28,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "005_user_email",
         include_str!("../../migrations/005_user_email.sql"),
     ),
+    (
+        "006_refresh_tokens",
+        include_str!("../../migrations/006_refresh_tokens.sql"),
+    ),
 ];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
