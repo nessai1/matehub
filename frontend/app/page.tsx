@@ -1,19 +1,21 @@
-import { Button } from "@/components/ui/button"
+"use client";
 
-export default function Page() {
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth";
+
+export default function Home() {
+  const { session, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+    router.replace(session ? "/hub" : "/login");
+  }, [session, isLoading, router]);
+
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
-      </div>
+    <div className="flex h-screen items-center justify-center bg-background">
+      <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
     </div>
-  )
+  );
 }

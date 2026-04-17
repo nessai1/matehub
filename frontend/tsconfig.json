@@ -20,7 +20,9 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@matehub/sdk-video": ["../packages/sdk-video/src"],
+      "@matehub/sdk-chat": ["../packages/sdk-chat/src"]
     }
   },
   "include": [
