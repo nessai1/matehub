@@ -17,10 +17,23 @@ import {
   ListIcon,
   ListOrderedIcon,
   CodeIcon,
+  EllipsisVerticalIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemberCard } from "@/components/hub/member-card";
@@ -28,6 +41,7 @@ import { useChatClient } from "@/hooks/use-chat-client";
 import { useMembers, type Member, type MemberGroup } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
 import type { Message } from "@matehub/sdk-chat";
 
 interface TextChannelViewProps {
@@ -103,12 +117,15 @@ function ChatMessage({
 
   if (isGrouped) {
     return (
-      <div className="group flex gap-3 py-0.5 pl-11 hover:bg-muted/30">
-        <span className="invisible absolute -ml-8 pt-0.5 text-[10px] text-muted-foreground group-hover:visible">
+      <div className="group relative py-0.5 pl-11 hover:bg-muted/30">
+        <span className="pointer-events-none absolute right-2 top-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
           {formatTime(message.message_id)}
         </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm leading-relaxed break-words">{message.content}</p>
+        <div className="min-w-0">
+          <div
+            className="text-sm leading-relaxed break-words [&_strong]:font-bold [&_em]:italic [&_a]:text-primary [&_a]:underline"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+          />
         </div>
       </div>
     );
@@ -179,8 +196,17 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
   const { members, loading: membersLoading, refetch } = useMembers();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [externalLink, setExternalLink] = useState<string | null>(null);
+  const [sendOnEnter, setSendOnEnter] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = localStorage.getItem("matehub_send_on_enter");
+    return stored === null ? true : stored === "1";
+  });
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const modKey = isMac ? "Cmd" : "Ctrl";
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isAtBottom = useRef(true);
   const typingThrottle = useRef(0);
 
@@ -236,14 +262,79 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
     }
   }, [input, sending, sendMessage]);
 
+  // Auto-grow textarea + container as content grows
+  const autoGrow = useCallback((el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+    // Also grow the outer container if it has a fixed height from drag
+    const container = el.closest("[data-input-container]") as HTMLElement | null;
+    if (container && container.style.height) {
+      const minH = parseInt(container.style.height, 10);
+      const naturalH = container.scrollHeight;
+      if (naturalH > minH) {
+        container.style.height = Math.min(naturalH, 400) + "px";
+      }
+    }
+  }, []);
+
+  const applyFormat = useCallback((actionKey: string) => {
+    const action = mdActions[actionKey];
+    if (!action || !textareaRef.current) return;
+    const newValue = applyMarkdown(textareaRef.current, action);
+    setInput(newValue);
+  }, []);
+
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Send: Enter (default) or Ctrl/Cmd+Enter (alternative)
+      if (e.key === "Enter") {
+        const mod = e.ctrlKey || e.metaKey;
+        const shouldSend = sendOnEnter ? !e.shiftKey && !mod : mod;
+        if (shouldSend) {
+          e.preventDefault();
+          handleSend();
+          return;
+        }
+      }
+
+      // Shift+Enter: auto-continue list items
+      if (e.key === "Enter" && e.shiftKey) {
+        const ta = e.currentTarget;
+        const { selectionStart, value } = ta;
+        const lineStart = value.lastIndexOf("\n", selectionStart - 1) + 1;
+        const currentLine = value.slice(lineStart, selectionStart);
+
+        const ulMatch = currentLine.match(/^(\s*[-*]\s)/);
+        const olMatch = currentLine.match(/^(\s*)(\d+)\.\s/);
+
+        if (ulMatch || olMatch) {
+          e.preventDefault();
+          let prefix: string;
+          if (olMatch) {
+            const nextNum = parseInt(olMatch[2], 10) + 1;
+            prefix = `${olMatch[1]}${nextNum}. `;
+          } else {
+            prefix = ulMatch![1];
+          }
+          const insert = "\n" + prefix;
+          const newValue = value.slice(0, selectionStart) + insert + value.slice(selectionStart);
+          setInput(newValue);
+          requestAnimationFrame(() => {
+            ta.selectionStart = ta.selectionEnd = selectionStart + insert.length;
+            autoGrow(ta);
+          });
+        }
+      }
+
+      // Ctrl/Cmd + B/I/U shortcuts
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        if (key === "b") { e.preventDefault(); applyFormat("bold"); }
+        else if (key === "i") { e.preventDefault(); applyFormat("italic"); }
+        else if (key === "u") { e.preventDefault(); applyFormat("underline"); }
       }
     },
-    [handleSend],
+    [handleSend, applyFormat, autoGrow, sendOnEnter],
   );
 
   // ── Typing throttle (5s) ──
@@ -267,11 +358,21 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
     return prev.author_id === curr.author_id;
   }
 
+  // Intercept clicks on external links in messages
+  const handleMessageAreaClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest("a[data-external-link]") as HTMLAnchorElement | null;
+    if (anchor) {
+      e.preventDefault();
+      setExternalLink(anchor.href);
+    }
+  }, []);
+
   const isConnected = connectionState === "connected";
   const isConnecting = connectionState === "connecting" || connectionState === "identifying" || connectionState === "resuming";
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* ── Header ── */}
       <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
         <Hash className="h-4 w-4 text-muted-foreground" />
@@ -298,8 +399,9 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
       {/* ── Message list ── */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4"
+        className="min-h-0 flex-1 overflow-y-auto px-4"
         onScroll={handleScroll}
+        onClick={handleMessageAreaClick}
       >
         {messages.length === 0 && isConnected && (
           <div className="flex h-full items-center justify-center">
@@ -351,7 +453,7 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
 
       {/* ── Input ── */}
       <div className="px-4 pb-4">
-        <div className="flex flex-col rounded-xl border border-border/50 bg-muted/20 transition-colors focus-within:border-border">
+        <div data-input-container className="flex flex-col rounded-xl border border-border/50 bg-muted/20 transition-colors focus-within:border-border">
           {/* Drag handle to resize */}
           <div
             className="group flex cursor-row-resize items-center justify-center pt-1"
@@ -380,29 +482,44 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
 
           {/* Top: formatting toolbar */}
           <div className="flex items-center gap-0.5 border-b border-border/30 px-2 py-1">
-            {[BoldIcon, ItalicIcon, UnderlineIcon, LinkIcon, ListOrderedIcon, ListIcon, CodeIcon].map(
-              (Icon, i) => (
-                <button
-                  key={i}
-                  className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </button>
-              ),
-            )}
+            {([
+              ["bold", BoldIcon],
+              ["italic", ItalicIcon],
+              ["underline", UnderlineIcon],
+              ["link", LinkIcon],
+              ["orderedList", ListOrderedIcon],
+              ["unorderedList", ListIcon],
+              ["code", CodeIcon],
+            ] as const).map(([key, Icon]) => (
+              <button
+                key={key}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // keep textarea focus
+                  applyFormat(key);
+                }}
+                className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                title={key}
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </button>
+            ))}
           </div>
 
-          {/* Middle: textarea (grows to fill when dragged) */}
-          <div className="min-h-[4rem] flex-1 overflow-auto px-3 py-1">
+          {/* Middle: textarea (auto-grows with content, also grows on drag) */}
+          <div className="flex-1 overflow-auto px-3 py-1">
             <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => handleInput(e.target.value)}
+              onChange={(e) => {
+                handleInput(e.target.value);
+                autoGrow(e.currentTarget);
+              }}
               onKeyDown={handleKeyDown}
               placeholder={`Type something... # ${channelName}`}
               disabled={!isConnected}
               rows={1}
               className={cn(
-                "h-full w-full resize-none bg-transparent text-sm outline-none",
+                "min-h-[2.5rem] w-full resize-none bg-transparent text-sm outline-none",
                 "placeholder:text-muted-foreground/40",
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
@@ -423,21 +540,96 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
                 ),
               )}
             </div>
-            <Button
-              size="icon"
-              onClick={handleSend}
-              disabled={!input.trim() || sending || !isConnected}
-              className="h-7 w-7 shrink-0 rounded-lg"
-            >
-              {sending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <SendHorizontal className="h-3.5 w-3.5" />
-              )}
-            </Button>
+            <div className="flex items-center gap-0.5">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground">
+                    <EllipsisVerticalIcon className="h-4 w-4" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" className="w-56 p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs">
+                      <p className="font-medium text-foreground">Send on Enter</p>
+                      <p className="mt-0.5 text-muted-foreground">
+                        {sendOnEnter
+                          ? "Enter to send"
+                          : `${modKey}+Enter to send`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const next = !sendOnEnter;
+                        setSendOnEnter(next);
+                        localStorage.setItem("matehub_send_on_enter", next ? "1" : "0");
+                      }}
+                      className={cn(
+                        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors",
+                        sendOnEnter ? "bg-primary" : "bg-muted",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform",
+                          sendOnEnter ? "translate-x-4.5" : "translate-x-0.5",
+                        )}
+                      />
+                    </button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <Button
+                size="icon"
+                onClick={handleSend}
+                disabled={!input.trim() || sending || !isConnected}
+                className="h-7 w-7 shrink-0 rounded-lg"
+              >
+                {sending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <SendHorizontal className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* External link confirmation */}
+      <Dialog open={!!externalLink} onOpenChange={(open: boolean) => !open && setExternalLink(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-center">
+              External link
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              You are about to visit an external resource
+            </p>
+            <p className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs font-mono break-all text-foreground">
+              {externalLink}
+            </p>
+          </div>
+          <DialogFooter className="sm:justify-center">
+            <Button
+              variant="outline"
+              onClick={() => setExternalLink(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (externalLink) window.open(externalLink, "_blank", "noopener");
+                setExternalLink(null);
+              }}
+            >
+              Open link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

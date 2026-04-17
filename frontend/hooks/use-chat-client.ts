@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, type AuthSession } from "@/lib/auth";
 import {
   ChatClient,
   type ChatClientEvent,
@@ -28,7 +28,7 @@ function playSound(name: "message-in" | "message-out") {
 // ── Hook ─────────────────────────────────────────
 
 export function useChatClient(channelId: string) {
-  const { session } = useAuth();
+  const { session, handleUnauthorized } = useAuth();
   const clientRef = useRef<ChatClient | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -122,7 +122,13 @@ export function useChatClient(channelId: string) {
         // History comes newest-first, reverse for chronological
         setMessages(history.reverse());
       })
-      .catch((err) => console.error("[useChatClient] history error:", err));
+      .catch((err) => {
+        if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        console.error("[useChatClient] history error:", err);
+      });
 
     return () => {
       unsub();
@@ -148,9 +154,17 @@ export function useChatClient(channelId: string) {
   const sendMessage = useCallback(
     async (content: string) => {
       if (!clientRef.current || !content.trim()) return;
-      await clientRef.current.sendMessage(channelIdNum, { content: content.trim() });
+      try {
+        await clientRef.current.sendMessage(channelIdNum, { content: content.trim() });
+      } catch (err: unknown) {
+        if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        throw err;
+      }
     },
-    [channelIdNum],
+    [channelIdNum, handleUnauthorized],
   );
 
   const sendTyping = useCallback(() => {

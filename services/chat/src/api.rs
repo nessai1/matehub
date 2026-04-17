@@ -86,14 +86,15 @@ async fn send_message(
         }
     }
 
-    let mentions = parse_mentions(&body.content);
+    let content = sanitize_content(body.content.trim());
+    let mentions = parse_mentions(&content);
 
     let msg = state
         .data
         .write_message(
             hub_id, channel_id, &auth.0.sub, &auth.0.user_type,
-            body.content.trim(), mentions, vec![],
-            body.content.contains("@everyone"),
+            &content, mentions, vec![],
+            content.contains("@everyone"),
             body.attachments.unwrap_or_default(),
             body.thread_root_id, body.client_id.clone(),
         )
@@ -131,19 +132,21 @@ async fn edit_message(
 ) -> Result<StatusCode, StatusCode> {
     let hub_id = hub_id_to_i64(&auth.0.hub_id);
 
-    if body.content.trim().is_empty() {
+    let content = sanitize_content(body.content.trim());
+
+    if content.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
 
     let bucket = snowflake::current_bucket(); // TODO: extract from message_id or lookup
 
-    let mentions = parse_mentions(&body.content);
+    let mentions = parse_mentions(&content);
 
     state.data
         .edit_message(
             hub_id, channel_id, bucket, message_id,
-            body.content.trim(), mentions, vec![],
-            body.content.contains("@everyone"),
+            &content, mentions, vec![],
+            content.contains("@everyone"),
         )
         .await
         .map_err(|e| {
@@ -305,6 +308,24 @@ async fn sync(
     }
 
     Ok(Json(SyncResponse { channels }))
+}
+
+/// Collapse 3+ consecutive newlines into 2. Prevents chat spam with empty lines.
+fn sanitize_content(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut consecutive_newlines = 0u32;
+    for ch in content.chars() {
+        if ch == '\n' {
+            consecutive_newlines += 1;
+            if consecutive_newlines <= 2 {
+                result.push(ch);
+            }
+        } else {
+            consecutive_newlines = 0;
+            result.push(ch);
+        }
+    }
+    result
 }
 
 fn parse_mentions(content: &str) -> Vec<String> {

@@ -35,6 +35,8 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (session: AuthSession) => void;
   logout: () => void;
+  /** Call on any 401 response -- triggers refresh or redirect to /login */
+  handleUnauthorized: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -42,6 +44,7 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   login: () => {},
   logout: () => {},
+  handleUnauthorized: () => {},
 });
 
 const STORAGE_KEY = "matehub_session";
@@ -203,9 +206,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   }, [session]);
 
+  const handleUnauthorized = useCallback(async () => {
+    // Try refresh first
+    if (session?.refreshToken) {
+      const updated = await tryRefresh(session);
+      if (updated) {
+        setSession(updated);
+        scheduleRefresh(updated);
+        return;
+      }
+    }
+    // Refresh failed or no refresh token -- kick to login
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    setSession(null);
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.href = "/login";
+  }, [session, tryRefresh, scheduleRefresh]);
+
   const value = useMemo(
-    () => ({ session, isLoading, login, logout }),
-    [session, isLoading, login, logout],
+    () => ({ session, isLoading, login, logout, handleUnauthorized }),
+    [session, isLoading, login, logout, handleUnauthorized],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
