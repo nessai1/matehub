@@ -17,9 +17,9 @@ export default function HubLayout({
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
-              <div className="flex h-screen flex-col overflow-hidden">
-                <div className="flex flex-1 overflow-hidden">
-                  <main className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
+                <div className="flex flex-1 gap-2 overflow-hidden">
+                  <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-sidebar">
                     {children}
                   </main>
                   <Suspense>

@@ -1,7 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Hash, SendHorizontal, Loader2 } from "lucide-react";
+import {
+  Hash,
+  SendHorizontal,
+  Loader2,
+  PlusIcon,
+  SmileIcon,
+  AtSignIcon,
+  PaperclipIcon,
+  MicIcon,
+  BoldIcon,
+  ItalicIcon,
+  UnderlineIcon,
+  LinkIcon,
+  ListIcon,
+  ListOrderedIcon,
+  CodeIcon,
+} from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -334,35 +350,92 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
       <TypingIndicator users={typingUsers} members={members} />
 
       {/* ── Input ── */}
-      <div className="border-t px-4 py-3">
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => handleInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={`Message #${channelName}`}
-            disabled={!isConnected}
-            className={cn(
-              "flex-1 rounded-md border bg-muted/30 px-3 py-2 text-sm outline-none transition-colors",
-              "placeholder:text-muted-foreground",
-              "focus:ring-1 focus:ring-primary",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={handleSend}
-            disabled={!input.trim() || sending || !isConnected}
-            className="h-9 w-9 shrink-0"
+      <div className="px-4 pb-4">
+        <div className="flex flex-col rounded-xl border border-border/50 bg-muted/20 transition-colors focus-within:border-border">
+          {/* Drag handle to resize */}
+          <div
+            className="group flex cursor-row-resize items-center justify-center pt-1"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const container = e.currentTarget.parentElement!;
+              // Lock current height to prevent jump
+              const startH = container.offsetHeight;
+              container.style.height = startH + "px";
+              const startY = e.clientY;
+              const onMove = (ev: MouseEvent) => {
+                const delta = startY - ev.clientY;
+                const newH = Math.max(startH, Math.min(startH + delta, 400));
+                container.style.height = newH + "px";
+              };
+              const onUp = () => {
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+              };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
           >
-            {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <SendHorizontal className="h-4 w-4" />
+            <div className="h-1 w-8 rounded-full bg-muted-foreground/20 transition-colors group-hover:bg-muted-foreground/40" />
+          </div>
+
+          {/* Top: formatting toolbar */}
+          <div className="flex items-center gap-0.5 border-b border-border/30 px-2 py-1">
+            {[BoldIcon, ItalicIcon, UnderlineIcon, LinkIcon, ListOrderedIcon, ListIcon, CodeIcon].map(
+              (Icon, i) => (
+                <button
+                  key={i}
+                  className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              ),
             )}
-          </Button>
+          </div>
+
+          {/* Middle: textarea (grows to fill when dragged) */}
+          <div className="min-h-[4rem] flex-1 overflow-auto px-3 py-1">
+            <textarea
+              value={input}
+              onChange={(e) => handleInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={`Type something... # ${channelName}`}
+              disabled={!isConnected}
+              rows={1}
+              className={cn(
+                "h-full w-full resize-none bg-transparent text-sm outline-none",
+                "placeholder:text-muted-foreground/40",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            />
+          </div>
+
+          {/* Bottom: action buttons + send */}
+          <div className="flex items-center justify-between border-t border-border/30 px-2 py-1">
+            <div className="flex items-center gap-0.5">
+              {[PlusIcon, SmileIcon, AtSignIcon, PaperclipIcon, MicIcon].map(
+                (Icon, i) => (
+                  <button
+                    key={i}
+                    className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                  >
+                    <Icon className="h-4 w-4" />
+                  </button>
+                ),
+              )}
+            </div>
+            <Button
+              size="icon"
+              onClick={handleSend}
+              disabled={!input.trim() || sending || !isConnected}
+              className="h-7 w-7 shrink-0 rounded-lg"
+            >
+              {sending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <SendHorizontal className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

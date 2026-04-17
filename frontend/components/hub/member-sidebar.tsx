@@ -29,7 +29,7 @@ export function MemberSidebar() {
   }
 
   return (
-    <aside className="m-2 ml-0 flex w-56 shrink-0 flex-col rounded-2xl bg-sidebar ring-1 ring-sidebar-border">
+    <aside className="flex w-56 shrink-0 flex-col rounded-2xl bg-sidebar">
       <div className="flex h-10 items-center px-4">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Members — {members.length}
