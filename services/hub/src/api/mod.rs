@@ -1,4 +1,6 @@
 pub mod auth_api;
+pub mod auth_check;
+pub mod channels;
 pub mod dev;
 pub mod groups;
 pub mod hubs;
@@ -13,6 +15,7 @@ use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
 
+use crate::api::channels::ChannelsState;
 use crate::api::members::MembersState;
 use crate::api::presence_ws::PresenceState;
 use crate::api::profile::ProfileState;
@@ -25,6 +28,10 @@ pub fn routes(
     redis: Option<RedisPool>,
     dev_mode: bool,
 ) -> Router {
+    let channels_state = ChannelsState {
+        pool: pool.clone(),
+        storage: s3.clone(),
+    };
     let profile_state = ProfileState {
         storage: s3,
         pool: pool.clone(),
@@ -41,6 +48,7 @@ pub fn routes(
     let mut app = Router::new()
         .nest("/v1", auth_api::routes(pool.clone()))
         .nest("/v1", hubs::routes(pool.clone()))
+        .nest("/v1", channels::routes(channels_state))
         .nest("/v1", groups::routes(pool.clone()))
         .nest("/v1", permissions::routes(pool.clone()))
         .nest("/v1", temp_users::routes(pool.clone()))

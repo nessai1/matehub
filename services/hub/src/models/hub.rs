@@ -8,6 +8,7 @@ pub struct Hub {
     pub name: String,
     pub slug: String,
     pub plan: String,
+    pub creator_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

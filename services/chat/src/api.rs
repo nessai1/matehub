@@ -25,9 +25,9 @@ pub struct AppState {
     pub sessions: crate::session::SessionStore,
 }
 
-/// Convert hub_id from JWT (UUID string or numeric) to i64 for ScyllaDB.
+/// Convert a string ID (UUID or numeric) to i64 for ScyllaDB.
 /// Tries i64 parse first, falls back to deterministic hash of the string.
-pub fn hub_id_to_i64(s: &str) -> i64 {
+pub fn str_to_i64(s: &str) -> i64 {
     if let Ok(n) = s.parse::<i64>() {
         return n;
     }
@@ -53,11 +53,12 @@ pub fn routes(state: AppState) -> Router {
 
 async fn send_message(
     State(state): State<AppState>,
-    Path(channel_id): Path<i64>,
+    Path(channel_id_raw): Path<String>,
     auth: AuthUser,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<Message>), StatusCode> {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
+    let channel_id = str_to_i64(&channel_id_raw);
 
     if body.content.trim().is_empty() && body.attachments.as_ref().is_none_or(|a| a.is_empty()) {
         return Err(StatusCode::BAD_REQUEST);
@@ -126,11 +127,12 @@ struct EditRequest {
 
 async fn edit_message(
     State(state): State<AppState>,
-    Path((channel_id, message_id)): Path<(i64, i64)>,
+    Path((channel_id_raw, message_id)): Path<(String, i64)>,
     auth: AuthUser,
     Json(body): Json<EditRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
+    let channel_id = str_to_i64(&channel_id_raw);
 
     let content = sanitize_content(body.content.trim());
 
@@ -169,10 +171,11 @@ async fn edit_message(
 
 async fn delete_message(
     State(state): State<AppState>,
-    Path((channel_id, message_id)): Path<(i64, i64)>,
+    Path((channel_id_raw, message_id)): Path<(String, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
+    let channel_id = str_to_i64(&channel_id_raw);
     let bucket = snowflake::current_bucket();
 
     state.data
@@ -195,10 +198,11 @@ async fn delete_message(
 
 async fn typing(
     State(state): State<AppState>,
-    Path(channel_id): Path<i64>,
+    Path(channel_id_raw): Path<String>,
     auth: AuthUser,
 ) -> StatusCode {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
+    let channel_id = str_to_i64(&channel_id_raw);
     state.fanout.publish_typing(hub_id, channel_id, &auth.0.sub).await;
     StatusCode::NO_CONTENT
 }
@@ -212,10 +216,11 @@ struct AckRequest {
 
 async fn mark_read(
     State(state): State<AppState>,
-    Path(channel_id): Path<i64>,
+    Path(channel_id_raw): Path<String>,
     auth: AuthUser,
     Json(_body): Json<AckRequest>,
 ) -> StatusCode {
+    let channel_id = str_to_i64(&channel_id_raw);
     if let Some(mut redis) = state.redis.clone() {
         read_state::mark_read(&mut redis, &auth.0.sub, channel_id).await;
     }
@@ -235,11 +240,12 @@ fn default_limit() -> i32 { 50 }
 
 async fn get_history(
     State(state): State<AppState>,
-    Path(channel_id): Path<i64>,
+    Path(channel_id_raw): Path<String>,
     auth: AuthUser,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<Message>>, StatusCode> {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
+    let channel_id = str_to_i64(&channel_id_raw);
     let limit = query.limit.clamp(1, 100);
 
     let messages = state.data
@@ -283,7 +289,7 @@ async fn sync(
     auth: AuthUser,
     Json(body): Json<SyncRequest>,
 ) -> Result<Json<SyncResponse>, StatusCode> {
-    let hub_id = hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = str_to_i64(&auth.0.hub_id);
 
     if body.channels.len() > 50 {
         return Err(StatusCode::BAD_REQUEST);

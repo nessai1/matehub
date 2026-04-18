@@ -137,7 +137,7 @@ async fn get_effective_permissions(
         connect: has_permission(eff, bits::CONNECT),
         speak: has_permission(eff, bits::SPEAK),
         video: has_permission(eff, bits::VIDEO),
-        manage: has_permission(eff, bits::MANAGE),
-        admin: has_permission(eff, bits::ADMIN),
+        manage: has_permission(eff, bits::MANAGE_CHANNEL),
+        admin: has_permission(eff, bits::ADMIN_CHANNEL),
     }))
 }

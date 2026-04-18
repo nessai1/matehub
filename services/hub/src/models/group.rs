@@ -10,6 +10,8 @@ pub struct Group {
     pub color: Option<String>,
     pub position: i32,
     pub is_default: bool,
+    /// Hub-level permission bits (bits 7-13).
+    pub hub_permissions: i32,
     pub created_at: DateTime<Utc>,
 }
 
@@ -17,6 +19,7 @@ pub struct Group {
 pub struct CreateGroup {
     pub name: String,
     pub color: Option<String>,
+    pub hub_permissions: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,4 +27,5 @@ pub struct UpdateGroup {
     pub name: Option<String>,
     pub color: Option<String>,
     pub position: Option<i32>,
+    pub hub_permissions: Option<i32>,
 }

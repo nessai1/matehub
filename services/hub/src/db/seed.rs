@@ -33,18 +33,10 @@ const DEV_GROUP_GUESTS: Uuid = Uuid::from_bytes([
     0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x03,
 ]);
 
-// Permission bits
-const READ: i32 = 1;
-const WRITE: i32 = 2;
-const CONNECT: i32 = 4;
-const SPEAK: i32 = 8;
-const VIDEO: i32 = 16;
-const MANAGE: i32 = 32;
-const ADMIN: i32 = 64;
+use crate::models::permission::bits;
 
-const ALL_PERMS: i32 = READ | WRITE | CONNECT | SPEAK | VIDEO | MANAGE | ADMIN;
-const MEMBER_PERMS: i32 = READ | WRITE | CONNECT | SPEAK | VIDEO;
-const GUEST_PERMS: i32 = READ | CONNECT | SPEAK;
+const ALL_PERMS: i32 = bits::ALL;
+const MEMBER_PERMS: i32 = bits::MEMBER_CHANNEL;
 
 pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     tracing::info!("running dev seed...");
@@ -55,19 +47,7 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .await
         .ok(); // ignore if RLS not yet active
 
-    // Hub
-    sqlx::query(
-        "INSERT INTO hubs (id, name, slug, plan) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (id) DO NOTHING",
-    )
-    .bind(DEV_HUB_ID)
-    .bind("Dev Hub")
-    .bind("dev-hub")
-    .bind("pro")
-    .execute(pool)
-    .await?;
-
-    // Users (password: 123123 for all dev users)
+    // Users first (hub FK references creator_id -> users)
     let password_hash = bcrypt::hash("123123", bcrypt::DEFAULT_COST)?;
     let users = [
         (DEV_USER_ALICE, "alice", "Alice", "alice@matehub.dev"),
@@ -91,6 +71,19 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .await?;
     }
 
+    // Hub (after users, because creator_id FK)
+    sqlx::query(
+        "INSERT INTO hubs (id, name, slug, plan, creator_id) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO UPDATE SET creator_id = COALESCE(hubs.creator_id, $5)",
+    )
+    .bind(DEV_HUB_ID)
+    .bind("Dev Hub")
+    .bind("dev-hub")
+    .bind("pro")
+    .bind(DEV_USER_ALICE)
+    .execute(pool)
+    .await?;
+
     // Members (keep old table for backwards compat, role = group name)
     let roles = [
         (DEV_USER_ALICE, "admin"),
@@ -110,16 +103,17 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Groups ──────────────────────────────────────
+    // (id, name, color, position, is_default, hub_permissions)
     let groups = [
-        (DEV_GROUP_EVERYONE, "everyone", "#99AAB5", 0, true),
-        (DEV_GROUP_ADMIN, "admin", "#E74C3C", 1, false),
-        (DEV_GROUP_GUESTS, "guests", "#95A5A6", 2, false),
+        (DEV_GROUP_EVERYONE, "everyone", "#99AAB5", 0, true, 0i32),
+        (DEV_GROUP_ADMIN, "admin", "#E74C3C", 1, false, bits::ALL),
+        (DEV_GROUP_GUESTS, "guests", "#95A5A6", 2, false, 0i32),
     ];
-    for (id, name, color, position, is_default) in &groups {
+    for (id, name, color, position, is_default, hub_perms) in &groups {
         sqlx::query(
-            "INSERT INTO groups (id, hub_id, name, color, position, is_default)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO groups (id, hub_id, name, color, position, is_default, hub_permissions)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (id) DO UPDATE SET hub_permissions = $7",
         )
         .bind(id)
         .bind(DEV_HUB_ID)
@@ -127,6 +121,7 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         .bind(color)
         .bind(position)
         .bind(is_default)
+        .bind(hub_perms)
         .execute(pool)
         .await?;
     }
@@ -154,13 +149,16 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Channels ────────────────────────────────────
-    let channels: &[(&str, &str, i32)] = &[
-        ("general", "text", 0),
+    // "general" is created by ensure_default_channel (same as production)
+    super::ensure_default_channel(pool, DEV_HUB_ID).await?;
+
+    // Dev-only extra channels
+    let extra_channels: &[(&str, &str, i32)] = &[
         ("random", "text", 1),
         ("voice-test", "voice", 2),
         ("stage-test", "stage", 3),
     ];
-    for (name, ch_type, position) in channels {
+    for (name, ch_type, position) in extra_channels {
         sqlx::query(
             "INSERT INTO channels (hub_id, name, type, position)
              SELECT $1, $2, $3, $4
@@ -194,10 +192,10 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         // guests: read-only in text, connect+speak in voice, no access to stage
         match ch_name.as_str() {
             "general" | "random" => {
-                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, READ, 0).await?;
+                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, bits::READ, 0).await?;
             }
             "voice-test" => {
-                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, GUEST_PERMS, 0).await?;
+                upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, MEMBER_PERMS, 0).await?;
             }
             "stage-test" => {
                 // guests have no access to stage -- no row = deny

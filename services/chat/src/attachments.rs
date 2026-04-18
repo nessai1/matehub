@@ -38,11 +38,12 @@ pub fn routes() -> Router<AppState> {
 
 async fn upload_attachment(
     State(state): State<AppState>,
-    Path(channel_id): Path<i64>,
+    Path(channel_id_raw): Path<String>,
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<AttachmentResponse>, StatusCode> {
-    let hub_id = crate::api::hub_id_to_i64(&auth.0.hub_id);
+    let hub_id = crate::api::str_to_i64(&auth.0.hub_id);
+    let channel_id = crate::api::str_to_i64(&channel_id_raw);
 
     let field = multipart
         .next_field()

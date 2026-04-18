@@ -1,25 +1,9 @@
 "use client";
 
 import { use } from "react";
-import { Hash, Mic, Radio } from "lucide-react";
 import { VoiceChannelView } from "@/components/hub/voice-channel-view";
 import { TextChannelView } from "@/components/hub/text-channel-view";
-
-type ChannelType = "text" | "voice" | "stage";
-
-// Hard-coded channel data -- will come from API
-const channelData: Record<string, { name: string; type: ChannelType }> = {
-  "8001": { name: "general", type: "text" },
-  "8002": { name: "random", type: "text" },
-  "8003": { name: "voice-test", type: "voice" },
-  "8004": { name: "stage-test", type: "stage" },
-};
-
-const icons: Record<ChannelType, typeof Hash> = {
-  text: Hash,
-  voice: Mic,
-  stage: Radio,
-};
+import { useChannels } from "@/hooks/use-channels";
 
 export default function ChannelPage({
   params,
@@ -27,17 +11,23 @@ export default function ChannelPage({
   params: Promise<{ channelId: string }>;
 }) {
   const { channelId } = use(params);
-  const channel = channelData[channelId] ?? {
-    name: channelId,
-    type: "text" as ChannelType,
-  };
-  const Icon = icons[channel.type];
+  const { channels, loading } = useChannels();
 
-  const isVoice = channel.type === "voice" || channel.type === "stage";
+  const channel = channels.find((ch) => ch.id === channelId);
+  const name = channel?.name ?? channelId;
+  const type = channel?.type ?? "text";
 
-  if (isVoice) {
-    return <VoiceChannelView channelId={channelId} channelName={channel.name} />;
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center text-muted-foreground">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
   }
 
-  return <TextChannelView channelId={channelId} channelName={channel.name} />;
+  if (type === "voice" || type === "stage") {
+    return <VoiceChannelView channelId={channelId} channelName={name} />;
+  }
+
+  return <TextChannelView channelId={channelId} channelName={name} />;
 }

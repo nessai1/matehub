@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
-use crate::api::{AppState, hub_id_to_i64};
+use crate::api::{AppState, str_to_i64};
 use crate::auth;
 use crate::models::{GatewayCommand, GatewayEvent, Opcode, events};
 use crate::session::SessionHandle;
@@ -104,7 +104,7 @@ where
 
             tracing::info!(user = %claims.username, "gateway IDENTIFY");
 
-            let hub_id_num = hub_id_to_i64(&claims.hub_id);
+            let hub_id_num = str_to_i64(&claims.hub_id);
             let nats_subject = format!("hub.{hub_id_num}.channel.>");
             let (session_id, session) = state.sessions.create(claims, nats_subject);
 

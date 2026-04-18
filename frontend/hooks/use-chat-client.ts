@@ -11,6 +11,7 @@ import {
 
 const CHAT_API = process.env.NEXT_PUBLIC_CHAT_API_URL || "http://localhost:3003";
 
+
 // ── Sound playback ───────────────────────────────
 
 let audioCache: Record<string, HTMLAudioElement> = {};
@@ -34,8 +35,9 @@ export function useChatClient(channelId: string) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const channelIdNum = Number(channelId) || 0;
   const myUserId = session?.userId ?? "";
+  // i64 hash of channelId -- resolved from first history/message response
+  const channelHash = useRef<number | null>(null);
 
   // ── Lifecycle: create client, connect, cleanup ──
 
@@ -56,7 +58,7 @@ export function useChatClient(channelId: string) {
           break;
 
         case "message.new":
-          if (event.message.channel_id === channelIdNum) {
+          if (channelHash.current !== null && event.message.channel_id === channelHash.current) {
             setMessages((prev) => [...prev, event.message]);
             // Sound: incoming if from someone else, outgoing if mine
             if (event.message.author_id === myUserId) {
@@ -68,7 +70,7 @@ export function useChatClient(channelId: string) {
           break;
 
         case "message.updated":
-          if (event.data.channel_id === channelIdNum) {
+          if (channelHash.current !== null && event.data.channel_id === channelHash.current) {
             setMessages((prev) =>
               prev.map((m) =>
                 m.message_id === event.data.message_id
@@ -80,7 +82,7 @@ export function useChatClient(channelId: string) {
           break;
 
         case "message.deleted":
-          if (event.data.channel_id === channelIdNum) {
+          if (channelHash.current !== null && event.data.channel_id === channelHash.current) {
             setMessages((prev) =>
               prev.filter((m) => m.message_id !== event.data.message_id),
             );
@@ -89,7 +91,7 @@ export function useChatClient(channelId: string) {
 
         case "typing.start":
           if (
-            event.data.channel_id === channelIdNum &&
+            channelHash.current !== null && event.data.channel_id === channelHash.current &&
             event.data.user_id !== myUserId
           ) {
             const uid = event.data.user_id;
@@ -117,10 +119,14 @@ export function useChatClient(channelId: string) {
 
     // Load history
     client
-      .getHistory(channelIdNum, { limit: 50 })
+      .getHistory(channelId, { limit: 50 })
       .then((history) => {
         // History comes newest-first, reverse for chronological
         setMessages(history.reverse());
+        // Cache i64 hash from first message for WS event filtering
+        if (history.length > 0) {
+          channelHash.current = history[0].channel_id;
+        }
       })
       .catch((err) => {
         if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 401) {
@@ -134,13 +140,14 @@ export function useChatClient(channelId: string) {
       unsub();
       client.disconnect();
       clientRef.current = null;
+      channelHash.current = null;
       setMessages([]);
       setTypingUsers([]);
       // Clear typing timers
       for (const t of Object.values(typingTimers.current)) clearTimeout(t);
       typingTimers.current = {};
     };
-  }, [session?.token, session?.hubId, channelIdNum, myUserId]);
+  }, [session?.token, session?.hubId, channelId, myUserId]);
 
   // Update token on refresh
   useEffect(() => {
@@ -155,7 +162,11 @@ export function useChatClient(channelId: string) {
     async (content: string) => {
       if (!clientRef.current || !content.trim()) return;
       try {
-        await clientRef.current.sendMessage(channelIdNum, { content: content.trim() });
+        const msg = await clientRef.current.sendMessage(channelId, { content: content.trim() });
+        // Cache hash from sent message if not yet known
+        if (!channelHash.current && msg) {
+          channelHash.current = msg.channel_id;
+        }
       } catch (err: unknown) {
         if (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 401) {
           handleUnauthorized();
@@ -164,17 +175,17 @@ export function useChatClient(channelId: string) {
         throw err;
       }
     },
-    [channelIdNum, handleUnauthorized],
+    [channelId, handleUnauthorized],
   );
 
   const sendTyping = useCallback(() => {
-    clientRef.current?.sendTyping(channelIdNum);
-  }, [channelIdNum]);
+    clientRef.current?.sendTyping(channelId);
+  }, [channelId]);
 
   const loadMore = useCallback(async () => {
     if (!clientRef.current || messages.length === 0) return;
     const oldest = messages[0];
-    const older = await clientRef.current.getHistory(channelIdNum, {
+    const older = await clientRef.current.getHistory(channelId, {
       limit: 50,
       before: oldest.message_id,
     });
@@ -182,7 +193,7 @@ export function useChatClient(channelId: string) {
       setMessages((prev) => [...older.reverse(), ...prev]);
     }
     return older.length;
-  }, [channelIdNum, messages]);
+  }, [channelId, messages]);
 
   return {
     messages,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,9 +33,17 @@ import {
   UserMinusIcon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { usePermissions, P } from "@/hooks/use-permissions";
 import type { Member, MemberGroup } from "@/hooks/use-members";
 
 const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+
+interface AllGroup {
+  id: string;
+  name: string;
+  color: string | null;
+  position: number;
+}
 
 interface MemberCardProps {
   member: Member;
@@ -51,16 +59,32 @@ export function MemberCard({
   children,
 }: MemberCardProps) {
   const { session } = useAuth();
+  const { perms, has } = usePermissions();
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
   const [kicking, setKicking] = useState(false);
+  const [apiGroups, setApiGroups] = useState<AllGroup[]>([]);
 
-  // TODO: proper permission check from JWT groups
-  // TODO: proper permission check from JWT groups
-  const isAdmin = true;
+  const canManageRoles = has(P.MANAGE_ROLES);
+  const canManageMembers = has(P.MANAGE_MEMBERS);
   const isSelf = session?.userId === member.user_id;
 
+  // Fetch all groups from API when picker opens (includes groups with 0 members)
+  const fetchApiGroups = useCallback(async () => {
+    if (!session?.hubId || !session?.token) return;
+    const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    if (res.ok) setApiGroups(await res.json());
+  }, [session?.hubId, session?.token]);
+
+  useEffect(() => {
+    if (groupPickerOpen) fetchApiGroups();
+  }, [groupPickerOpen, fetchApiGroups]);
+
   const memberGroupIds = new Set(member.groups.map((g) => g.id));
+  // Use API groups for picker (has all groups), fallback to allGroups prop
+  const pickerGroups = apiGroups.length > 0 ? apiGroups : allGroups.map((g) => ({ ...g, position: 0 }));
 
   const toggleGroup = useCallback(
     async (groupId: string, add: boolean) => {
@@ -149,36 +173,43 @@ export function MemberCard({
 
             {/* Groups */}
             <div className="flex flex-wrap items-center gap-1.5">
-              {member.groups.map((g) => (
-                <Badge
-                  key={g.id}
-                  variant="outline"
-                  className="gap-1 text-[11px]"
-                  style={
-                    g.color
-                      ? {
-                          backgroundColor: `${g.color}15`,
-                          borderColor: `${g.color}30`,
-                          color: g.color,
-                        }
-                      : undefined
-                  }
-                >
-                  {g.name}
-                  {isAdmin && g.name !== "everyone" && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleGroup(g.id, false);
-                      }}
-                      className="ml-0.5 rounded-sm opacity-50 hover:opacity-100"
-                    >
-                      <XIcon className="h-2.5 w-2.5" />
-                    </button>
-                  )}
-                </Badge>
-              ))}
-              {isAdmin && (
+              {member.groups.map((g) => {
+                // Can't remove: everyone (is_default), admin on creator
+                const isProtected =
+                  g.name.toLowerCase() === "everyone" ||
+                  (g.name.toLowerCase() === "admin" && perms?.is_creator === false);
+                const canRemove = canManageRoles && !isProtected;
+                return (
+                  <Badge
+                    key={g.id}
+                    variant="outline"
+                    className="gap-1 text-[11px]"
+                    style={
+                      g.color
+                        ? {
+                            backgroundColor: `${g.color}15`,
+                            borderColor: `${g.color}30`,
+                            color: g.color,
+                          }
+                        : undefined
+                    }
+                  >
+                    {g.name}
+                    {canRemove && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGroup(g.id, false);
+                        }}
+                        className="ml-0.5 rounded-sm opacity-50 hover:opacity-100"
+                      >
+                        <XIcon className="h-2.5 w-2.5" />
+                      </button>
+                    )}
+                  </Badge>
+                );
+              })}
+              {canManageRoles && (
                 <Popover open={groupPickerOpen} onOpenChange={setGroupPickerOpen}>
                   <PopoverTrigger asChild>
                     <button className="flex h-5 w-5 items-center justify-center rounded border border-border text-muted-foreground hover:text-foreground">
@@ -191,7 +222,7 @@ export function MemberCard({
                       <CommandList>
                         <CommandEmpty>No groups found</CommandEmpty>
                         <CommandGroup>
-                          {allGroups.map((g) => {
+                          {pickerGroups.map((g) => {
                             const assigned = memberGroupIds.has(g.id);
                             return (
                               <CommandItem
@@ -239,7 +270,7 @@ export function MemberCard({
                   Message
                 </Button>
 
-                {isAdmin && (
+                {canManageMembers && (
                   <Button
                     size="sm"
                     variant="outline"

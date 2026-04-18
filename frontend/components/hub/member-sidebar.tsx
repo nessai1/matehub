@@ -128,7 +128,7 @@ function MemberItem({
       allGroups={allGroups}
       onGroupsChanged={onGroupsChanged}
     >
-      <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50">
+      <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted">
         <div className="relative">
           <Avatar className="h-7 w-7">
             {member.avatar_url && <AvatarImage src={member.avatar_url} />}

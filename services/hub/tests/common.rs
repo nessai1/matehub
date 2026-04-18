@@ -5,12 +5,26 @@ use tokio::net::TcpListener;
 /// Spawn hub service on random port with real DB.
 /// Returns base URL (e.g., "http://127.0.0.1:12345").
 /// Requires PostgreSQL + Redis running locally.
+///
+/// Uses `matehub_test` database to avoid polluting dev data.
+/// Truncates all tables + re-runs migrations + seed for clean state.
 pub async fn spawn_app() -> String {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub".into());
+    let database_url = std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub_test".into());
 
     let pool = matehub_hub::db::connect(&database_url).await.unwrap();
+
+    // Run migrations (idempotent -- skips already applied)
     matehub_hub::db::migrate(&pool).await.unwrap();
+
+    // Clean data tables in FK-safe order, then re-seed
+    sqlx::raw_sql(
+        "TRUNCATE temp_users, channel_permissions, member_groups, groups, channels, hub_members, refresh_tokens, hubs, users CASCADE;"
+    )
+    .execute(&pool)
+    .await
+    .ok();
+
     matehub_hub::db::seed::run_dev_seed(&pool).await.unwrap();
 
     let redis = matehub_hub::presence::connect_redis().await;
@@ -44,7 +58,7 @@ pub async fn login(base: &str, username: &str) -> String {
         .json()
         .await
         .unwrap();
-    resp["token"].as_str().unwrap().to_string()
+    resp["access_token"].as_str().unwrap().to_string()
 }
 
 #[allow(dead_code)]

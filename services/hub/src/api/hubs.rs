@@ -8,12 +8,11 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::{Channel, Hub};
+use crate::models::Hub;
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
         .route("/hubs/{hub_id}", get(get_hub))
-        .route("/hubs/{hub_id}/channels", get(get_channels))
         .route("/hubs/{hub_id}/members", get(get_members))
         .with_state(pool)
 }
@@ -29,19 +28,6 @@ async fn get_hub(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(hub))
-}
-
-async fn get_channels(
-    State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
-) -> Result<Json<Vec<Channel>>, StatusCode> {
-    let channels =
-        sqlx::query_as::<_, Channel>("SELECT * FROM channels WHERE hub_id = $1 ORDER BY position")
-            .bind(hub_id)
-            .fetch_all(&pool)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok(Json(channels))
 }
 
 #[derive(Serialize, sqlx::FromRow)]

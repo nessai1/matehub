@@ -3,6 +3,7 @@ pub mod seed;
 
 use anyhow::Result;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 pub async fn connect(database_url: &str) -> Result<PgPool> {
     let pool = PgPool::connect(database_url).await?;
@@ -31,6 +32,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "006_refresh_tokens",
         include_str!("../../migrations/006_refresh_tokens.sql"),
+    ),
+    (
+        "007_channel_icon",
+        include_str!("../../migrations/007_channel_icon.sql"),
+    ),
+    (
+        "008_hub_permissions",
+        include_str!("../../migrations/008_hub_permissions.sql"),
     ),
 ];
 
@@ -67,5 +76,21 @@ pub async fn migrate(pool: &PgPool) -> Result<()> {
     }
 
     tracing::info!("migrations up to date");
+    Ok(())
+}
+
+/// Ensure a "general" text channel exists for a hub.
+/// Called on hub creation (API + dev seed). Idempotent.
+pub async fn ensure_default_channel(pool: &PgPool, hub_id: Uuid) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO channels (hub_id, name, type, position)
+         SELECT $1, 'general', 'text', 0
+         WHERE NOT EXISTS (
+             SELECT 1 FROM channels WHERE hub_id = $1 AND name = 'general' AND type = 'text'
+         )",
+    )
+    .bind(hub_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }

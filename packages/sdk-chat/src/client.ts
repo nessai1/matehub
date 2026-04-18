@@ -379,7 +379,7 @@ export class ChatClient {
   }
 
   /** Send a message to a channel. */
-  async sendMessage(channelId: number, opts: SendMessageOptions): Promise<Message> {
+  async sendMessage(channelId: string | number, opts: SendMessageOptions): Promise<Message> {
     const res = await fetch(`${this.apiBase}/v1/channels/${channelId}/messages`, {
       method: "POST",
       headers: this.headers,
@@ -395,7 +395,7 @@ export class ChatClient {
   }
 
   /** Edit a message. */
-  async editMessage(channelId: number, messageId: number, content: string): Promise<void> {
+  async editMessage(channelId: string | number, messageId: number, content: string): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -408,7 +408,7 @@ export class ChatClient {
   }
 
   /** Delete a message. */
-  async deleteMessage(channelId: number, messageId: number): Promise<void> {
+  async deleteMessage(channelId: string | number, messageId: number): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -420,7 +420,7 @@ export class ChatClient {
   }
 
   /** Fetch message history (newest first). */
-  async getHistory(channelId: number, opts?: HistoryOptions): Promise<Message[]> {
+  async getHistory(channelId: string | number, opts?: HistoryOptions): Promise<Message[]> {
     const params = new URLSearchParams();
     if (opts?.limit) params.set("limit", String(opts.limit));
     if (opts?.before) params.set("before", String(opts.before));
@@ -435,7 +435,7 @@ export class ChatClient {
   }
 
   /** Send typing indicator. */
-  async sendTyping(channelId: number): Promise<void> {
+  async sendTyping(channelId: string | number): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/typing`, {
       method: "POST",
       headers: this.headers,
@@ -443,7 +443,7 @@ export class ChatClient {
   }
 
   /** Mark a channel as read up to a message. */
-  async markRead(channelId: number, messageId: number): Promise<void> {
+  async markRead(channelId: string | number, messageId: number): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/ack`, {
       method: "POST",
       headers: this.headers,
