@@ -4,9 +4,45 @@ import type {
   Participant,
   VideoDiagnostics,
   TrackInfo,
+  TrackSource,
+  TrackKind,
+  ScreenShareProfile,
 } from "./types";
 
 type EventHandler = (event: VideoClientEvent) => void;
+
+interface ScreenProfileConfig {
+  width: number;
+  height: number;
+  fps: number;
+  maxBitrate: number;
+  contentHint: "motion" | "detail";
+}
+
+// Profile presets — see docs/video/screen-share.md §6.
+const PROFILE_CONFIG: Record<ScreenShareProfile, ScreenProfileConfig> = {
+  gaming: {
+    width: 1920,
+    height: 1080,
+    fps: 60,
+    maxBitrate: 6_000_000,
+    contentHint: "motion",
+  },
+  standard: {
+    width: 1280,
+    height: 720,
+    fps: 24,
+    maxBitrate: 2_000_000,
+    contentHint: "motion",
+  },
+  detail: {
+    width: 2560,
+    height: 1440,
+    fps: 5,
+    maxBitrate: 1_000_000,
+    contentHint: "detail",
+  },
+};
 
 /**
  * MateHub Video SDK client.
@@ -34,6 +70,18 @@ export class VideoClient {
   private joined = false;
   private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private videoSender: RTCRtpSender | null = null;
+  // Screen share state. Tracks are kept as object refs even after renegotiation
+  // so reconnect flow (see screen-share doc §7.4) can silently restore them.
+  private screenVideoTrack: MediaStreamTrack | null = null;
+  private screenAudioTrack: MediaStreamTrack | null = null;
+  private screenVideoSender: RTCRtpSender | null = null;
+  private screenAudioSender: RTCRtpSender | null = null;
+  /**
+   * Stream_id → (source, kind) mapping rebuilt on every Offer's `tracks[]`.
+   * Lets ontrack classify incoming tracks without parsing SDP. Separate from
+   * this.participants since multiple streams alias one participant.
+   */
+  private streamMeta = new Map<string, { source: TrackSource; kind: TrackKind }>();
   /** Sequential processing queue -- prevents concurrent setRemoteDescription calls */
   private msgQueue: Promise<void> = Promise.resolve();
 
@@ -216,12 +264,18 @@ export class VideoClient {
         return;
       }
 
-      if (e.track.kind === "audio") {
+      // Resolve source+kind from the streamMeta table we built off the
+      // last `offer.tracks[]` payload. Without meta we can still render
+      // the track but we don't know whether it's camera or screen.
+      const meta = this.streamMeta.get(streamId);
+      const source: TrackSource = meta?.source ?? "camera";
+      const kind: TrackKind = (meta?.kind ?? e.track.kind) as TrackKind;
+
+      if (kind === "audio" && source === "camera") {
         participant.audioTrack = e.track;
         this.setupAudioLevelDetection(participant.participantId, e.track);
-      } else if (e.track.kind === "video") {
+      } else if (kind === "video" && source === "camera") {
         participant.videoTrack = e.track;
-
         // Browser mute/unmute events are unreliable for camera state
         // (RTCP triggers onunmute even with replaceTrack(null)).
         // We use explicit signaling instead -- see "participant_muted" handler.
@@ -235,6 +289,21 @@ export class VideoClient {
             participantId: participant!.participantId,
           });
         };
+      } else if (kind === "video" && source === "screen") {
+        participant.screenVideoTrack = e.track;
+        this.emit({
+          type: "screen_share_started",
+          participantId: participant.participantId,
+        });
+        e.track.onended = () => {
+          participant.screenVideoTrack = null;
+          this.emit({
+            type: "screen_share_stopped",
+            participantId: participant!.participantId,
+          });
+        };
+      } else if (kind === "audio" && source === "screen") {
+        participant.screenAudioTrack = e.track;
       }
 
       this.emit({
@@ -242,6 +311,8 @@ export class VideoClient {
         participantId: participant.participantId,
         track: e.track,
         stream,
+        source,
+        kind,
       });
     };
 
@@ -332,12 +403,16 @@ export class VideoClient {
       }
 
       case "offer": {
-        // Register stream_id -> participant mapping from SFU
-        const tracks = msg.tracks as Array<{
-          stream_id: string;
-          participant_id: string;
-          user_id: string;
-        }> | undefined;
+        // Register stream_id -> participant + source/kind mapping from SFU
+        const tracks = msg.tracks as
+          | Array<{
+              stream_id: string;
+              participant_id: string;
+              user_id: string;
+              source?: string;
+              kind?: string;
+            }>
+          | undefined;
 
         if (tracks) {
           for (const t of tracks) {
@@ -350,6 +425,13 @@ export class VideoClient {
                 // Also index by stream_id for ontrack lookup
                 this.participants.set(t.stream_id, existing);
               }
+            }
+            // Remember source+kind so ontrack can route screen vs camera.
+            if (t.source && t.kind) {
+              this.streamMeta.set(t.stream_id, {
+                source: t.source as TrackSource,
+                kind: t.kind as TrackKind,
+              });
             }
           }
         }
@@ -383,6 +465,8 @@ export class VideoClient {
           userId: msg.user_id as string,
           audioTrack: null,
           videoTrack: null,
+          screenVideoTrack: null,
+          screenAudioTrack: null,
           isSpeaking: false,
           isMicMuted: true,
           stream: new MediaStream(),
@@ -540,29 +624,172 @@ export class VideoClient {
     return this.camEnabled;
   }
 
-  /** Start screen sharing */
-  async startScreenShare() {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    });
-    const track = stream.getVideoTracks()[0];
-    if (track && this.pc) {
-      this.pc.addTrack(track, stream);
-      await this.renegotiate();
+  /**
+   * Start sharing screen with the given quality profile.
+   *
+   * Flow (matches docs/video/screen-share.md §5):
+   * 1. `getDisplayMedia` — browser prompts user to pick a source.
+   * 2. `addTransceiver` with 2-layer simulcast sendEncodings.
+   * 3. `setParameters` tunes maxBitrate/framerate to the profile.
+   * 4. `contentHint` tells the encoder "motion" vs "detail".
+   * 5. Send `publish_track` so the SFU tags the next MediaAdded as screen.
+   * 6. Send audio track the same way if the OS let us capture it.
+   * 7. Create+send client-initiated Offer; SFU answers via `Answer` handler.
+   */
+  async publishScreen(profile: ScreenShareProfile = "gaming") {
+    if (!this.pc) {
+      throw new Error("publishScreen: not connected");
+    }
+    if (this.screenVideoTrack) {
+      this.log("publishScreen: already sharing, ignoring");
+      return;
+    }
 
-      // Auto-stop when user clicks "Stop sharing" in browser UI
-      track.onended = () => {
-        this.stopScreenShare();
+    const profileConfig = PROFILE_CONFIG[profile];
+
+    let displayStream: MediaStream;
+    try {
+      displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: { ideal: profileConfig.fps, max: profileConfig.fps },
+          width: { ideal: profileConfig.width, max: profileConfig.width },
+          height: { ideal: profileConfig.height, max: profileConfig.height },
+        },
+        // System/tab audio — null on macOS full-screen, that's fine.
+        audio: true,
+      });
+    } catch (e) {
+      // User cancelled the picker or permission denied.
+      this.debug("warn", "getDisplayMedia failed", { error: String(e) });
+      throw e;
+    }
+
+    const videoTrack = displayStream.getVideoTracks()[0];
+    const audioTrack = displayStream.getAudioTracks()[0] ?? null;
+    if (!videoTrack) {
+      throw new Error("publishScreen: no video track from getDisplayMedia");
+    }
+
+    videoTrack.contentHint = profileConfig.contentHint;
+    this.screenVideoTrack = videoTrack;
+    this.screenAudioTrack = audioTrack;
+
+    // Tell the SFU these tracks are `source: screen` BEFORE the SDP offer.
+    // WS preserves order within one socket — the SFU queues the hint and
+    // pops it on MediaAdded.
+    this.send({
+      type: "publish_track",
+      source: "screen",
+      kind: "video",
+      track_id: videoTrack.id,
+    });
+    if (audioTrack) {
+      this.send({
+        type: "publish_track",
+        source: "screen",
+        kind: "audio",
+        track_id: audioTrack.id,
+      });
+    }
+
+    // Add the video track with 2-layer simulcast.
+    const videoTransceiver = this.pc.addTransceiver(videoTrack, {
+      direction: "sendonly",
+      streams: [displayStream],
+      sendEncodings: [
+        {
+          rid: "h",
+          maxBitrate: profileConfig.maxBitrate,
+          maxFramerate: profileConfig.fps,
+        },
+        {
+          rid: "l",
+          maxBitrate: 400_000,
+          maxFramerate: 15,
+          scaleResolutionDownBy: Math.max(1, profileConfig.width / 720),
+        },
+      ],
+    });
+    this.screenVideoSender = videoTransceiver.sender;
+
+    if (audioTrack) {
+      const audioTransceiver = this.pc.addTransceiver(audioTrack, {
+        direction: "sendonly",
+        streams: [displayStream],
+      });
+      this.screenAudioSender = audioTransceiver.sender;
+    }
+
+    // Auto-unpublish when the user hits "Stop sharing" in Chrome's bar,
+    // unplugs the monitor, or revokes permission.
+    videoTrack.onended = () => {
+      this.log("screen video track ended, unpublishing");
+      void this.unpublishScreen();
+    };
+    if (audioTrack) {
+      audioTrack.onended = () => {
+        // Audio-only end (rare) — leave video running, just null out audio.
+        this.log("screen audio track ended");
+        this.screenAudioTrack = null;
       };
     }
-    return stream;
+
+    // Client-initiated renegotiation.
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    this.send({ type: "offer", sdp_offer: offer.sdp });
+
+    this.debug("info", "publishScreen completed", {
+      profile,
+      hasAudio: !!audioTrack,
+    });
   }
 
-  /** Stop screen sharing */
-  stopScreenShare() {
-    // Remove screen share tracks
-    // This would need renegotiation in a full implementation
+  /** Stop sharing: remove senders, stop tracks, renegotiate. */
+  async unpublishScreen() {
+    if (!this.pc || !this.screenVideoTrack) return;
+
+    if (this.screenVideoSender) {
+      try {
+        this.pc.removeTrack(this.screenVideoSender);
+      } catch (e) {
+        this.debug("warn", "removeTrack(screenVideo) failed", { error: String(e) });
+      }
+      this.screenVideoSender = null;
+    }
+    if (this.screenAudioSender) {
+      try {
+        this.pc.removeTrack(this.screenAudioSender);
+      } catch (e) {
+        this.debug("warn", "removeTrack(screenAudio) failed", { error: String(e) });
+      }
+      this.screenAudioSender = null;
+    }
+
+    this.screenVideoTrack.stop();
+    this.screenAudioTrack?.stop();
+    this.screenVideoTrack = null;
+    this.screenAudioTrack = null;
+
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    this.send({ type: "offer", sdp_offer: offer.sdp });
+
+    this.debug("info", "unpublishScreen completed");
+  }
+
+  get isScreenSharing() {
+    return this.screenVideoTrack !== null;
+  }
+
+  /** Local screen-video track for self-preview (null when not sharing). */
+  getScreenVideoTrack() {
+    return this.screenVideoTrack;
+  }
+
+  /** Local screen-audio track for self-preview. Usually null on macOS. */
+  getScreenAudioTrack() {
+    return this.screenAudioTrack;
   }
 
   private async acquireLocalStream(constraints: MediaStreamConstraints): Promise<MediaStream> {
@@ -792,6 +1019,13 @@ export class VideoClient {
     this.pc?.close();
     this.pc = null;
     this.videoSender = null;
+    this.screenVideoTrack?.stop();
+    this.screenAudioTrack?.stop();
+    this.screenVideoTrack = null;
+    this.screenAudioTrack = null;
+    this.screenVideoSender = null;
+    this.screenAudioSender = null;
+    this.streamMeta.clear();
     this.msgQueue = Promise.resolve();
 
     this.participants.clear();

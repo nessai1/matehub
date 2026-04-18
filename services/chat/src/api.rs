@@ -113,6 +113,31 @@ async fn send_message(
     // Fan out
     state.fanout.publish_message(&msg).await;
 
+    // Enqueue transcode requests for any attachments needing conversion
+    for att in &msg.attachments {
+        if att.status == crate::attachment::AttachmentStatus::Transcoding {
+            // Derive S3 key from URL
+            let source_key = match build_s3_key(&att.url) {
+                Some(k) => k,
+                None => {
+                    tracing::warn!(id = %att.id, url = %att.url, "cannot derive s3 key, skip transcode");
+                    continue;
+                }
+            };
+            let req = crate::transcode::make_request(
+                att,
+                source_key,
+                msg.hub_id,
+                msg.channel_id,
+                msg.message_id,
+                msg.bucket,
+            );
+            if let Err(e) = crate::transcode::publish_request(&state.fanout.nats, &req).await {
+                tracing::error!(id = %att.id, "failed to enqueue transcode: {e}");
+            }
+        }
+    }
+
     tracing::debug!(%hub_id, %channel_id, msg_id = msg.message_id, author = %auth.0.username, "message sent");
 
     Ok((StatusCode::CREATED, Json(msg)))
@@ -326,6 +351,18 @@ async fn sync(
 }
 
 /// Collapse 3+ consecutive newlines into 2. Prevents chat spam with empty lines.
+/// Extract S3 key from a URL like `{endpoint}/{bucket}/{key}`.
+/// Returns the key (path after bucket) or None if URL shape is unexpected.
+fn build_s3_key(url: &str) -> Option<String> {
+    // Strip protocol
+    let without_proto = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    // Skip host+bucket by taking everything after the 2nd slash
+    let mut parts = without_proto.splitn(3, '/');
+    parts.next()?; // host
+    parts.next()?; // bucket
+    parts.next().map(|s| s.to_string())
+}
+
 fn sanitize_content(content: &str) -> String {
     let mut result = String::with_capacity(content.len());
     let mut consecutive_newlines = 0u32;

@@ -7,6 +7,7 @@ import {
   type ChatClientEvent,
   type ConnectionState,
   type Message,
+  type Attachment,
 } from "@matehub/sdk-chat";
 
 const CHAT_API = process.env.NEXT_PUBLIC_CHAT_API_URL || "http://localhost:3003";
@@ -99,6 +100,18 @@ export function useChatClient(channelId: string) {
           }
           break;
 
+        case "attachment.updated":
+          if (channelHash.current !== null && event.data.channel_id === channelHash.current) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.message_id === event.data.message_id
+                  ? { ...m, attachments: event.data.attachments }
+                  : m,
+              ),
+            );
+          }
+          break;
+
         case "typing.start":
           if (
             channelHash.current !== null && event.data.channel_id === channelHash.current &&
@@ -172,11 +185,16 @@ export function useChatClient(channelId: string) {
   // ── Actions ────────────────────────────────────
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!clientRef.current || !content.trim()) return;
+    async (content: string, attachments?: Attachment[]) => {
+      if (!clientRef.current) return;
+      const hasContent = content.trim().length > 0;
+      const hasAttachments = attachments && attachments.length > 0;
+      if (!hasContent && !hasAttachments) return;
       try {
-        const msg = await clientRef.current.sendMessage(channelId, { content: content.trim() });
-        // Cache hash from sent message if not yet known
+        const msg = await clientRef.current.sendMessage(channelId, {
+          content: content.trim(),
+          attachments,
+        });
         if (!channelHash.current && msg) {
           channelHash.current = msg.channel_id;
         }
@@ -209,6 +227,7 @@ export function useChatClient(channelId: string) {
   }, [channelId, messages]);
 
   return {
+    client: clientRef.current,
     messages,
     connectionState,
     typingUsers,

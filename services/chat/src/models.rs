@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::attachment::Attachment;
+
 /// Message as returned by API / sent via WebSocket
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -13,7 +15,8 @@ pub struct Message {
     pub mentions: Vec<String>,
     pub mention_groups: Vec<String>,
     pub mention_everyone: bool,
-    pub attachments: Vec<String>,
+    /// Structured media attachments (parsed from stored JSON).
+    pub attachments: Vec<Attachment>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
     pub client_id: Option<String>,
@@ -26,7 +29,9 @@ pub struct SendMessageRequest {
     pub content: String,
     pub client_id: Option<String>, // UUIDv7 from client for idempotency
     pub thread_root_id: Option<i64>,
-    pub attachments: Option<Vec<String>>,
+    /// Attachment IDs or full Attachment objects (both accepted).
+    #[serde(default)]
+    pub attachments: Option<Vec<Attachment>>,
 }
 
 /// WS gateway opcodes (Discord-inspired)
@@ -66,6 +71,7 @@ pub mod events {
     pub const MESSAGE_CREATE: &str = "MESSAGE_CREATE";
     pub const MESSAGE_UPDATE: &str = "MESSAGE_UPDATE";
     pub const MESSAGE_DELETE: &str = "MESSAGE_DELETE";
+    pub const ATTACHMENT_UPDATED: &str = "ATTACHMENT_UPDATED";
     pub const TYPING_START: &str = "TYPING_START";
     pub const PRESENCE_UPDATE: &str = "PRESENCE_UPDATE";
 }

@@ -38,7 +38,10 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemberCard } from "@/components/hub/member-card";
 import { useChatClient } from "@/hooks/use-chat-client";
+import { useAttachmentUpload } from "@/hooks/use-attachment-upload";
 import { useMembers, type Member, type MemberGroup } from "@/hooks/use-members";
+import { MessageAttachments } from "@/components/hub/media/message-attachments";
+import { UploadPreview } from "@/components/hub/media/upload-preview";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
@@ -122,10 +125,13 @@ function ChatMessage({
           {formatTime(message.message_id)}
         </span>
         <div className="min-w-0">
-          <div
-            className="text-sm leading-relaxed break-words [&_strong]:font-bold [&_em]:italic [&_a]:text-primary [&_a]:underline"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
-          />
+          {message.content && (
+            <div
+              className="text-sm leading-relaxed break-words [&_strong]:font-bold [&_em]:italic [&_a]:text-primary [&_a]:underline"
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+            />
+          )}
+          <MessageAttachments attachments={message.attachments} />
         </div>
       </div>
     );
@@ -144,7 +150,13 @@ function ChatMessage({
             <span className="text-[10px] text-muted-foreground">(edited)</span>
           )}
         </div>
-        <p className="text-sm leading-relaxed break-words">{message.content}</p>
+        {message.content && (
+          <div
+            className="text-sm leading-relaxed break-words [&_strong]:font-bold [&_em]:italic [&_a]:text-primary [&_a]:underline"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.content) }}
+          />
+        )}
+        <MessageAttachments attachments={message.attachments} />
       </div>
     </div>
   );
@@ -191,9 +203,12 @@ function TypingIndicator({
 
 export function TextChannelView({ channelId, channelName }: TextChannelViewProps) {
   const { session } = useAuth();
-  const { messages, connectionState, typingUsers, sendMessage, sendTyping, loadMore } =
+  const { client, messages, connectionState, typingUsers, sendMessage, sendTyping, loadMore } =
     useChatClient(channelId);
+  const { uploads, addFiles, clearAll, readyAttachments, hasInFlight } =
+    useAttachmentUpload(client, channelId);
   const { members, loading: membersLoading, refetch } = useMembers();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [externalLink, setExternalLink] = useState<string | null>(null);
@@ -248,19 +263,23 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
   // ── Send ──
 
   const handleSend = useCallback(async () => {
-    if (!input.trim() || sending) return;
     const text = input;
+    const hasText = text.trim().length > 0;
+    const hasAttachments = readyAttachments.length > 0;
+    if ((!hasText && !hasAttachments) || sending || hasInFlight) return;
+
     setInput("");
     setSending(true);
     try {
-      await sendMessage(text);
+      await sendMessage(text, hasAttachments ? readyAttachments : undefined);
+      clearAll();
     } catch (err) {
       console.error("send failed:", err);
-      setInput(text); // restore on failure
+      if (hasText) setInput(text); // restore text on failure
     } finally {
       setSending(false);
     }
-  }, [input, sending, sendMessage]);
+  }, [input, sending, sendMessage, readyAttachments, hasInFlight, clearAll]);
 
   // Auto-grow textarea + container as content grows
   const autoGrow = useCallback((el: HTMLTextAreaElement) => {
@@ -505,6 +524,9 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
             ))}
           </div>
 
+          {/* Upload previews (above textarea) */}
+          <UploadPreview uploads={uploads} />
+
           {/* Middle: textarea (auto-grows with content, also grows on drag) */}
           <div className="flex-1 overflow-auto px-3 py-1">
             <textarea
@@ -529,16 +551,32 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
           {/* Bottom: action buttons + send */}
           <div className="flex items-center justify-between border-t border-border/30 px-2 py-1">
             <div className="flex items-center gap-0.5">
-              {[PlusIcon, SmileIcon, AtSignIcon, PaperclipIcon, MicIcon].map(
-                (Icon, i) => (
-                  <button
-                    key={i}
-                    className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-                  >
-                    <Icon className="h-4 w-4" />
-                  </button>
-                ),
-              )}
+              <button
+                className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                title="Attach file"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <PaperclipIcon className="h-4 w-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                accept="image/*,video/*,audio/*,.pdf,.txt,.zip"
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = ""; // allow re-selecting same file
+                }}
+              />
+              {[PlusIcon, SmileIcon, AtSignIcon, MicIcon].map((Icon, i) => (
+                <button
+                  key={i}
+                  className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              ))}
             </div>
             <div className="flex items-center gap-0.5">
               <Popover>
@@ -582,7 +620,7 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
               <Button
                 size="icon"
                 onClick={handleSend}
-                disabled={!input.trim() || sending || !isConnected}
+                disabled={(!input.trim() && readyAttachments.length === 0) || sending || !isConnected || hasInFlight}
                 className="h-7 w-7 shrink-0 rounded-lg"
               >
                 {sending ? (

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MicOffIcon } from "lucide-react";
+import { MicOffIcon, MonitorIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Participant } from "../../../packages/sdk-video/src";
 
@@ -14,15 +14,39 @@ export interface MemberInfo {
 interface CallGridProps {
   participants: Participant[];
   localStream: MediaStream | null;
+  /** Own screen-share preview. SFU doesn't loop the publisher's stream back,
+   *  so the self-tile reads the local track directly. */
+  localScreenVideoTrack: MediaStreamTrack | null;
   currentUserId: string;
   isCamEnabled: boolean;
   isMicEnabled: boolean;
   memberInfo: Record<string, MemberInfo>;
 }
 
+interface CameraTile {
+  id: string;
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  audioTrack: MediaStreamTrack | null;
+  videoTrack: MediaStreamTrack | null;
+  isMicMuted: boolean;
+  isSpeaking: boolean;
+  isLocal: boolean;
+}
+
+interface ScreenTile {
+  id: string;
+  ownerUserId: string;
+  ownerDisplayName: string;
+  videoTrack: MediaStreamTrack;
+  audioTrack: MediaStreamTrack | null;
+}
+
 export function CallGrid({
   participants,
   localStream,
+  localScreenVideoTrack,
   currentUserId,
   isCamEnabled,
   isMicEnabled,
@@ -33,19 +57,19 @@ export function CallGrid({
     ? localStream?.getVideoTracks()[0] ?? null
     : null;
 
-  const tiles = [
+  const cameraTiles: CameraTile[] = [
     {
       id: "local",
       userId: currentUserId,
       displayName: localInfo?.displayName ?? currentUserId,
       avatarUrl: localInfo?.avatarUrl ?? null,
-      audioTrack: null, // never play back our own mic — feedback loop
+      audioTrack: null,
       videoTrack: localVideoTrack,
       isMicMuted: !isMicEnabled,
       isSpeaking: false,
       isLocal: true,
     },
-    ...participants.map((p) => {
+    ...participants.map<CameraTile>((p) => {
       const info = memberInfo[p.userId];
       return {
         id: p.participantId,
@@ -61,32 +85,109 @@ export function CallGrid({
     }),
   ];
 
+  const screenTiles: ScreenTile[] = [];
+  // Self-preview first (SFU doesn't loop back to publisher).
+  if (localScreenVideoTrack) {
+    screenTiles.push({
+      id: "local-screen",
+      ownerUserId: currentUserId,
+      ownerDisplayName: `${localInfo?.displayName ?? currentUserId} (You)`,
+      videoTrack: localScreenVideoTrack,
+      audioTrack: null, // never play our own tab audio, it'd echo
+    });
+  }
+  // Remote screen shares from the forwarded streams.
+  for (const p of participants) {
+    if (p.screenVideoTrack !== null) {
+      screenTiles.push({
+        id: `${p.participantId}-screen`,
+        ownerUserId: p.userId,
+        ownerDisplayName: memberInfo[p.userId]?.displayName ?? p.userId,
+        videoTrack: p.screenVideoTrack,
+        audioTrack: p.screenAudioTrack,
+      });
+    }
+  }
+
+  // Layout switch: if anyone shares a screen, go pinned (screen on top,
+  // cameras in a bottom strip). Otherwise the classic grid.
+  if (screenTiles.length > 0) {
+    return (
+      <div className="flex h-full flex-col gap-2 p-3">
+        <div className="flex flex-1 flex-col gap-2">
+          {screenTiles.map((s) => (
+            <ScreenShareTile key={s.id} tile={s} />
+          ))}
+        </div>
+        <div className="grid shrink-0 grid-flow-col auto-cols-fr gap-2">
+          {cameraTiles.map((tile) => (
+            <div
+              key={tile.id}
+              className="aspect-video max-h-32 overflow-hidden rounded-lg"
+            >
+              <ParticipantTile {...tile} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   const gridCols =
-    tiles.length <= 1
+    cameraTiles.length <= 1
       ? "grid-cols-1"
-      : tiles.length <= 4
+      : cameraTiles.length <= 4
         ? "grid-cols-2"
         : "grid-cols-3";
 
   return (
     <div className={cn("grid gap-2 p-3", gridCols)}>
-      {tiles.map((tile) => (
+      {cameraTiles.map((tile) => (
         <ParticipantTile key={tile.id} {...tile} />
       ))}
     </div>
   );
 }
 
-interface ParticipantTileProps {
-  id: string;
-  userId: string;
-  displayName: string;
-  avatarUrl: string | null;
-  audioTrack: MediaStreamTrack | null;
-  videoTrack: MediaStreamTrack | null;
-  isMicMuted: boolean;
-  isSpeaking: boolean;
-  isLocal: boolean;
+function ScreenShareTile({ tile }: { tile: ScreenTile }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.srcObject = new MediaStream([tile.videoTrack]);
+    el.play().catch(() => {});
+  }, [tile.videoTrack]);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (tile.audioTrack) {
+      el.srcObject = new MediaStream([tile.audioTrack]);
+      el.play().catch(() => {});
+    } else {
+      el.srcObject = null;
+    }
+  }, [tile.audioTrack]);
+
+  return (
+    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl bg-black">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="h-full w-full object-contain"
+      />
+      {tile.audioTrack && <audio ref={audioRef} autoPlay playsInline hidden />}
+      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5">
+        <MonitorIcon className="h-3 w-3 text-emerald-400" />
+        <span className="text-xs font-medium text-white">
+          {tile.ownerDisplayName}&apos;s screen
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function ParticipantTile({
@@ -97,7 +198,7 @@ function ParticipantTile({
   isMicMuted,
   isSpeaking,
   isLocal,
-}: ParticipantTileProps) {
+}: CameraTile) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -173,9 +274,7 @@ function ParticipantTile({
 
       {/* Name badge + mic muted indicator */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5">
-        {isMicMuted && (
-          <MicOffIcon className="h-3 w-3 text-red-400" />
-        )}
+        {isMicMuted && <MicOffIcon className="h-3 w-3 text-red-400" />}
         <span className="text-xs font-medium text-white">
           {isLocal ? `${displayName} (You)` : displayName}
         </span>

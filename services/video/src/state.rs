@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -19,8 +20,10 @@ pub type ParticipantId = Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub inner: Arc<Mutex<AppStateInner>>,
-    /// Channel to send commands to the SFU engine
-    pub sfu_cmd_tx: mpsc::UnboundedSender<SfuCommand>,
+    /// Channel to send commands to the SFU engine (on its dedicated thread).
+    /// crossbeam Sender is Clone + Send + Sync — safe to share across WS tasks
+    /// and to call `.send()` without awaiting.
+    pub sfu_cmd_tx: Sender<SfuCommand>,
 }
 
 pub struct AppStateInner {
@@ -29,7 +32,7 @@ pub struct AppStateInner {
 }
 
 impl AppState {
-    pub fn new(sfu_cmd_tx: mpsc::UnboundedSender<SfuCommand>) -> Self {
+    pub fn new(sfu_cmd_tx: Sender<SfuCommand>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AppStateInner {
                 sessions: HashMap::new(),

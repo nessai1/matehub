@@ -12,7 +12,9 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::sfu::SfuCommand;
+use str0m::media::MediaKind;
+
+use crate::sfu::{SfuCommand, Source};
 use crate::signaling::{ClientMessage, ServerMessage};
 use crate::state::{AppState, Participant, ParticipantState, SessionId};
 
@@ -187,6 +189,46 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                     participant_id,
                     candidate,
                     sdp_mid,
+                });
+            }
+
+            ClientMessage::PublishTrack {
+                source,
+                kind,
+                track_id: _,
+            } => {
+                let parsed_source = match source.as_str() {
+                    "camera" => Some(Source::Camera),
+                    "screen" => Some(Source::Screen),
+                    _ => None,
+                };
+                let parsed_kind = match kind.as_str() {
+                    "audio" => Some(MediaKind::Audio),
+                    "video" => Some(MediaKind::Video),
+                    _ => None,
+                };
+                match (parsed_source, parsed_kind) {
+                    (Some(source), Some(kind)) => {
+                        tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
+                        let _ = sfu_tx.send(SfuCommand::PublishTrack {
+                            session_id,
+                            participant_id,
+                            source,
+                            kind,
+                        });
+                    }
+                    _ => {
+                        tracing::warn!(%participant_id, %source, %kind, "unknown publish_track kind/source");
+                    }
+                }
+            }
+
+            ClientMessage::Offer { sdp_offer } => {
+                tracing::info!(%participant_id, "received client-initiated SDP offer");
+                let _ = sfu_tx.send(SfuCommand::ClientOffer {
+                    session_id,
+                    participant_id,
+                    sdp_offer,
                 });
             }
 

@@ -2,21 +2,22 @@ pub mod session;
 pub mod udp;
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::io::ErrorKind;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crossbeam::channel::{Receiver, TryRecvError};
 use str0m::change::SdpOffer;
 use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
-use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::signaling::ServerMessage;
 
-pub use session::{SfuParticipant, SfuSession, TrackIn, TrackOut, TrackOutState};
+pub use session::{SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState};
 
 pub type ParticipantId = Uuid;
 pub type SessionId = Uuid;
@@ -30,6 +31,9 @@ pub enum SfuCommand {
         participant_id: ParticipantId,
         user_id: String,
         sdp_offer: String,
+        // Still tokio mpsc — the receiving side is the per-WebSocket send task
+        // (async). We only call `.send()` which is sync on tokio mpsc, so the
+        // media thread can talk to the tokio runtime without blocking.
         reply_tx: mpsc::UnboundedSender<ServerMessage>,
     },
     /// SDP answer from client (renegotiation response)
@@ -50,11 +54,30 @@ pub enum SfuCommand {
         session_id: SessionId,
         participant_id: ParticipantId,
     },
+    /// Source hint for the next MediaAdded of the given kind.
+    /// Arrives before the matching client-initiated Offer.
+    PublishTrack {
+        session_id: SessionId,
+        participant_id: ParticipantId,
+        source: Source,
+        kind: MediaKind,
+    },
+    /// Client-initiated SDP offer (renegotiation after addTrack/removeTrack).
+    ClientOffer {
+        session_id: SessionId,
+        participant_id: ParticipantId,
+        sdp_offer: String,
+    },
 }
 
-/// The SFU engine. Runs in a single tokio task, owns all Rtc instances.
+/// The SFU engine. Runs on its own OS thread (not a tokio task) so media
+/// forwarding latency doesn't compete with signaling / HTTP work on the
+/// shared tokio runtime.
 pub struct SfuEngine {
     sessions: HashMap<SessionId, SfuSession>,
+    /// Blocking std socket. `set_read_timeout` gives us the tick cadence;
+    /// send_to is blocking but kernel UDP send buffer (tuned to 2MB in main)
+    /// makes the blocking window negligible in practice.
     udp_socket: Arc<UdpSocket>,
     local_addr: SocketAddr,
     /// Host candidate addresses advertised to every peer.
@@ -62,7 +85,9 @@ pub struct SfuEngine {
     /// actually routes back to the server — avoids peer-reflexive
     /// fallback when the server is bound on 0.0.0.0 across interfaces.
     candidate_addrs: Vec<SocketAddr>,
-    cmd_rx: mpsc::UnboundedReceiver<SfuCommand>,
+    /// crossbeam channel: tokio WS handlers (multi-producer) → media thread.
+    /// tokio::sync::mpsc is async-only, can't be polled from a blocking thread.
+    cmd_rx: Receiver<SfuCommand>,
     /// Remote-addr → participant cache for O(1) UDP demux.
     /// Populated after the first successful accept() from a given source addr.
     /// Invalidated on leave / session destroy / stale mapping detection.
@@ -77,26 +102,27 @@ pub struct SfuEngine {
     stats_last_log: Instant,
 }
 
-/// Build a per-kind stream id for a forwarded track.
+/// Build a per-(source, kind) stream id for a forwarded track.
 ///
 /// Chrome treats tracks sharing an `a=msid:` stream as one MediaStream and
-/// enables A/V sync on playout — audio is held back until video jitter buffer
-/// is ready. For an audio-only publisher that lockup is permanent and all
-/// audio packets get discarded. Giving audio and video separate streams
-/// breaks the sync dependency without affecting Chrome's UI, since the SDK
-/// still maps both streams back to one participant via the Offer.tracks
-/// message.
+/// enables A/V sync on playout. If camera+screen shared an msid, or if
+/// audio+video shared one, Chrome would hold the smaller/later track's
+/// playout hostage to the other's jitter buffer. Splitting by (source, kind)
+/// gives four independent streams per publisher:
 ///
-/// Separator is `-audio` / `-video` (not `:`) because RFC 7941 msid-id allows
-/// only `[A-Za-z0-9-._~]`; str0m strips anything else, which would desync
-/// TrackMapping (sent as-is over signaling) from the SDP msid the browser
-/// actually sees on `ontrack`.
-fn stream_id_for(origin: ParticipantId, kind: MediaKind) -> String {
-    let suffix = match kind {
+///   `<uuid>-cam-audio`, `<uuid>-cam-video`,
+///   `<uuid>-screen-audio`, `<uuid>-screen-video`.
+///
+/// Separator is `-` because RFC 7941 msid-id allows only `[A-Za-z0-9-._~]`;
+/// str0m strips anything else, which would desync TrackMapping (sent as-is
+/// over signaling) from the msid the browser sees on `ontrack`.
+fn stream_id_for(origin: ParticipantId, source: Source, kind: MediaKind) -> String {
+    let source_tag = source.as_msid_tag();
+    let kind_tag = match kind {
         MediaKind::Audio => "audio",
         MediaKind::Video => "video",
     };
-    format!("{origin}-{suffix}")
+    format!("{origin}-{source_tag}-{kind_tag}")
 }
 
 /// What work a just-handled event produced. Drives targeted polling instead
@@ -114,7 +140,7 @@ impl SfuEngine {
     pub fn new(
         udp_socket: Arc<UdpSocket>,
         public_ips: Vec<std::net::IpAddr>,
-        cmd_rx: mpsc::UnboundedReceiver<SfuCommand>,
+        cmd_rx: Receiver<SfuCommand>,
     ) -> Self {
         let local_addr = udp_socket.local_addr().expect("UDP local addr");
         let candidate_addrs: Vec<SocketAddr> = public_ips
@@ -146,89 +172,109 @@ impl SfuEngine {
         self.candidate_addrs[0]
     }
 
-    /// Main SFU event loop. Call this from a spawned tokio task.
-    pub async fn run(mut self) {
+    /// Main SFU event loop. Call this from a dedicated `std::thread` — NOT
+    /// a tokio task.
+    ///
+    /// The event loop is a single blocking thread:
+    /// 1. `recv_from` with `SO_RCVTIMEO` = 20ms — returns either a datagram
+    ///    or `TimedOut`/`WouldBlock`.
+    /// 2. Drain all pending commands from the crossbeam channel (non-blocking).
+    /// 3. If the tick deadline is due, fire `tick() + poll_all()`.
+    /// 4. Run pending negotiations.
+    ///
+    /// Why this over `tokio::select!`:
+    /// - Media forwarding runs on its own OS thread so signaling / HTTP / WS
+    ///   activity on the tokio runtime can't preempt a packet forward.
+    /// - `poll_output` → `send_to` is a synchronous sequence; no `.await`
+    ///   yield points between "read RTP" and "write RTP", which removes a
+    ///   whole class of latency jitter.
+    pub fn run_blocking(mut self) {
         let mut buf = vec![0u8; 2000];
-        // 20ms tick aligns with Opus audio frame rate (50 frames/sec).
-        // Lower = less jitter for audio forwarding, more CPU.
-        let mut interval = tokio::time::interval(Duration::from_millis(20));
-        // Burst-catchup would pile up O(N) tick() sweeps after any scheduler
-        // hiccup. Skip keeps cadence steady.
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        const TICK: Duration = Duration::from_millis(20);
 
-        tracing::info!(local_addr = %self.local_addr, "SFU engine started");
+        // SO_RCVTIMEO: recv_from returns TimedOut after 20ms of silence. That
+        // gives us a deterministic tick cadence without an extra timer thread.
+        // Using 20ms once (not per-iteration) so we don't hammer setsockopt.
+        if let Err(e) = self.udp_socket.set_read_timeout(Some(TICK)) {
+            tracing::error!("failed to set UDP read timeout: {e}");
+            return;
+        }
+
+        let mut next_tick = Instant::now() + TICK;
+        tracing::info!(local_addr = %self.local_addr, "SFU engine started (dedicated thread)");
 
         loop {
-            tokio::select! {
-                // 1. Incoming UDP packets — poll only the participant that received it.
-                result = self.udp_socket.recv_from(&mut buf) => {
-                    match result {
-                        Ok((n, source)) => {
-                            if let Some((sid, pid)) = self.handle_udp_packet(&buf[..n], source) {
-                                self.poll_participant(sid, pid);
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("UDP recv error: {e}");
-                        }
+            // --- 1. UDP receive (blocking up to TICK) -----------------------
+            match self.udp_socket.recv_from(&mut buf) {
+                Ok((n, source)) => {
+                    if let Some((sid, pid)) = self.handle_udp_packet(&buf[..n], source) {
+                        self.poll_participant(sid, pid);
                     }
                 }
-
-                // 2. Commands — poll the participant (or session) affected by the command.
-                cmd = self.cmd_rx.recv() => {
-                    match cmd {
-                        Some(cmd) => {
-                            let mut targets: Vec<PollTarget> = Vec::new();
-                            if let Some(t) = self.handle_command(cmd) {
-                                targets.push(t);
-                            }
-                            // Drain pending commands before polling (ensures ICE
-                            // candidates are added before timeout fires)
-                            while let Ok(cmd) = self.cmd_rx.try_recv() {
-                                if let Some(t) = self.handle_command(cmd) {
-                                    targets.push(t);
-                                }
-                            }
-                            for target in targets {
-                                match target {
-                                    PollTarget::One(sid, pid) => self.poll_participant(sid, pid),
-                                    PollTarget::Session(sid) => self.poll_session(sid),
-                                }
-                            }
-                        }
-                        None => {
-                            tracing::info!("SFU command channel closed, shutting down");
-                            break;
-                        }
-                    }
+                Err(e)
+                    if e.kind() == ErrorKind::WouldBlock
+                        || e.kind() == ErrorKind::TimedOut =>
+                {
+                    // Tick fires below.
                 }
-
-                // 3. Timer tick — drive every Rtc forward and sweep outputs.
-                _ = interval.tick() => {
-                    self.tick();
-                    // tick() pushed Input::Timeout into every Rtc; sweep all of
-                    // them to emit any pending Transmit/Event.
-                    self.poll_all();
-
-                    // Log forwarding stats every 5 seconds
-                    if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
-                        if self.stats_audio_fwd > 0 || self.stats_video_fwd > 0 {
-                            let elapsed = self.stats_last_log.elapsed().as_secs_f32();
-                            tracing::info!(
-                                audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
-                                video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
-                                "media forwarding stats"
-                            );
-                        }
-                        self.stats_audio_fwd = 0;
-                        self.stats_video_fwd = 0;
-                        self.stats_last_log = Instant::now();
-                    }
+                Err(e) => {
+                    tracing::error!("UDP recv error: {e}");
                 }
             }
 
-            // Only runs when something actually raised the flag (join with
-            // existing tracks, MediaAdded event, etc.).
+            // --- 2. Drain pending commands ---------------------------------
+            let mut targets: Vec<PollTarget> = Vec::new();
+            loop {
+                match self.cmd_rx.try_recv() {
+                    Ok(cmd) => {
+                        if let Some(t) = self.handle_command(cmd) {
+                            targets.push(t);
+                        }
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        tracing::info!("SFU command channel closed, shutting down");
+                        return;
+                    }
+                }
+            }
+            for target in targets {
+                match target {
+                    PollTarget::One(sid, pid) => self.poll_participant(sid, pid),
+                    PollTarget::Session(sid) => self.poll_session(sid),
+                }
+            }
+
+            // --- 3. Tick ----------------------------------------------------
+            let now = Instant::now();
+            if now >= next_tick {
+                self.tick();
+                // tick() pushed Input::Timeout into every Rtc; sweep to emit
+                // any pending Transmit/Event.
+                self.poll_all();
+
+                // Stats log every 5s.
+                if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
+                    if self.stats_audio_fwd > 0 || self.stats_video_fwd > 0 {
+                        let elapsed = self.stats_last_log.elapsed().as_secs_f32();
+                        tracing::info!(
+                            audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
+                            video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
+                            "media forwarding stats"
+                        );
+                    }
+                    self.stats_audio_fwd = 0;
+                    self.stats_video_fwd = 0;
+                    self.stats_last_log = Instant::now();
+                }
+
+                // Skip missed ticks instead of bursting — if we lagged behind
+                // (e.g. a big keyframe cascade), snap forward rather than
+                // firing tick() several times in a row.
+                next_tick = now + TICK;
+            }
+
+            // --- 4. Negotiation (flag-gated) --------------------------------
             if self.has_pending_negotiation {
                 self.negotiate_pending_tracks();
             }
@@ -259,7 +305,91 @@ impl SfuEngine {
                 session_id,
                 participant_id,
             } => self.handle_leave(session_id, participant_id),
+            SfuCommand::PublishTrack {
+                session_id,
+                participant_id,
+                source,
+                kind,
+            } => self.handle_publish_track(session_id, participant_id, source, kind),
+            SfuCommand::ClientOffer {
+                session_id,
+                participant_id,
+                sdp_offer,
+            } => self.handle_client_offer(session_id, participant_id, sdp_offer),
         }
+    }
+
+    /// Record a source hint for the next MediaAdded of the given kind from
+    /// this publisher. Arrives right before a client-initiated Offer.
+    fn handle_publish_track(
+        &mut self,
+        session_id: SessionId,
+        participant_id: ParticipantId,
+        source: Source,
+        kind: MediaKind,
+    ) -> Option<PollTarget> {
+        let session = self.sessions.get_mut(&session_id)?;
+        let participant = session.participants.get_mut(&participant_id)?;
+        participant
+            .pending_source_hints
+            .entry(kind)
+            .or_default()
+            .push_back(source);
+        tracing::info!(%participant_id, ?source, ?kind, "queued source hint");
+        // No polling needed — hint is consumed when the SDP offer follows.
+        None
+    }
+
+    /// Accept a client-initiated SDP offer (renegotiation after the client
+    /// added/removed tracks — e.g. `pc.addTrack(screenVideoTrack)`).
+    fn handle_client_offer(
+        &mut self,
+        session_id: SessionId,
+        participant_id: ParticipantId,
+        sdp_offer: String,
+    ) -> Option<PollTarget> {
+        let offer: SdpOffer = match serde_json::from_str(&sdp_offer) {
+            Ok(o) => o,
+            Err(_) => match SdpOffer::from_sdp_string(&sdp_offer) {
+                Ok(o) => o,
+                Err(e) => {
+                    tracing::warn!(%participant_id, "invalid client SDP offer: {e}");
+                    return None;
+                }
+            },
+        };
+
+        let session = self.sessions.get_mut(&session_id)?;
+        let participant = session.participants.get_mut(&participant_id)?;
+
+        // A pending server-side offer would make this impossible to reconcile —
+        // the client's offer is relative to the last stable state. In practice
+        // SDK waits for our last Answer before issuing its own Offer; log and
+        // drop if that invariant gets broken.
+        if participant.pending_offer.is_some() {
+            tracing::warn!(
+                %participant_id,
+                "client offer arrived while server offer still pending — dropping"
+            );
+            return None;
+        }
+
+        let answer = match participant.rtc.sdp_api().accept_offer(offer) {
+            Ok(a) => a,
+            Err(e) => {
+                tracing::warn!(%participant_id, "client offer rejected: {e}");
+                return None;
+            }
+        };
+
+        let answer_str = answer.to_sdp_string();
+        let _ = participant.ws_tx.send(ServerMessage::Answer {
+            sdp_answer: answer_str,
+            participant_id,
+        });
+
+        tracing::info!(%participant_id, "client offer accepted, answer sent");
+        Some(PollTarget::One(session_id, participant_id))
     }
 
     fn handle_join(
@@ -322,10 +452,14 @@ impl SfuEngine {
 
         // Before adding new participant, collect existing incoming tracks
         // so we can set up forwarding
-        let existing_tracks: Vec<(ParticipantId, Mid, MediaKind)> = session
+        let existing_tracks: Vec<(ParticipantId, Mid, MediaKind, Source)> = session
             .participants
             .values()
-            .flat_map(|p| p.tracks_in.iter().map(|t| (p.id, t.mid, t.kind)))
+            .flat_map(|p| {
+                p.tracks_in
+                    .iter()
+                    .map(|t| (p.id, t.mid, t.kind, t.source))
+            })
             .collect();
 
         // Add participant
@@ -337,6 +471,7 @@ impl SfuEngine {
             tracks_in: Vec::new(),
             tracks_out: Vec::new(),
             pending_offer: None,
+            pending_source_hints: HashMap::new(),
             last_activity_at: Instant::now(),
             ice_disconnected: false,
         };
@@ -352,11 +487,12 @@ impl SfuEngine {
         // for all existing participants' incoming tracks
         if !existing_tracks.is_empty() {
             let new_participant = session.participants.get_mut(&participant_id).unwrap();
-            for (origin_pid, mid, kind) in &existing_tracks {
+            for (origin_pid, mid, kind, source) in &existing_tracks {
                 new_participant.tracks_out.push(TrackOut {
                     origin: *origin_pid,
                     origin_mid: *mid,
                     kind: *kind,
+                    source: *source,
                     state: TrackOutState::ToOpen,
                 });
             }
@@ -797,7 +933,7 @@ impl SfuEngine {
                 Ok(Output::Transmit(transmit)) => {
                     if let Err(e) = self
                         .udp_socket
-                        .try_send_to(&transmit.contents, transmit.destination)
+                        .send_to(&transmit.contents, transmit.destination)
                     {
                         tracing::warn!("UDP send dropped: {e}");
                     }
@@ -819,14 +955,30 @@ impl SfuEngine {
                             kind = ?e.kind,
                             "media track added"
                         );
-                        // Record on source + queue TrackOut on all others (single pass)
+                        // Record on source + queue TrackOut on all others (single pass).
+                        //
+                        // Source resolution: pop a hint from the publisher's
+                        // pending queue for this kind (set by `publish_track`
+                        // signaling before the client-initiated Offer).
+                        // No hint → Camera (the Join-flow default — cam/mic
+                        // sent implicitly in the first offer).
                         if let Some(session) = self.sessions.get_mut(&session_id) {
                             let mut queued_for_others = false;
+                            let source = session
+                                .participants
+                                .get_mut(&source_pid)
+                                .and_then(|p| {
+                                    p.pending_source_hints
+                                        .get_mut(&e.kind)
+                                        .and_then(|q| q.pop_front())
+                                })
+                                .unwrap_or(Source::Camera);
                             for (pid, p) in &mut session.participants {
                                 if *pid == source_pid {
                                     p.tracks_in.push(TrackIn {
                                         mid: e.mid,
                                         kind: e.kind,
+                                        source,
                                     });
                                 } else {
                                     let already = p.tracks_out.iter().any(|t| {
@@ -837,6 +989,7 @@ impl SfuEngine {
                                             origin: source_pid,
                                             origin_mid: e.mid,
                                             kind: e.kind,
+                                            source,
                                             state: TrackOutState::ToOpen,
                                         });
                                         queued_for_others = true;
@@ -920,6 +1073,19 @@ impl SfuEngine {
         source_pid: ParticipantId,
         data: &MediaData,
     ) {
+        // Simulcast filter: if the publisher is sending layered video
+        // (screen share, mostly), only forward the `h` layer. Adaptive
+        // per-subscriber layer selection lives in Phase 5 — for now the
+        // `l` layer is encoded and received but never leaves the SFU.
+        //
+        // `data.rid == None` means no simulcast on this track — always forward.
+        if let Some(rid) = data.rid.as_ref() {
+            // Rid derefs to str via str0m's str_id! macro.
+            if &**rid != "h" {
+                return;
+            }
+        }
+
         let key = (source_pid, data.mid);
 
         // Extract subscriber list without cloning — we put it back below.
@@ -967,7 +1133,7 @@ impl SfuEngine {
             loop {
                 match target.rtc.poll_output() {
                     Ok(Output::Transmit(t)) => {
-                        if let Err(e) = self.udp_socket.try_send_to(&t.contents, t.destination) {
+                        if let Err(e) = self.udp_socket.send_to(&t.contents, t.destination) {
                             tracing::warn!("UDP drain dropped: {e}");
                         }
                     }
@@ -1035,9 +1201,17 @@ impl SfuEngine {
                         .filter_map(|t| {
                             let origin_p = session.participants.get(&t.origin)?;
                             Some(crate::signaling::messages::TrackMapping {
-                                stream_id: stream_id_for(t.origin, t.kind),
+                                stream_id: stream_id_for(t.origin, t.source, t.kind),
                                 participant_id: t.origin,
                                 user_id: origin_p.user_id.clone(),
+                                source: match t.source {
+                                    Source::Camera => "camera",
+                                    Source::Screen => "screen",
+                                },
+                                kind: match t.kind {
+                                    MediaKind::Audio => "audio",
+                                    MediaKind::Video => "video",
+                                },
                             })
                         })
                         .collect()
@@ -1061,15 +1235,14 @@ impl SfuEngine {
 
             for track in &mut participant.tracks_out {
                 if let TrackOutState::ToOpen = track.state {
-                    // Separate msid per (publisher, kind). If audio and video
-                    // from the same publisher share an msid, Chrome treats
-                    // them as one MediaStream and holds audio playout back
-                    // waiting for video sync — so a mic-only publisher's
-                    // audio gets silently discarded until video appears.
+                    // Separate msid per (publisher, source, kind). Four
+                    // streams per publisher: cam-audio, cam-video,
+                    // screen-audio, screen-video. Keeps Chrome from A/V-
+                    // syncing mismatched pairs (see stream_id_for docs).
                     let mid = change.add_media(
                         track.kind,
                         Direction::SendOnly,
-                        Some(stream_id_for(track.origin, track.kind)),
+                        Some(stream_id_for(track.origin, track.source, track.kind)),
                         None,
                         None,
                     );
@@ -1102,5 +1275,72 @@ impl SfuEngine {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// RFC 7941 msid-id permits [A-Za-z0-9-._~]. Anything outside gets stripped
+    /// by str0m, which would desync TrackMapping (sent via signaling as-is)
+    /// from the msid the browser sees on `ontrack`.
+    fn is_msid_safe(c: char) -> bool {
+        c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~')
+    }
+
+    const ALL_SOURCES: [Source; 2] = [Source::Camera, Source::Screen];
+    const ALL_KINDS: [MediaKind; 2] = [MediaKind::Audio, MediaKind::Video];
+
+    #[test]
+    fn stream_id_for_all_four_combinations_are_distinct() {
+        let pid = Uuid::new_v4();
+        let ids: Vec<String> = ALL_SOURCES
+            .iter()
+            .flat_map(|&s| ALL_KINDS.iter().map(move |&k| stream_id_for(pid, s, k)))
+            .collect();
+        // 2 sources × 2 kinds = 4 distinct stream ids — each one is a
+        // separate MediaStream on the browser side.
+        let unique: std::collections::HashSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), 4, "expected 4 unique msid, got {ids:?}");
+    }
+
+    #[test]
+    fn stream_id_for_tags_embedded_in_output() {
+        let pid = Uuid::new_v4();
+        assert!(stream_id_for(pid, Source::Camera, MediaKind::Audio).contains("-cam-audio"));
+        assert!(stream_id_for(pid, Source::Camera, MediaKind::Video).contains("-cam-video"));
+        assert!(stream_id_for(pid, Source::Screen, MediaKind::Audio).contains("-screen-audio"));
+        assert!(stream_id_for(pid, Source::Screen, MediaKind::Video).contains("-screen-video"));
+    }
+
+    #[test]
+    fn stream_id_for_only_uses_msid_safe_chars() {
+        let pid = Uuid::new_v4();
+        for &source in &ALL_SOURCES {
+            for &kind in &ALL_KINDS {
+                let id = stream_id_for(pid, source, kind);
+                assert!(
+                    id.chars().all(is_msid_safe),
+                    "stream_id `{id}` contains a char str0m would strip (RFC 7941)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stream_id_for_deterministic_for_same_inputs() {
+        let pid = Uuid::new_v4();
+        assert_eq!(
+            stream_id_for(pid, Source::Screen, MediaKind::Video),
+            stream_id_for(pid, Source::Screen, MediaKind::Video)
+        );
+    }
+
+    #[test]
+    fn stream_id_for_unique_per_publisher() {
+        let a = stream_id_for(Uuid::new_v4(), Source::Camera, MediaKind::Audio);
+        let b = stream_id_for(Uuid::new_v4(), Source::Camera, MediaKind::Audio);
+        assert_ne!(a, b);
     }
 }

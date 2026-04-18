@@ -1,6 +1,14 @@
 "use client";
 
-import { Mic, MicOff, Video, VideoOff, Monitor, PhoneOff } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Monitor,
+  MonitorOff,
+  PhoneOff,
+  Video,
+  VideoOff,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -13,18 +21,22 @@ import { cn } from "@/lib/utils";
 interface CallControlsProps {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
+  isScreenSharing: boolean;
   onToggleMic: () => void;
   onToggleCamera: () => void;
-  onScreenShare: () => void;
+  onStartShare: () => void;
+  onStopShare: () => void;
   onLeave: () => void;
 }
 
 export function CallControls({
   isMicEnabled,
   isCamEnabled,
+  isScreenSharing,
   onToggleMic,
   onToggleCamera,
-  onScreenShare,
+  onStartShare,
+  onStopShare,
   onLeave,
 }: CallControlsProps) {
   return (
@@ -43,9 +55,11 @@ export function CallControls({
           onClick={onToggleCamera}
         />
         <ControlButton
-          icon={Monitor}
-          label="Share screen"
-          onClick={onScreenShare}
+          icon={isScreenSharing ? MonitorOff : Monitor}
+          label={isScreenSharing ? "Stop sharing" : "Share screen"}
+          active={isScreenSharing}
+          destructive={isScreenSharing}
+          onClick={isScreenSharing ? onStopShare : onStartShare}
         />
         <div className="mx-2 h-6 w-px bg-border" />
         <Tooltip>
@@ -70,11 +84,13 @@ function ControlButton({
   icon: Icon,
   label,
   active,
+  destructive,
   onClick,
 }: {
   icon: typeof Mic;
   label: string;
   active?: boolean;
+  destructive?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -86,6 +102,7 @@ function ControlButton({
           className={cn(
             "h-9 w-9 rounded-full p-0",
             active === false && "bg-muted text-muted-foreground",
+            destructive && "bg-red-500/15 text-red-500 hover:bg-red-500/20 hover:text-red-500",
           )}
           onClick={onClick}
         >

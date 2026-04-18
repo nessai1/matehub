@@ -7,6 +7,7 @@ import type {
   HistoryOptions,
   SyncChannelRequest,
   SyncResponse,
+  Attachment,
 } from "./types";
 
 type EventHandler = (event: ChatClientEvent) => void;
@@ -283,6 +284,13 @@ export class ChatClient {
         });
         break;
 
+      case "ATTACHMENT_UPDATED":
+        this.emit({
+          type: "attachment.updated",
+          data: data as { message_id: number; channel_id: number; attachment_id: string; attachments: Attachment[] },
+        });
+        break;
+
       case "TYPING_START":
         this.emit({
           type: "typing.start",
@@ -432,6 +440,63 @@ export class ChatClient {
     );
     if (!res.ok) throw new ChatApiError(res.status, await res.text());
     return res.json();
+  }
+
+  /**
+   * Upload a file as attachment.
+   *
+   * Uses XMLHttpRequest for real upload progress events (fetch lacks upload progress).
+   * Returns the Attachment metadata. `onProgress(percent)` is called 0-100.
+   * `signal` (AbortSignal) allows cancellation.
+   */
+  uploadAttachment(
+    channelId: string | number,
+    file: File,
+    opts?: {
+      onProgress?: (percent: number) => void;
+      signal?: AbortSignal;
+    },
+  ): Promise<Attachment> {
+    return new Promise<Attachment>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(
+        "POST",
+        `${this.apiBase}/v1/channels/${channelId}/attachments`,
+      );
+      xhr.setRequestHeader("Authorization", `Bearer ${this.opts.token}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && opts?.onProgress) {
+          opts.onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new ChatApiError(500, "Invalid response JSON"));
+          }
+        } else {
+          reject(new ChatApiError(xhr.status, xhr.responseText || xhr.statusText));
+        }
+      };
+      xhr.onerror = () => reject(new ChatApiError(0, "Network error"));
+      xhr.onabort = () => reject(new ChatApiError(0, "Upload cancelled"));
+
+      if (opts?.signal) {
+        if (opts.signal.aborted) {
+          xhr.abort();
+          return;
+        }
+        opts.signal.addEventListener("abort", () => xhr.abort());
+      }
+
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+      xhr.send(formData);
+    });
   }
 
   /** Send typing indicator. */

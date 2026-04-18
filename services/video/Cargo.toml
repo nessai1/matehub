@@ -15,6 +15,9 @@ tower-http.workspace = true
 
 # Concurrency
 parking_lot.workspace = true
+# Cross-thread channel (tokio WS handlers → dedicated media thread).
+# tokio::sync::mpsc is async-only; we need a thread-safe sync sender.
+crossbeam.workspace = true
 
 # Observability
 tracing.workspace = true

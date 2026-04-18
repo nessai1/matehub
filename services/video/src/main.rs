@@ -4,11 +4,10 @@ mod sfu;
 mod signaling;
 mod state;
 
+use std::net::UdpSocket;
 use std::sync::Arc;
 
 use anyhow::Result;
-use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -32,16 +31,20 @@ async fn main() -> Result<()> {
 
     let config = Config::from_env();
 
-    // SFU command channel (WS handlers -> SFU engine)
-    let (sfu_cmd_tx, sfu_cmd_rx) = mpsc::unbounded_channel();
+    // Cross-thread SFU command channel. crossbeam so the sender can be called
+    // synchronously from tokio WebSocket handlers (no .await) and the receiver
+    // can be polled from a blocking OS thread (no async runtime needed).
+    let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::unbounded();
 
     let state = AppState::new(sfu_cmd_tx);
 
-    // Bind UDP socket for media
+    // Bind UDP socket for media — std (blocking) socket, not tokio::net.
+    // Media path runs on its own OS thread; it uses SO_RCVTIMEO for the tick
+    // cadence instead of sharing the tokio reactor with HTTP/WS.
     let udp_addr = format!("0.0.0.0:{}", config.udp_port);
-    let udp_socket = UdpSocket::bind(&udp_addr).await?;
+    let udp_socket = UdpSocket::bind(&udp_addr)?;
 
-    // Increase send buffer to reduce packet drops under load.
+    // Increase send/recv buffers to reduce packet drops under load.
     // Default ~200KB, set to 2MB. Covers burst of video keyframes + audio.
     let sock_ref = socket2::SockRef::from(&udp_socket);
     let _ = sock_ref.set_send_buffer_size(2 * 1024 * 1024);
@@ -52,11 +55,20 @@ async fn main() -> Result<()> {
     let udp_socket = Arc::new(udp_socket);
     tracing::info!(addr = %udp_addr, send_buf = actual_send, recv_buf = actual_recv, "UDP media socket bound");
 
-    // Start SFU engine
+    // SFU engine on a dedicated OS thread, OUT of the tokio runtime.
+    // Media forwarding latency no longer competes with signaling / HTTP work.
     let engine = SfuEngine::new(udp_socket, config.public_ips.clone(), sfu_cmd_rx);
-    tokio::spawn(async move {
-        engine.run().await;
-    });
+    let media_thread = std::thread::Builder::new()
+        .name("sfu-media".into())
+        // str0m keeps a fair amount of per-Rtc state on the stack during
+        // poll_output; default (2MB on macOS/Linux) is enough but pin it
+        // explicitly so it doesn't depend on host defaults.
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || engine.run_blocking())?;
+    // Hold the handle so the thread can outlive main's scope. If the thread
+    // panics, `.join()` on shutdown would surface it; we currently run until
+    // signalled so this is effectively "leak until process exit".
+    std::mem::forget(media_thread);
 
     // HTTP + WebSocket server
     let app = api::routes(state)

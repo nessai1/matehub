@@ -1,39 +1,49 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    http::StatusCode,
-    routing::post,
+    extract::{DefaultBodyLimit, Path, State},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    body::Body,
 };
 use axum_extra::extract::Multipart;
-use serde::Serialize;
+use bytes::{BufMut, Bytes, BytesMut};
+use futures_util::stream;
+use matehub_common::storage::UploadError;
 
 use crate::api::AppState;
+use crate::attachment::{Attachment, AttachmentStatus};
 use crate::auth::AuthUser;
 use crate::snowflake;
 
-const MAX_FILE_SIZE: usize = 25 * 1024 * 1024; // 25 MB free tier
+const MAX_FILE_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
+/// Max bytes we'll fully buffer for images (needed to probe width/height).
+/// Larger images still upload via streaming but skip dimension extraction.
+const MAX_IMAGE_BUFFER: usize = 32 * 1024 * 1024; // 32 MB
 
 const ALLOWED_MIMES: &[&str] = &[
     "image/jpeg", "image/png", "image/gif", "image/webp",
+    // Native-play formats
     "video/mp4", "video/webm",
+    // Transcoded on upload (iOS .mov, legacy .avi/.mkv/.wmv)
+    "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/3gpp", "video/x-ms-wmv",
     "audio/mpeg", "audio/ogg", "audio/wav",
     "application/pdf", "text/plain", "application/zip",
 ];
 
-#[derive(Serialize)]
-struct AttachmentResponse {
-    attachment_id: String,
-    url: String,
-    content_type: String,
-    name: String,
-    size: usize,
-}
-
 pub fn routes() -> Router<AppState> {
-    Router::new().route(
-        "/v1/channels/{channel_id}/attachments",
-        post(upload_attachment),
-    )
+    Router::new()
+        .route(
+            "/v1/channels/{channel_id}/attachments",
+            post(upload_attachment),
+        )
+        .route(
+            "/v1/attachments/{attachment_id}/stream",
+            get(stream_attachment),
+        )
+        // Bump body limit above MAX_FILE_SIZE so oversized uploads get 413 from us,
+        // not 400 from axum's default 2MB multipart guard.
+        .layer(DefaultBodyLimit::max(MAX_FILE_SIZE + 1024 * 1024))
 }
 
 async fn upload_attachment(
@@ -41,7 +51,7 @@ async fn upload_attachment(
     Path(channel_id_raw): Path<String>,
     auth: AuthUser,
     mut multipart: Multipart,
-) -> Result<Json<AttachmentResponse>, StatusCode> {
+) -> Result<Json<Attachment>, StatusCode> {
     let hub_id = crate::api::str_to_i64(&auth.0.hub_id);
     let channel_id = crate::api::str_to_i64(&channel_id_raw);
 
@@ -51,65 +61,163 @@ async fn upload_attachment(
         .map_err(|_| StatusCode::BAD_REQUEST)?
         .ok_or(StatusCode::BAD_REQUEST)?;
 
-    let file_name = field
-        .file_name()
-        .unwrap_or("file")
-        .to_string();
-
+    let file_name = field.file_name().unwrap_or("file").to_string();
     let content_type = field
         .content_type()
         .unwrap_or("application/octet-stream")
         .to_string();
 
-    // Validate MIME type
     if !ALLOWED_MIMES.iter().any(|m| content_type.starts_with(m)) {
         tracing::warn!(%content_type, "rejected file type");
         return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
-    let data = field
-        .bytes()
-        .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
-
-    if data.len() > MAX_FILE_SIZE {
-        return Err(StatusCode::PAYLOAD_TOO_LARGE);
-    }
-
-    let ext = file_name
-        .rsplit('.')
-        .next()
-        .unwrap_or("bin");
-
-    let attachment_id = snowflake::next_id();
-    let rand_suffix: u64 = rand::random();
-    let key = format!("{hub_id}/{channel_id}/{attachment_id}_{rand_suffix:016x}.{ext}");
-
-    // Upload to S3
     let s3 = state.s3.as_ref().ok_or_else(|| {
         tracing::error!("S3 not configured");
         StatusCode::SERVICE_UNAVAILABLE
     })?;
 
-    let url = s3
-        .upload(&key, &content_type, data.to_vec())
+    let ext = file_name.rsplit('.').next().unwrap_or("bin");
+    let attachment_id = snowflake::next_id();
+    let rand_suffix: u64 = rand::random();
+    let key = format!("{hub_id}/{channel_id}/{attachment_id}_{rand_suffix:016x}.{ext}");
+
+    let is_image = content_type.starts_with("image/");
+
+    // For images we tee the first MAX_IMAGE_BUFFER bytes into memory so we can
+    // probe dimensions; anything past that still streams to S3 without buffering.
+    // For non-images we just stream directly -- upload_stream controls RAM.
+    let image_probe: std::sync::Arc<parking_lot::Mutex<Option<BytesMut>>> =
+        std::sync::Arc::new(parking_lot::Mutex::new(if is_image {
+            Some(BytesMut::with_capacity(std::cmp::min(MAX_IMAGE_BUFFER, 1 << 20)))
+        } else {
+            None
+        }));
+
+    // Adapt Field (which exposes async chunk() -> Result<Option<Bytes>>) into a Stream.
+    // Side-effect: accumulate into image_probe up to MAX_IMAGE_BUFFER.
+    let probe_handle = image_probe.clone();
+    let field_stream = stream::unfold(field, move |mut f| {
+        let probe = probe_handle.clone();
+        async move {
+            match f.chunk().await {
+                Ok(Some(chunk)) => {
+                    if let Some(buf) = probe.lock().as_mut() {
+                        let remaining = MAX_IMAGE_BUFFER.saturating_sub(buf.len());
+                        if remaining > 0 {
+                            let take = std::cmp::min(remaining, chunk.len());
+                            buf.put_slice(&chunk[..take]);
+                        }
+                    }
+                    Some((Ok::<Bytes, axum_extra::extract::multipart::MultipartError>(chunk), f))
+                }
+                Ok(None) => None,
+                Err(e) => Some((Err(e), f)),
+            }
+        }
+    });
+
+    let (url, size) = match s3
+        .upload_stream(&key, &content_type, Box::pin(field_stream), MAX_FILE_SIZE)
         .await
-        .map_err(|e| {
-            tracing::error!("S3 upload failed: {e:?}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    {
+        Ok(ok) => ok,
+        Err(UploadError::TooLarge { .. }) => return Err(StatusCode::PAYLOAD_TOO_LARGE),
+        Err(UploadError::Empty) => return Err(StatusCode::BAD_REQUEST),
+        Err(UploadError::Stream(e)) => {
+            tracing::warn!(%content_type, "client stream error: {e}");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        Err(UploadError::S3(e)) => {
+            tracing::error!("S3 upload failed: {e}");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
 
-    tracing::info!(
-        %hub_id, %channel_id, %attachment_id,
-        name = %file_name, size = data.len(),
-        "attachment uploaded"
-    );
+    // Extract image dimensions from buffered prefix (best effort).
+    let (width, height) = if is_image {
+        let buf = image_probe.lock().take();
+        buf.map(|b| extract_image_dimensions(&b)).unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
 
-    Ok(Json(AttachmentResponse {
-        attachment_id: attachment_id.to_string(),
+    let needs_transcode = Attachment::needs_transcode(&content_type);
+    let status = if needs_transcode {
+        AttachmentStatus::Transcoding
+    } else {
+        AttachmentStatus::Ready
+    };
+
+    let attachment = Attachment {
+        id: attachment_id.to_string(),
         url,
         content_type,
         name: file_name,
-        size: data.len(),
-    }))
+        size: size as u64,
+        width,
+        height,
+        duration: None,
+        thumb_url: None,
+        status,
+    };
+
+    tracing::info!(
+        %hub_id, %channel_id, id = %attachment.id,
+        name = %attachment.name, size = attachment.size,
+        "attachment uploaded"
+    );
+
+    Ok(Json(attachment))
+}
+
+/// Extract width/height from image bytes without loading full pixel data.
+fn extract_image_dimensions(data: &[u8]) -> (Option<u32>, Option<u32>) {
+    match image::ImageReader::new(std::io::Cursor::new(data)).with_guessed_format() {
+        Ok(reader) => match reader.into_dimensions() {
+            Ok((w, h)) => (Some(w), Some(h)),
+            Err(_) => (None, None),
+        },
+        Err(_) => (None, None),
+    }
+}
+
+/// Stream attachment with HTTP Range support (for video player seek + lazy load).
+/// Proxies S3 with Range header forwarding.
+async fn stream_attachment(
+    State(_state): State<AppState>,
+    Path(_attachment_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, StatusCode> {
+    // Phase 1: redirect to direct S3 URL (public bucket).
+    // Phase 2: proxy with Range forwarding + presigned URLs.
+    // For now return the S3 URL that clients can fetch directly (browsers handle Range natively).
+    //
+    // TODO: look up attachment_id -> S3 URL from DB/cache, return 302 or proxy.
+    // Without DB lookup table yet, this endpoint is a stub.
+
+    let _ = headers.get(header::RANGE);
+    Err(StatusCode::NOT_IMPLEMENTED)
+}
+
+#[allow(dead_code)]
+fn build_range_response(
+    body: Body,
+    content_type: &str,
+    total_size: u64,
+    start: u64,
+    end: u64,
+) -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
+    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    headers.insert(
+        header::CONTENT_RANGE,
+        HeaderValue::from_str(&format!("bytes {start}-{end}/{total_size}")).unwrap(),
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&(end - start + 1).to_string()).unwrap(),
+    );
+    (StatusCode::PARTIAL_CONTENT, headers, body).into_response()
 }

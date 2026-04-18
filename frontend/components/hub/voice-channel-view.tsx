@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CallGrid, type MemberInfo } from "@/components/hub/call-grid";
 import { CallControls } from "@/components/hub/call-controls";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
+import { ScreenShareProfileDialog } from "@/components/hub/screen-share-profile-dialog";
 import { TextChannelView } from "@/components/hub/text-channel-view";
 import { useVideoClient } from "@/hooks/use-video-client";
 import { useMembers } from "@/hooks/use-members";
@@ -35,6 +36,7 @@ export function VoiceChannelView({
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [inCall, setInCall] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   // Build memberInfo map for call grid (userId -> display name + avatar)
   const memberInfo = useMemo<Record<string, MemberInfo>>(() => {
@@ -59,12 +61,15 @@ export function VoiceChannelView({
   const {
     participants,
     localStream,
+    localScreenVideoTrack,
     isConnected,
     isMicEnabled,
     isCamEnabled,
+    isScreenSharing,
     toggleMic,
     toggleCamera,
-    startScreenShare,
+    publishScreen,
+    unpublishScreen,
     connect,
     disconnect,
     error,
@@ -158,6 +163,7 @@ export function VoiceChannelView({
           <CallGrid
             participants={participants}
             localStream={localStream}
+            localScreenVideoTrack={localScreenVideoTrack}
             currentUserId={username}
             isCamEnabled={isCamEnabled}
             isMicEnabled={isMicEnabled}
@@ -168,9 +174,11 @@ export function VoiceChannelView({
         <CallControls
           isMicEnabled={isMicEnabled}
           isCamEnabled={isCamEnabled}
+          isScreenSharing={isScreenSharing}
           onToggleMic={toggleMic}
           onToggleCamera={toggleCamera}
-          onScreenShare={startScreenShare}
+          onStartShare={() => setShareDialogOpen(true)}
+          onStopShare={() => void unpublishScreen()}
           onLeave={leaveCall}
         />
       </div>
@@ -178,6 +186,12 @@ export function VoiceChannelView({
       <div className="flex flex-1 flex-col overflow-hidden">
         <TextChannelView channelId={channelId} channelName={channelName} />
       </div>
+
+      <ScreenShareProfileDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        onConfirm={(profile) => void publishScreen(profile)}
+      />
 
       {process.env.NODE_ENV === "development" && (
         <CallDebugPanel client={client} />

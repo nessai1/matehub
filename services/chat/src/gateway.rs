@@ -240,6 +240,7 @@ async fn run_session<R: AsyncRead + Unpin>(
                 Some("typing") => events::TYPING_START,
                 Some("message_update") => events::MESSAGE_UPDATE,
                 Some("message_delete") => events::MESSAGE_DELETE,
+                Some("attachment_updated") => events::ATTACHMENT_UPDATED,
                 _ => continue,
             };
             if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&msg.payload) {

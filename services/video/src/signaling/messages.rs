@@ -1,12 +1,16 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Maps a stream_id in SDP to its origin participant
+/// Maps a stream_id in SDP to its origin participant, with source and kind
+/// so the SDK can render the right tile (camera vs screen) without DOM-level
+/// heuristics. `source` values: "camera" | "screen". `kind`: "audio" | "video".
 #[derive(Debug, Serialize, Clone)]
 pub struct TrackMapping {
     pub stream_id: String,
     pub participant_id: Uuid,
     pub user_id: String,
+    pub source: &'static str,
+    pub kind: &'static str,
 }
 
 /// Client -> Server messages
@@ -28,6 +32,22 @@ pub enum ClientMessage {
     MuteChanged {
         kind: String,
         muted: bool,
+    },
+    /// Source-hint for the next media track(s) in the upcoming Offer.
+    /// Must arrive BEFORE the Offer (WS preserves order within one socket).
+    /// `source`: "camera" | "screen", `kind`: "audio" | "video".
+    /// `track_id` is informational (MediaStreamTrack.id) — the server uses
+    /// FIFO matching against the next MediaAdded event of the same kind.
+    PublishTrack {
+        source: String,
+        kind: String,
+        #[allow(dead_code)] // reserved for future explicit track→mid mapping
+        track_id: Option<String>,
+    },
+    /// Client-initiated SDP renegotiation (e.g. publisher added a screen
+    /// track via `addTrack`). Server answers with a standard Answer.
+    Offer {
+        sdp_offer: String,
     },
     Leave,
 }

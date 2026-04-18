@@ -1,7 +1,9 @@
 #![allow(clippy::collapsible_if, dead_code)]
 
 pub mod api;
+pub mod attachment;
 pub mod attachments;
+pub mod transcode;
 pub mod auth;
 pub mod data_service;
 pub mod db;

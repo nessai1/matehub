@@ -1,7 +1,9 @@
 #![allow(dead_code, clippy::collapsible_if)]
 
 mod api;
+mod attachment;
 mod attachments;
+mod transcode;
 mod auth;
 mod data_service;
 mod db;
@@ -69,7 +71,10 @@ async fn main() -> Result<()> {
 
     // Build services
     let data_service = Arc::new(data_service::DataService::new(scylla).await?);
-    let fanout = Arc::new(fanout::FanoutService::new(nats));
+    let fanout = Arc::new(fanout::FanoutService::new(nats.clone()));
+
+    // Spawn transcode result consumer
+    transcode::spawn_result_consumer(nats.clone(), data_service.clone(), fanout.clone());
 
     let sessions = session::SessionStore::new();
 

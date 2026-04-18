@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   VideoClient,
   type Participant,
+  type ScreenShareProfile,
   type VideoClientEvent,
 } from "../../packages/sdk-video/src";
 
@@ -17,12 +18,16 @@ interface UseVideoClientOptions {
 interface UseVideoClientReturn {
   participants: Participant[];
   localStream: MediaStream | null;
+  /** Local screen-video track for self-preview (null when not sharing). */
+  localScreenVideoTrack: MediaStreamTrack | null;
   isConnected: boolean;
   isMicEnabled: boolean;
   isCamEnabled: boolean;
+  isScreenSharing: boolean;
   toggleMic: () => Promise<void>;
   toggleCamera: () => Promise<void>;
-  startScreenShare: () => Promise<void>;
+  publishScreen: (profile: ScreenShareProfile) => Promise<void>;
+  unpublishScreen: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => void;
   error: string | null;
@@ -41,6 +46,9 @@ export function useVideoClient(
   const [isConnected, setIsConnected] = useState(false);
   const [isMicEnabled, setIsMicEnabled] = useState(false);
   const [isCamEnabled, setIsCamEnabled] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [localScreenVideoTrack, setLocalScreenVideoTrack] =
+    useState<MediaStreamTrack | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Two refs that together solve the race between mute signaling (fast, WS)
@@ -89,29 +97,48 @@ export function useVideoClient(
           );
           break;
         case "track_added":
-          // Save track in ref (independent of React state)
-          if (event.track.kind === "video") {
+          // Camera video ref — screen tracks don't need the mute-race workaround
+          // since they're not gated on a mute signal, they exist or they don't.
+          if (event.source === "camera" && event.kind === "video") {
             videoTrackRef.current.set(event.participantId, event.track);
           }
           updateParticipants((prev) =>
-            prev.map((p) =>
-              p.participantId === event.participantId
-                ? {
-                    ...p,
-                    stream: event.stream,
-                    audioTrack:
-                      event.track.kind === "audio" ? event.track : p.audioTrack,
-                    // Show video only if signaling says camera is on
-                    videoTrack:
-                      event.track.kind === "video"
-                        ? cameraOnRef.current.has(event.participantId)
-                          ? event.track
-                          : null
-                        : p.videoTrack,
-                  }
-                : p,
-            ),
+            prev.map((p) => {
+              if (p.participantId !== event.participantId) return p;
+              const next = { ...p, stream: event.stream };
+              if (event.source === "camera" && event.kind === "audio") {
+                next.audioTrack = event.track;
+              } else if (event.source === "camera" && event.kind === "video") {
+                // Respect mute-signal race (fixed in P1-P2 of Stage 2).
+                next.videoTrack = cameraOnRef.current.has(event.participantId)
+                  ? event.track
+                  : null;
+              } else if (event.source === "screen" && event.kind === "video") {
+                next.screenVideoTrack = event.track;
+              } else if (event.source === "screen" && event.kind === "audio") {
+                next.screenAudioTrack = event.track;
+              }
+              return next;
+            }),
           );
+          break;
+        case "track_removed":
+          updateParticipants((prev) =>
+            prev.map((p) => {
+              if (p.participantId !== event.participantId) return p;
+              const next = { ...p };
+              if (event.source === "camera" && event.kind === "audio") next.audioTrack = null;
+              else if (event.source === "camera" && event.kind === "video") next.videoTrack = null;
+              else if (event.source === "screen" && event.kind === "video") next.screenVideoTrack = null;
+              else if (event.source === "screen" && event.kind === "audio") next.screenAudioTrack = null;
+              return next;
+            }),
+          );
+          break;
+        case "screen_share_started":
+        case "screen_share_stopped":
+          // UI layout switch is driven off participant.screenVideoTrack presence;
+          // events are logged for debug only.
           break;
         case "track_muted":
           // Record signaling state in ref (survives the race with track_added)
@@ -170,6 +197,8 @@ export function useVideoClient(
     setLocalStream(null);
     setIsMicEnabled(false);
     setIsCamEnabled(false);
+    setIsScreenSharing(false);
+    setLocalScreenVideoTrack(null);
     setError(null);
     cameraOnRef.current.clear();
     videoTrackRef.current.clear();
@@ -190,10 +219,35 @@ export function useVideoClient(
     setLocalStream(client.getLocalStream());
   }, []);
 
-  const startScreenShare = useCallback(async () => {
+  const publishScreen = useCallback(async (profile: ScreenShareProfile) => {
     const client = clientRef.current;
     if (!client) return;
-    await client.startScreenShare();
+    try {
+      await client.publishScreen(profile);
+      setIsScreenSharing(client.isScreenSharing);
+      const track = client.getScreenVideoTrack();
+      setLocalScreenVideoTrack(track);
+      // SFU doesn't loop the publisher's own stream back, so the self-view
+      // below reads directly from the local track. `onended` fires when the
+      // user hits "Stop sharing" in Chrome — keep the state in sync.
+      if (track) {
+        track.addEventListener("ended", () => setLocalScreenVideoTrack(null), {
+          once: true,
+        });
+      }
+    } catch (e) {
+      // User cancelled picker, or permission denied — not a fatal error,
+      // just don't flip the sharing flag.
+      console.warn("publishScreen failed", e);
+    }
+  }, []);
+
+  const unpublishScreen = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    await client.unpublishScreen();
+    setIsScreenSharing(client.isScreenSharing);
+    setLocalScreenVideoTrack(null);
   }, []);
 
   // Cleanup on unmount
@@ -207,12 +261,15 @@ export function useVideoClient(
   return {
     participants,
     localStream,
+    localScreenVideoTrack,
     isConnected,
     isMicEnabled,
     isCamEnabled,
+    isScreenSharing,
     toggleMic,
     toggleCamera,
-    startScreenShare,
+    publishScreen,
+    unpublishScreen,
     connect,
     disconnect,
     error,

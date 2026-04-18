@@ -46,6 +46,13 @@ matehub-common.workspace = true
 rand.workspace = true
 axum-extra = { version = "0.10", features = ["multipart"] }
 
+# Image processing (dimensions + thumbnails)
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+
+# HTTP client for S3 streaming proxy
+reqwest.workspace = true
+bytes.workspace = true
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 reqwest.workspace = true

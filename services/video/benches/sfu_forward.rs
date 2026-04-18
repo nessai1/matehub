@@ -1,106 +1,99 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use std::collections::HashMap;
+//! SFU hot-path microbenchmarks.
+//!
+//! These deliberately do NOT spin up `Rtc`/`SfuParticipant` — full media
+//! forwarding needs live ICE/DTLS/SRTP and is covered by integration tests
+//! against real browsers. Here we isolate the pure data-structure operations
+//! that run per packet (`forward_media_now` lookup) and per leave
+//! (`drop_from_forwarding`), plus the UDP-demux cache that sits in front of
+//! every incoming datagram.
 
-use str0m::media::{MediaKind, Mid};
+use std::collections::HashMap;
+use std::hint::black_box;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use str0m::media::Mid;
 use uuid::Uuid;
 
-use matehub_video::sfu::{SfuParticipant, SfuSession, TrackIn, TrackOut, TrackOutState};
+use matehub_video::sfu::SfuSession;
 
-fn mid(s: &str) -> Mid {
-    Mid::from(s)
+type Pid = Uuid;
+
+// ─── helpers ──────────────────────────────────────────────────────────────
+
+/// Build a session where one publisher fans out to N subscribers, one
+/// (publisher, mid) → N (subscriber, mid) entry in the forwarding map.
+fn session_with_subscribers(n: usize) -> (SfuSession, Pid, Mid) {
+    let mut s = SfuSession::new(Uuid::new_v4());
+    let publisher = Uuid::new_v4();
+    let pub_mid = Mid::new();
+
+    let targets: Vec<(Pid, Mid)> = (0..n).map(|_| (Uuid::new_v4(), Mid::new())).collect();
+    s.forwarding_map.insert((publisher, pub_mid), targets);
+    (s, publisher, pub_mid)
 }
 
-/// Build a session with 1 publisher + N subscribers, each with Open video TrackOut.
-fn build_session(n_subscribers: usize) -> (Uuid, SfuSession, Uuid) {
-    let session_id = Uuid::new_v4();
-    let mut session = SfuSession::new(session_id);
+/// Populate a forwarding map shaped like a real N-way room: every
+/// participant publishes both audio and video to every other participant.
+/// Returns the session plus the pid we'll drop in the bench (last one).
+fn room_shaped_map(n_participants: usize) -> (SfuSession, Pid) {
+    let mut s = SfuSession::new(Uuid::new_v4());
+    let pids: Vec<Pid> = (0..n_participants).map(|_| Uuid::new_v4()).collect();
 
-    let publisher_id = Uuid::new_v4();
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let mut publisher = SfuParticipant {
-        id: publisher_id,
-        user_id: "publisher".into(),
-        rtc: str0m::Rtc::new(),
-        ws_tx: tx.clone(),
-        tracks_in: vec![
-            TrackIn {
-                mid: mid("audio0"),
-                kind: MediaKind::Audio,
-            },
-            TrackIn {
-                mid: mid("video0"),
-                kind: MediaKind::Video,
-            },
-        ],
-        tracks_out: vec![],
-        pending_offer: None,
-    };
-
-    let addr: std::net::SocketAddr = "127.0.0.1:10000".parse().unwrap();
-    publisher
-        .rtc
-        .add_local_candidate(str0m::Candidate::host(addr, "udp").unwrap());
-
-    session.participants.insert(publisher_id, publisher);
-
-    for i in 0..n_subscribers {
-        let sub_id = Uuid::new_v4();
-        let (sub_tx, _) = tokio::sync::mpsc::unbounded_channel();
-
-        let subscriber = SfuParticipant {
-            id: sub_id,
-            user_id: format!("sub_{i}"),
-            rtc: str0m::Rtc::new(),
-            ws_tx: sub_tx,
-            tracks_in: vec![],
-            tracks_out: vec![
-                TrackOut {
-                    origin: publisher_id,
-                    origin_mid: mid("audio0"),
-                    kind: MediaKind::Audio,
-                    state: TrackOutState::Open(mid(&format!("a_out_{i}"))),
-                },
-                TrackOut {
-                    origin: publisher_id,
-                    origin_mid: mid("video0"),
-                    kind: MediaKind::Video,
-                    state: TrackOutState::Open(mid(&format!("v_out_{i}"))),
-                },
-            ],
-            pending_offer: None,
-        };
-
-        session.participants.insert(sub_id, subscriber);
+    for &publisher in &pids {
+        for kind_mid in [Mid::new(), Mid::new()] {
+            let subscribers: Vec<(Pid, Mid)> = pids
+                .iter()
+                .copied()
+                .filter(|&p| p != publisher)
+                .map(|p| (p, Mid::new()))
+                .collect();
+            s.forwarding_map.insert((publisher, kind_mid), subscribers);
+        }
     }
 
-    (session_id, session, publisher_id)
+    (s, *pids.last().unwrap())
 }
 
-/// Benchmark: collect forwarding targets (the lookup in forward_media_now).
-fn bench_target_lookup(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sfu_target_lookup");
+// ─── benchmarks ───────────────────────────────────────────────────────────
 
-    for n in [1, 5, 10, 20, 50] {
-        group.bench_function(format!("{n}_subscribers"), |b| {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let (_, session, publisher_id) = rt.block_on(async { build_session(n) });
-            let video_mid = mid("video0");
+/// Hot path: how expensive is the fan-out target lookup per incoming RTP
+/// packet? Compares the new O(1) `forwarding_map` against the old O(N)
+/// scan (iterate all participants' tracks_out looking for origin match).
+fn bench_forwarding_lookup(c: &mut Criterion) {
+    let mut group = c.benchmark_group("forwarding_lookup");
 
+    for n in [1, 5, 20, 50, 200] {
+        let (session, publisher, pub_mid) = session_with_subscribers(n);
+
+        // New: HashMap lookup.
+        group.bench_with_input(BenchmarkId::new("map_get", n), &n, |b, _| {
             b.iter(|| {
-                let targets: Vec<(Uuid, Mid)> = session
-                    .participants
+                let entry = session.forwarding_map.get(&(publisher, pub_mid));
+                black_box(entry.map(|v| v.len()));
+            });
+        });
+
+        // Baseline: simulate the pre-refactor scan. Not over real tracks_out
+        // (we don't have SfuParticipants here) but over an equivalent flat
+        // vec of (subscriber, origin, origin_mid, target_mid) — same big-O.
+        let scan: Vec<(Pid, Pid, Mid, Mid)> = session
+            .forwarding_map
+            .iter()
+            .flat_map(|(&(pub_p, pub_m), subs)| {
+                subs.iter()
+                    .map(move |&(sub_p, sub_m)| (sub_p, pub_p, pub_m, sub_m))
+            })
+            .collect();
+
+        group.bench_with_input(BenchmarkId::new("linear_scan", n), &n, |b, _| {
+            b.iter(|| {
+                let hits: Vec<(Pid, Mid)> = scan
                     .iter()
-                    .filter(|(pid, _)| **pid != publisher_id)
-                    .filter_map(|(pid, p)| {
-                        p.tracks_out
-                            .iter()
-                            .find(|t| t.origin == publisher_id && t.origin_mid == video_mid)
-                            .and_then(|t| t.open_mid())
-                            .map(|m| (*pid, m))
-                    })
+                    .filter(|&&(_, p, m, _)| p == publisher && m == pub_mid)
+                    .map(|&(s, _, _, sm)| (s, sm))
                     .collect();
-                criterion::black_box(targets);
+                black_box(hits.len());
             });
         });
     }
@@ -108,57 +101,91 @@ fn bench_target_lookup(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark: TrackOut.open_mid() scan with many tracks (large room).
-fn bench_track_out_scan(c: &mut Criterion) {
-    let publisher_id = Uuid::new_v4();
-    let target_mid = mid("video0");
+/// Leave path: how expensive is purging a participant from the forwarding
+/// map? Parametrised by room size (N participants = 2N entries, one per
+/// kind, each with (N-1) subscribers).
+fn bench_drop_from_forwarding(c: &mut Criterion) {
+    let mut group = c.benchmark_group("drop_from_forwarding");
 
-    let tracks: Vec<TrackOut> = (0..20)
-        .map(|i| TrackOut {
-            origin: if i == 5 { publisher_id } else { Uuid::new_v4() },
-            origin_mid: target_mid,
-            kind: MediaKind::Video,
-            state: TrackOutState::Open(mid(&format!("out_{i}"))),
-        })
-        .collect();
+    for n in [5, 20, 100] {
+        group.bench_with_input(BenchmarkId::new("room_size", n), &n, |b, &n| {
+            b.iter_batched(
+                || room_shaped_map(n),
+                |(mut s, gone)| {
+                    s.drop_from_forwarding(black_box(gone));
+                    black_box(s);
+                },
+                criterion::BatchSize::SmallInput,
+            );
+        });
+    }
 
-    c.bench_function("track_out_find_in_20", |b| {
+    group.finish();
+}
+
+/// UDP demux cache: every incoming datagram hits this lookup BEFORE ICE
+/// classification. Compares O(1) map hit against the old linear scan
+/// (rtc.accepts() called on every participant in the worst case).
+fn bench_addr_demux(c: &mut Criterion) {
+    let mut group = c.benchmark_group("addr_demux");
+
+    for n in [5, 20, 100, 500] {
+        let sid = Uuid::new_v4();
+        let mut map: HashMap<SocketAddr, (Uuid, Pid)> = HashMap::new();
+        let mut addrs: Vec<SocketAddr> = Vec::with_capacity(n);
+        for i in 0..n {
+            let port: u16 = 10_000 + (i as u16);
+            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), port);
+            let pid = Uuid::new_v4();
+            map.insert(addr, (sid, pid));
+            addrs.push(addr);
+        }
+        // Target: the last one (worst case for linear scan).
+        let target = *addrs.last().unwrap();
+
+        group.bench_with_input(BenchmarkId::new("hashmap_get", n), &n, |b, _| {
+            b.iter(|| {
+                black_box(map.get(&target).copied());
+            });
+        });
+
+        // Simulate the slow path: compare addr to each entry's key. This
+        // mirrors the shape of rtc.accepts() — one `== addr` check per
+        // participant — which is what we used to do O(N) times per packet.
+        let entries: Vec<(SocketAddr, (Uuid, Pid))> =
+            map.iter().map(|(k, v)| (*k, *v)).collect();
+        group.bench_with_input(BenchmarkId::new("linear_scan", n), &n, |b, _| {
+            b.iter(|| {
+                let hit = entries
+                    .iter()
+                    .find(|(a, _)| *a == target)
+                    .map(|(_, v)| *v);
+                black_box(hit);
+            });
+        });
+    }
+
+    group.finish();
+}
+
+/// Baseline: `stream_id_for`-equivalent format cost. The function itself is
+/// private; inline an equivalent `format!` so we can tell whether a
+/// regression is in the format call or elsewhere.
+fn bench_stream_id_format(c: &mut Criterion) {
+    let pid = Uuid::new_v4();
+    c.bench_function("stream_id_format", |b| {
         b.iter(|| {
-            let result = tracks
-                .iter()
-                .find(|t| t.origin == publisher_id && t.origin_mid == target_mid)
-                .and_then(|t| t.open_mid());
-            criterion::black_box(result);
+            let s: String = format!("{}-{}", black_box(pid), black_box("audio"));
+            black_box(s);
         });
     });
 }
 
-/// Benchmark: HashMap<Uuid, _> get (simulates session.participants.get).
-fn bench_participant_hashmap(c: &mut Criterion) {
-    let mut group = c.benchmark_group("participant_hashmap_get");
-
-    for n in [5, 20, 100] {
-        group.bench_function(format!("{n}_entries"), |b| {
-            let mut map: HashMap<Uuid, String> = HashMap::new();
-            let target = Uuid::new_v4();
-            for _ in 0..n - 1 {
-                map.insert(Uuid::new_v4(), "other".into());
-            }
-            map.insert(target, "target".into());
-
-            b.iter(|| {
-                criterion::black_box(map.get(&target));
-            });
-        });
-    }
-
-    group.finish();
-}
-
 criterion_group!(
     benches,
-    bench_target_lookup,
-    bench_track_out_scan,
-    bench_participant_hashmap
+    bench_forwarding_lookup,
+    bench_drop_from_forwarding,
+    bench_addr_demux,
+    bench_stream_id_format,
 );
 criterion_main!(benches);

@@ -5,4 +5,7 @@ export type {
   Participant,
   VideoDiagnostics,
   TrackInfo,
+  TrackSource,
+  TrackKind,
+  ScreenShareProfile,
 } from "./types";

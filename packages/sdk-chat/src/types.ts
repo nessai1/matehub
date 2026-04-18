@@ -19,6 +19,32 @@ export type ConnectionState =
   | "resuming"
   | "reconnecting";
 
+// ── Attachments ──────────────────────────────────
+
+export type AttachmentStatus = "ready" | "transcoding" | "failed";
+
+export interface Attachment {
+  id: string;
+  url: string;
+  content_type: string;
+  name: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  thumb_url?: string;
+  status?: AttachmentStatus;
+}
+
+export type AttachmentKind = "image" | "video" | "audio" | "document";
+
+export function attachmentKind(a: Attachment): AttachmentKind {
+  if (a.content_type.startsWith("image/")) return "image";
+  if (a.content_type.startsWith("video/")) return "video";
+  if (a.content_type.startsWith("audio/")) return "audio";
+  return "document";
+}
+
 // ── Domain models ────────────────────────────────
 
 export interface Message {
@@ -32,7 +58,7 @@ export interface Message {
   mentions: string[];
   mention_groups: string[];
   mention_everyone: boolean;
-  attachments: string[];
+  attachments: Attachment[];
   edited_at: string | null;
   deleted_at: string | null;
   client_id: string | null;
@@ -53,8 +79,16 @@ export type ChatClientEvent =
   | { type: "message.new"; message: Message }
   | { type: "message.updated"; data: MessageUpdateData }
   | { type: "message.deleted"; data: MessageDeleteData }
+  | { type: "attachment.updated"; data: AttachmentUpdatedData }
   | { type: "typing.start"; data: TypingEvent }
   | { type: "error"; message: string; code?: number };
+
+export interface AttachmentUpdatedData {
+  message_id: number;
+  channel_id: number;
+  attachment_id: string;
+  attachments: Attachment[];
+}
 
 export interface MessageUpdateData {
   message_id: number;
@@ -74,7 +108,7 @@ export interface SendMessageOptions {
   content: string;
   clientId?: string;
   threadRootId?: number;
-  attachments?: string[];
+  attachments?: Attachment[];
 }
 
 export interface HistoryOptions {

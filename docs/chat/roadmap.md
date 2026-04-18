@@ -93,6 +93,31 @@ Status tracked per-item: **done** / **in-progress** / **planned**.
 - [x] Idempotency (client_id + Redis SETNX)
 - [x] Attachments (S3, MIME whitelist, 25MB, Snowflake key)
 
+### Phase 1.5 -- Media pipeline (done)
+- [x] Attachment upload endpoint (`POST /v1/channels/{id}/attachments`)
+- [x] MIME whitelist: images (jpeg/png/gif/webp), video (mp4/webm + legacy for transcode), audio (mp3/ogg/wav), docs (pdf/txt/zip)
+- [x] **Streaming multipart S3 upload** (`S3Storage::upload_stream` in matehub-common)
+    - 8 MB part size, single-part fast path for small files, S3 multipart for large
+    - Constant ~8 MB RAM per upload regardless of file size; 1 GB max per file
+    - Auto-abort multipart on error/oversize; no orphaned uploads
+- [x] Image dimension probe (32 MB tee buffer, falls back gracefully for huge images)
+- [x] Structured `Attachment` metadata: id, url, content_type, size, width/height, duration, thumb_url, status
+- [x] JSON-in-text storage in ScyllaDB `attachments list<text>` (backwards compatible with legacy URL-only rows)
+- [x] `ATTACHMENT_UPDATED` gateway event for post-send metadata updates
+- [x] Rich message rendering: image gallery + lightbox (prev/next, keyboard, ESC), custom video player with buffered progress bar, inline audio, doc cards with download
+
+### Phase 1.6 -- Video transcoding (done)
+- [x] Separate `matehub-transcoder` service (workspace member)
+- [x] **NATS JetStream Work Queue** for transcode jobs (`transcode.request` → `transcode.result.{hub_id}`)
+    - Queue group for horizontal scaling; `ack_wait=120s` + `max_deliver=3` for redelivery
+    - Progress ACK every 30s during long ffmpeg runs (prevents premature redelivery)
+- [x] ffmpeg wrapper: libx264 + AAC + `+faststart` (web-streamable mp4)
+- [x] ffprobe metadata extraction (width, height, duration)
+- [x] Chat service pipeline: upload with `status=transcoding` → enqueue after message write → consume result → update attachment → fanout `ATTACHMENT_UPDATED`
+- [x] Frontend transcoding UI states (spinner placeholder, failed state, auto-swap to video player on completion)
+- [x] Shared protocol types in `matehub-common::transcode`
+- [ ] Production hardening (below)
+
 ### Phase 2 -- Mentions, reactions, threads (planned)
 - [ ] Server-side mention parsing (`@username` -> user_id resolution)
 - [ ] `@everyone` / `@here` rate limiting
@@ -109,6 +134,14 @@ Status tracked per-item: **done** / **in-progress** / **planned**.
 - [ ] Soft/hard delete with retention policy
 - [ ] Audit log in separate partition (180d retention)
 - [ ] CDN for attachments (CloudFront/Cloudflare + signed cookies)
+
+### Media pipeline -- production hardening (planned)
+- [ ] NATS JetStream `replicas=3` for transcode stream (currently 1 = SPOF)
+- [ ] Transactional outbox for `transcode.request` (chat-crash recovery)
+- [ ] Zombie reaper cron (attachments stuck `transcoding` > 1h)
+- [ ] Parallel part upload in `S3Storage::upload_stream` (FuturesUnordered)
+- [ ] Upload-progress WS events (for long GB-scale uploads)
+- [ ] Dockerfile for transcoder (debian-slim + ffmpeg preinstalled)
 
 ### Phase 4 -- Search & E2EE (planned)
 - [ ] Elasticsearch/Meilisearch indexation via Kafka consumer

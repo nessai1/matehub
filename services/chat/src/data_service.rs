@@ -5,6 +5,7 @@ use anyhow::Result;
 use scylla::client::session::Session;
 use scylla::statement::prepared::PreparedStatement;
 
+use crate::attachment::Attachment;
 use crate::models::Message;
 use crate::snowflake;
 
@@ -29,6 +30,9 @@ pub struct DataService {
     upsert_read_state: PreparedStatement,
     select_read_state: PreparedStatement,
     select_read_states_for_user: PreparedStatement,
+    // Attachment ops (for transcode result application)
+    select_attachments: PreparedStatement,
+    update_attachments: PreparedStatement,
 }
 
 impl DataService {
@@ -94,6 +98,20 @@ impl DataService {
             )
             .await?;
 
+        let select_attachments = session
+            .prepare(
+                "SELECT attachments FROM messages
+                 WHERE hub_id = ? AND channel_id = ? AND bucket = ? AND message_id = ?",
+            )
+            .await?;
+
+        let update_attachments = session
+            .prepare(
+                "UPDATE messages SET attachments = ?
+                 WHERE hub_id = ? AND channel_id = ? AND bucket = ? AND message_id = ?",
+            )
+            .await?;
+
         tracing::info!("DataService: prepared statements cached");
 
         let update_content = session
@@ -122,6 +140,8 @@ impl DataService {
             upsert_read_state,
             select_read_state,
             select_read_states_for_user,
+            select_attachments,
+            update_attachments,
         })
     }
 
@@ -137,7 +157,7 @@ impl DataService {
         mentions: Vec<String>,
         mention_groups: Vec<String>,
         mention_everyone: bool,
-        attachments: Vec<String>,
+        attachments: Vec<Attachment>,
         thread_root_id: Option<i64>,
         client_id: Option<String>,
     ) -> Result<Message> {
@@ -147,7 +167,9 @@ impl DataService {
         let mentions_set: HashSet<String> = mentions.iter().cloned().collect();
         let mention_groups_set: HashSet<String> = mention_groups.iter().cloned().collect();
 
-        // Write message (token-aware: driver routes to partition owner)
+        // Serialize attachments to JSON for storage
+        let attachments_stored: Vec<String> = attachments.iter().map(|a| a.to_stored()).collect();
+
         self.session
             .execute_unpaged(
                 &self.insert_msg,
@@ -163,13 +185,12 @@ impl DataService {
                     &mentions_set,
                     &mention_groups_set,
                     mention_everyone,
-                    &attachments,
+                    &attachments_stored,
                     &client_id,
                 ),
             )
             .await?;
 
-        // Track non-empty bucket (avoids tombstone scans on empty buckets)
         self.session
             .execute_unpaged(&self.insert_bucket, (hub_id, channel_id, bucket))
             .await?;
@@ -278,7 +299,11 @@ impl DataService {
                     mentions: row.8.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_groups: row.9.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_everyone: row.10.unwrap_or(false),
-                    attachments: row.11.unwrap_or_default(),
+                    attachments: row.11
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|s: &String| Attachment::from_stored(s))
+                        .collect(),
                     edited_at: None,
                     deleted_at: None,
                     client_id: row.14,
@@ -353,7 +378,11 @@ impl DataService {
                     mentions: row.8.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_groups: row.9.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_everyone: row.10.unwrap_or(false),
-                    attachments: row.11.unwrap_or_default(),
+                    attachments: row.11
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|s: &String| Attachment::from_stored(s))
+                        .collect(),
                     edited_at: None,
                     deleted_at: None,
                     client_id: row.14,
@@ -485,5 +514,54 @@ impl DataService {
             .collect();
 
         Ok(result)
+    }
+
+    // ── Attachment ops (for transcode apply) ────────
+
+    pub async fn get_message_attachments(
+        &self,
+        hub_id: i64,
+        channel_id: i64,
+        bucket: i32,
+        message_id: i64,
+    ) -> Result<Option<Vec<Attachment>>> {
+        let rows = self
+            .session
+            .execute_unpaged(
+                &self.select_attachments,
+                (hub_id, channel_id, bucket, message_id),
+            )
+            .await?;
+
+        let row = rows
+            .into_rows_result()?
+            .rows::<(Option<Vec<String>>,)>()?
+            .next()
+            .transpose()?;
+
+        Ok(row.map(|(raw,)| {
+            raw.unwrap_or_default()
+                .iter()
+                .map(|s| Attachment::from_stored(s))
+                .collect()
+        }))
+    }
+
+    pub async fn update_attachments(
+        &self,
+        hub_id: i64,
+        channel_id: i64,
+        bucket: i32,
+        message_id: i64,
+        attachments: &[Attachment],
+    ) -> Result<()> {
+        let stored: Vec<String> = attachments.iter().map(|a| a.to_stored()).collect();
+        self.session
+            .execute_unpaged(
+                &self.update_attachments,
+                (&stored, hub_id, channel_id, bucket, message_id),
+            )
+            .await?;
+        Ok(())
     }
 }

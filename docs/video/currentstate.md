@@ -297,11 +297,52 @@ tracing::info!(%participant_id, raw = %text.chars().take(120).collect::<String>(
      простой lookup по participantId работает. Код выглядит корректно.
    - **Нужен интеграционный smoke на двух браузерах** чтобы подтвердить на живой
      сессии — не могу сделать из кода.
-8. **#1 — Dedicated media thread.** Крупная архитектурная работа.
-   `std::thread::spawn` + blocking `std::net::UdpSocket` + crossbeam channel.
-   Переносит весь media path из tokio. **Отложен до валидации текущих фиксов
-   smoke-тестом.** Меняет concurrency модель, риск регрессии высокий — лучше
-   делать после подтверждения что #2/#3/#5 работают в поле.
+8. **#1 — Dedicated media thread.** ✅ DONE (2026-04-18).
+   - `crossbeam::channel` для командного канала WS tokio tasks → media thread
+     (tokio::sync::mpsc нельзя poll из sync OS thread).
+   - `udp_socket: Arc<tokio::net::UdpSocket>` → `Arc<std::net::UdpSocket>`.
+     `SO_RCVTIMEO = 20ms` ставится один раз при старте; даёт детерминированный
+     tick без второго тикера.
+   - `run() async` → `run_blocking()` sync: `recv_from` blocking → drain
+     `cmd_rx.try_recv()` → `Instant::now() >= next_tick` → `tick() + poll_all()`.
+     Никаких `.await` yield-point'ов между «прочитал RTP» и «отправил RTP».
+   - `main.rs`: `std::thread::Builder::new().name("sfu-media").stack_size(2MB)
+     .spawn(|| engine.run_blocking())`. Handle хранится через `mem::forget`
+     (thread живёт до process exit).
+   - Reply path к клиенту остался через `tokio::sync::mpsc::UnboundedSender`
+     (его `send()` sync, thread-safe — media thread пишет, tokio async task
+     читает без блокировок).
+
+9. **Tests.** ✅ DONE (2026-04-18).
+   - 11 unit tests в `sfu::session::tests` и `sfu::tests`:
+     `new_session_is_empty`, `drop_from_forwarding_*` (5 cases: publisher key,
+     subscriber entry, empty prune, dual role, unknown no-op),
+     `track_out_open_mid_is_some_only_when_open`,
+     `stream_id_for_*` (distinct a/v, msid-safe chars (RFC 7941),
+     deterministic, unique per publisher).
+   - `cargo test -p matehub-video --lib` → 11 passed.
+
+10. **Benchmarks.** ✅ DONE (2026-04-18).
+    `benches/sfu_forward.rs` (Criterion), 4 groups:
+
+    | bench | small N | large N | ratio |
+    |---|---|---|---|
+    | `forwarding_lookup/map_get` | 26ns @1 | 22ns @200 | O(1) |
+    | `forwarding_lookup/linear_scan` | 25ns @1 | 791ns @200 | O(N) |
+    | `drop_from_forwarding/room_size` | 286ns @5 | 44µs @100 | O(N²), leave path |
+    | `addr_demux/hashmap_get` | 29ns @5 | 28ns @500 | O(1) |
+    | `addr_demux/linear_scan` | 2ns @5 | 33ns @100 | O(N), crossover ~100 |
+    | `stream_id_format` | 95ns | — | baseline |
+
+    Ключевые take-away:
+    - На 200 subscribers fan-out lookup **36× быстрее** (22ns vs 791ns).
+      Это ровно то что даёт pre-computed forwarding_map.
+    - Addr demux: HashMap стабилен на любом N; linear scan пересекается с
+      HashMap около 100 участников. Но в реальности `rtc.accepts()` дороже
+      чем просто сравнение адресов — бенч недооценивает выигрыш HashMap'а
+      в проде.
+    - `drop_from_forwarding` O(N²) по room size — приемлемо на leave-path
+      (редкий, не hot path).
 
 **Остаётся дальше (Stage 2 фаза B и далее):**
 - #4 (zero-copy через Arc<[u8]>)
