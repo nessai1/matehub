@@ -331,12 +331,14 @@ export function NavChannels() {
             </div>
           </li>
         )}
-        <li>
-          <button className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70">
-            <UserPlusIcon className="h-3 w-3" />
-            <span>Add Teammates</span>
-          </button>
-        </li>
+        {(hasPerm(P.INVITE_PERMANENT) || hasPerm(P.CREATE_TEMP_LINKS)) && (
+          <li>
+            <button className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70">
+              <UserPlusIcon className="h-3 w-3" />
+              <span>Add Teammates</span>
+            </button>
+          </li>
+        )}
       </ChannelSection>
 
       {/* ── Channel editor dialog ── */}

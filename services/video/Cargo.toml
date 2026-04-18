@@ -33,6 +33,15 @@ chrono.workspace = true
 futures-util.workspace = true
 socket2.workspace = true
 
+# Allocator — default glibc malloc is a noticeable tax at high packet rates
+# (str0m does allocate on hot paths). mimalloc is pure-Rust, no ffi system
+# deps, and typically 10-20% faster throughput for SFU workloads.
+mimalloc = { version = "0.1", default-features = false }
+
+# Enumerate local interfaces — we advertise every non-loopback IP as a host
+# candidate so ICE nomination doesn't fall back to peer-reflexive.
+if-addrs = "0.14"
+
 [dev-dependencies]
 pretty_assertions.workspace = true
 tokio-tungstenite.workspace = true

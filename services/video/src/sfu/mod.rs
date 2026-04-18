@@ -57,33 +57,93 @@ pub struct SfuEngine {
     sessions: HashMap<SessionId, SfuSession>,
     udp_socket: Arc<UdpSocket>,
     local_addr: SocketAddr,
-    /// The public-facing candidate address (real IP + UDP port)
-    candidate_addr: SocketAddr,
+    /// Host candidate addresses advertised to every peer.
+    /// Multiple IPs (wifi, ethernet, vpn) so ICE can pick whichever
+    /// actually routes back to the server — avoids peer-reflexive
+    /// fallback when the server is bound on 0.0.0.0 across interfaces.
+    candidate_addrs: Vec<SocketAddr>,
     cmd_rx: mpsc::UnboundedReceiver<SfuCommand>,
+    /// Remote-addr → participant cache for O(1) UDP demux.
+    /// Populated after the first successful accept() from a given source addr.
+    /// Invalidated on leave / session destroy / stale mapping detection.
+    addr_to_participant: HashMap<SocketAddr, (SessionId, ParticipantId)>,
+    /// True when at least one participant has a TrackOut in ToOpen state.
+    /// Gates the O(N×K) sweep in `negotiate_pending_tracks()` — 50 times/sec
+    /// on audio alone is a waste when there's nothing to negotiate.
+    has_pending_negotiation: bool,
     /// Media forwarding stats (logged periodically)
     stats_audio_fwd: u64,
     stats_video_fwd: u64,
     stats_last_log: Instant,
 }
 
+/// Build a per-kind stream id for a forwarded track.
+///
+/// Chrome treats tracks sharing an `a=msid:` stream as one MediaStream and
+/// enables A/V sync on playout — audio is held back until video jitter buffer
+/// is ready. For an audio-only publisher that lockup is permanent and all
+/// audio packets get discarded. Giving audio and video separate streams
+/// breaks the sync dependency without affecting Chrome's UI, since the SDK
+/// still maps both streams back to one participant via the Offer.tracks
+/// message.
+///
+/// Separator is `-audio` / `-video` (not `:`) because RFC 7941 msid-id allows
+/// only `[A-Za-z0-9-._~]`; str0m strips anything else, which would desync
+/// TrackMapping (sent as-is over signaling) from the SDP msid the browser
+/// actually sees on `ontrack`.
+fn stream_id_for(origin: ParticipantId, kind: MediaKind) -> String {
+    let suffix = match kind {
+        MediaKind::Audio => "audio",
+        MediaKind::Video => "video",
+    };
+    format!("{origin}-{suffix}")
+}
+
+/// What work a just-handled event produced. Drives targeted polling instead
+/// of sweeping every Rtc after every event.
+#[derive(Debug, Clone, Copy)]
+enum PollTarget {
+    /// A single participant has input waiting — poll just that one.
+    One(SessionId, ParticipantId),
+    /// Multiple participants in a session may have work (e.g. deactivation
+    /// renegotiation after Leave) — poll everyone in the session.
+    Session(SessionId),
+}
+
 impl SfuEngine {
     pub fn new(
         udp_socket: Arc<UdpSocket>,
-        public_ip: std::net::IpAddr,
+        public_ips: Vec<std::net::IpAddr>,
         cmd_rx: mpsc::UnboundedReceiver<SfuCommand>,
     ) -> Self {
         let local_addr = udp_socket.local_addr().expect("UDP local addr");
-        let candidate_addr = SocketAddr::new(public_ip, local_addr.port());
+        let candidate_addrs: Vec<SocketAddr> = public_ips
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip, local_addr.port()))
+            .collect();
+        assert!(
+            !candidate_addrs.is_empty(),
+            "SfuEngine needs at least one public IP for host candidates"
+        );
         Self {
             sessions: HashMap::new(),
             udp_socket,
             local_addr,
-            candidate_addr,
+            candidate_addrs,
             cmd_rx,
+            addr_to_participant: HashMap::new(),
+            has_pending_negotiation: false,
             stats_audio_fwd: 0,
             stats_video_fwd: 0,
             stats_last_log: Instant::now(),
         }
+    }
+
+    /// First candidate address — used as `destination` when constructing
+    /// `Input::Receive` (str0m only cares about port + protocol, not which
+    /// specific bound IP the datagram landed on).
+    fn primary_candidate_addr(&self) -> SocketAddr {
+        self.candidate_addrs[0]
     }
 
     /// Main SFU event loop. Call this from a spawned tokio task.
@@ -92,16 +152,21 @@ impl SfuEngine {
         // 20ms tick aligns with Opus audio frame rate (50 frames/sec).
         // Lower = less jitter for audio forwarding, more CPU.
         let mut interval = tokio::time::interval(Duration::from_millis(20));
+        // Burst-catchup would pile up O(N) tick() sweeps after any scheduler
+        // hiccup. Skip keeps cadence steady.
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         tracing::info!(local_addr = %self.local_addr, "SFU engine started");
 
         loop {
             tokio::select! {
-                // 1. Incoming UDP packets
+                // 1. Incoming UDP packets — poll only the participant that received it.
                 result = self.udp_socket.recv_from(&mut buf) => {
                     match result {
                         Ok((n, source)) => {
-                            self.handle_udp_packet(&buf[..n], source);
+                            if let Some((sid, pid)) = self.handle_udp_packet(&buf[..n], source) {
+                                self.poll_participant(sid, pid);
+                            }
                         }
                         Err(e) => {
                             tracing::error!("UDP recv error: {e}");
@@ -109,15 +174,26 @@ impl SfuEngine {
                     }
                 }
 
-                // 2. Commands from WebSocket handlers
+                // 2. Commands — poll the participant (or session) affected by the command.
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
                         Some(cmd) => {
-                            self.handle_command(cmd);
-                            // Drain all pending commands before polling
-                            // (ensures ICE candidates are added before timeout fires)
+                            let mut targets: Vec<PollTarget> = Vec::new();
+                            if let Some(t) = self.handle_command(cmd) {
+                                targets.push(t);
+                            }
+                            // Drain pending commands before polling (ensures ICE
+                            // candidates are added before timeout fires)
                             while let Ok(cmd) = self.cmd_rx.try_recv() {
-                                self.handle_command(cmd);
+                                if let Some(t) = self.handle_command(cmd) {
+                                    targets.push(t);
+                                }
+                            }
+                            for target in targets {
+                                match target {
+                                    PollTarget::One(sid, pid) => self.poll_participant(sid, pid),
+                                    PollTarget::Session(sid) => self.poll_session(sid),
+                                }
                             }
                         }
                         None => {
@@ -127,9 +203,12 @@ impl SfuEngine {
                     }
                 }
 
-                // 3. Timer tick -- drive all Rtc instances forward
+                // 3. Timer tick — drive every Rtc forward and sweep outputs.
                 _ = interval.tick() => {
                     self.tick();
+                    // tick() pushed Input::Timeout into every Rtc; sweep all of
+                    // them to emit any pending Transmit/Event.
+                    self.poll_all();
 
                     // Log forwarding stats every 5 seconds
                     if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
@@ -148,12 +227,15 @@ impl SfuEngine {
                 }
             }
 
-            // After any event, poll all Rtc instances for outputs
-            self.poll_all_outputs();
+            // Only runs when something actually raised the flag (join with
+            // existing tracks, MediaAdded event, etc.).
+            if self.has_pending_negotiation {
+                self.negotiate_pending_tracks();
+            }
         }
     }
 
-    fn handle_command(&mut self, cmd: SfuCommand) {
+    fn handle_command(&mut self, cmd: SfuCommand) -> Option<PollTarget> {
         match cmd {
             SfuCommand::Join {
                 session_id,
@@ -161,30 +243,22 @@ impl SfuEngine {
                 user_id,
                 sdp_offer,
                 reply_tx,
-            } => {
-                self.handle_join(session_id, participant_id, user_id, sdp_offer, reply_tx);
-            }
+            } => self.handle_join(session_id, participant_id, user_id, sdp_offer, reply_tx),
             SfuCommand::Answer {
                 session_id,
                 participant_id,
                 sdp_answer,
-            } => {
-                self.handle_answer(session_id, participant_id, sdp_answer);
-            }
+            } => self.handle_answer(session_id, participant_id, sdp_answer),
             SfuCommand::IceCandidate {
                 session_id,
                 participant_id,
                 candidate,
                 sdp_mid,
-            } => {
-                self.handle_ice_candidate(session_id, participant_id, candidate, sdp_mid);
-            }
+            } => self.handle_ice_candidate(session_id, participant_id, candidate, sdp_mid),
             SfuCommand::Leave {
                 session_id,
                 participant_id,
-            } => {
-                self.handle_leave(session_id, participant_id);
-            }
+            } => self.handle_leave(session_id, participant_id),
         }
     }
 
@@ -195,7 +269,7 @@ impl SfuEngine {
         user_id: String,
         sdp_offer: String,
         reply_tx: mpsc::UnboundedSender<ServerMessage>,
-    ) {
+    ) -> Option<PollTarget> {
         // Parse the SDP offer (try JSON first, then raw SDP string)
         let offer: SdpOffer = match serde_json::from_str(&sdp_offer) {
             Ok(o) => o,
@@ -206,7 +280,7 @@ impl SfuEngine {
                     let _ = reply_tx.send(ServerMessage::Error {
                         message: format!("invalid SDP offer: {e}"),
                     });
-                    return;
+                    return None;
                 }
             },
         };
@@ -216,9 +290,14 @@ impl SfuEngine {
         // because str0m expects STUN before poll_output runs the first timeout.
         let mut rtc = Rtc::new();
 
-        // Add local candidate (public IP + UDP port)
-        let candidate = Candidate::host(self.candidate_addr, "udp").expect("host candidate");
-        rtc.add_local_candidate(candidate);
+        // Add one host candidate per local interface we know about.
+        // ICE on the browser then has multiple real paths to try instead of
+        // falling back to peer-reflexive when the advertised IP isn't the
+        // one the kernel actually sends from.
+        for addr in &self.candidate_addrs {
+            let candidate = Candidate::host(*addr, "udp").expect("host candidate");
+            rtc.add_local_candidate(candidate);
+        }
 
         // Accept the offer and generate answer
         let answer = match rtc.sdp_api().accept_offer(offer) {
@@ -228,7 +307,7 @@ impl SfuEngine {
                 let _ = reply_tx.send(ServerMessage::Error {
                     message: format!("SDP negotiation failed: {e}"),
                 });
-                return;
+                return None;
             }
         };
 
@@ -286,9 +365,11 @@ impl SfuEngine {
                 existing = existing_tracks.len(),
                 "queued existing tracks for new participant"
             );
+            self.has_pending_negotiation = true;
         }
 
         tracing::info!(%session_id, %participant_id, "participant joined SFU");
+        Some(PollTarget::One(session_id, participant_id))
     }
 
     fn handle_answer(
@@ -296,13 +377,9 @@ impl SfuEngine {
         session_id: SessionId,
         participant_id: ParticipantId,
         sdp_answer: String,
-    ) {
-        let Some(session) = self.sessions.get_mut(&session_id) else {
-            return;
-        };
-        let Some(participant) = session.participants.get_mut(&participant_id) else {
-            return;
-        };
+    ) -> Option<PollTarget> {
+        let session = self.sessions.get_mut(&session_id)?;
+        let participant = session.participants.get_mut(&participant_id)?;
 
         let answer = match serde_json::from_str(&sdp_answer)
             .or_else(|_| str0m::change::SdpAnswer::from_sdp_string(&sdp_answer))
@@ -310,7 +387,7 @@ impl SfuEngine {
             Ok(a) => a,
             Err(e) => {
                 tracing::warn!(%participant_id, "invalid SDP answer: {e}");
-                return;
+                return None;
             }
         };
 
@@ -320,6 +397,10 @@ impl SfuEngine {
             } else {
                 // Collect origins that just became Open (need keyframe request)
                 let mut newly_opened: Vec<(ParticipantId, Mid)> = Vec::new();
+                // Collect forwarding entries to register after participant
+                // borrow is released.
+                let mut to_register: Vec<((ParticipantId, Mid), (ParticipantId, Mid))> =
+                    Vec::new();
 
                 for track in &mut participant.tracks_out {
                     if let TrackOutState::Negotiating(mid) = track.state {
@@ -327,7 +408,18 @@ impl SfuEngine {
                         if track.kind == MediaKind::Video {
                             newly_opened.push((track.origin, track.origin_mid));
                         }
+                        to_register
+                            .push(((track.origin, track.origin_mid), (participant_id, mid)));
                     }
+                }
+
+                // Register fan-out entries (publishers → new subscriber).
+                for (key, pair) in to_register {
+                    session
+                        .forwarding_map
+                        .entry(key)
+                        .or_default()
+                        .push(pair);
                 }
 
                 // Request keyframes from origins so the subscriber gets an IDR
@@ -365,6 +457,9 @@ impl SfuEngine {
                 }
             }
         }
+        // Answer may have opened new tracks and triggered PLI against origins —
+        // sweep the whole session so those keyframe requests leave the wire.
+        Some(PollTarget::Session(session_id))
     }
 
     fn handle_ice_candidate(
@@ -373,37 +468,56 @@ impl SfuEngine {
         participant_id: ParticipantId,
         candidate: String,
         _sdp_mid: Option<String>,
-    ) {
-        tracing::info!(%participant_id, %candidate, "received remote ICE candidate");
+    ) -> Option<PollTarget> {
+        tracing::debug!(%participant_id, %candidate, "received remote ICE candidate");
 
-        let Some(session) = self.sessions.get_mut(&session_id) else {
-            tracing::warn!(%session_id, "session not found for ICE candidate");
-            return;
+        let session = match self.sessions.get_mut(&session_id) {
+            Some(s) => s,
+            None => {
+                tracing::warn!(%session_id, "session not found for ICE candidate");
+                return None;
+            }
         };
-        let Some(participant) = session.participants.get_mut(&participant_id) else {
-            tracing::warn!(%participant_id, "participant not found for ICE candidate");
-            return;
+        let participant = match session.participants.get_mut(&participant_id) {
+            Some(p) => p,
+            None => {
+                tracing::warn!(%participant_id, "participant not found for ICE candidate");
+                return None;
+            }
         };
 
         match Candidate::from_sdp_string(&candidate) {
             Ok(c) => {
                 participant.rtc.add_remote_candidate(c);
+                Some(PollTarget::One(session_id, participant_id))
             }
             Err(e) => {
                 tracing::debug!(%participant_id, "ignoring unparseable ICE candidate: {e}");
+                None
             }
         }
     }
 
-    fn handle_leave(&mut self, session_id: SessionId, participant_id: ParticipantId) {
-        let Some(session) = self.sessions.get_mut(&session_id) else {
-            return;
-        };
+    fn handle_leave(
+        &mut self,
+        session_id: SessionId,
+        participant_id: ParticipantId,
+    ) -> Option<PollTarget> {
+        // Drop addr cache entries for this participant first — cheap and keeps
+        // the mapping from pointing at a dead Rtc.
+        self.addr_to_participant
+            .retain(|_, &mut (sid, pid)| !(sid == session_id && pid == participant_id));
+
+        let session = self.sessions.get_mut(&session_id)?;
 
         if let Some(mut participant) = session.participants.remove(&participant_id) {
             participant.rtc.disconnect();
             tracing::info!(%session_id, %participant_id, "participant left SFU");
         }
+
+        // Drop fan-out entries referencing the gone participant (as publisher
+        // or subscriber). Keeps forward_media_now's O(1) lookup truthful.
+        session.drop_from_forwarding(participant_id);
 
         // Collect Open MIDs before removing TrackOut entries (need them for set_direction)
         let mut mids_to_deactivate: Vec<(ParticipantId, Vec<Mid>)> = Vec::new();
@@ -471,40 +585,134 @@ impl SfuEngine {
 
         if session.participants.is_empty() {
             self.sessions.remove(&session_id);
+            // Defensive: sweep any stragglers still pointing at this session.
+            self.addr_to_participant
+                .retain(|_, &mut (sid, _)| sid != session_id);
             tracing::info!(%session_id, "SFU session destroyed (empty)");
+            return None;
         }
+        // Deactivation offers were queued for remaining participants — sweep
+        // the session so those offers' transmits hit the wire.
+        Some(PollTarget::Session(session_id))
     }
 
-    fn handle_udp_packet(&mut self, data: &[u8], source: SocketAddr) {
-        let Ok(contents) = data.try_into() else {
-            return;
-        };
+    fn handle_udp_packet(
+        &mut self,
+        data: &[u8],
+        source: SocketAddr,
+    ) -> Option<(SessionId, ParticipantId)> {
+        // Fast path: O(1) lookup by remote addr. Populated after the first
+        // successful accept() from this source.
+        if let Some((session_id, participant_id)) =
+            self.addr_to_participant.get(&source).copied()
+        {
+            let Ok(contents) = data.try_into() else {
+                return None;
+            };
+            let input = Input::Receive(
+                Instant::now(),
+                Receive {
+                    proto: Protocol::Udp,
+                    source,
+                    destination: self.primary_candidate_addr(),
+                    contents,
+                },
+            );
 
-        let input = Input::Receive(
-            Instant::now(),
-            Receive {
-                proto: Protocol::Udp,
-                source,
-                destination: self.candidate_addr,
-                contents,
-            },
-        );
-
-        // Find which Rtc accepts this packet
-        for session in self.sessions.values_mut() {
-            for participant in session.participants.values_mut() {
-                if participant.rtc.accepts(&input) {
-                    participant.last_activity_at = Instant::now();
-                    if let Err(e) = participant.rtc.handle_input(input) {
-                        tracing::warn!(id = %participant.id, "rtc handle_input error: {e}");
-                        participant.rtc.disconnect();
+            let handled = if let Some(session) = self.sessions.get_mut(&session_id) {
+                if let Some(p) = session.participants.get_mut(&participant_id) {
+                    if p.rtc.accepts(&input) {
+                        p.last_activity_at = Instant::now();
+                        let pid = p.id;
+                        if let Err(e) = p.rtc.handle_input(input) {
+                            tracing::warn!(id = %pid, "rtc handle_input error: {e}");
+                            p.rtc.disconnect();
+                        }
+                        true
+                    } else {
+                        false
                     }
-                    return;
+                } else {
+                    false
                 }
+            } else {
+                false
+            };
+
+            if handled {
+                return Some((session_id, participant_id));
+            }
+            // Stale mapping: participant/session gone, or ICE restart rebound
+            // the Rtc to a new source. Drop the cache entry and fall through.
+            self.addr_to_participant.remove(&source);
+        }
+
+        // Slow path: linear scan. Used only for unknown source addrs — first
+        // packet from a new peer, STUN bindings, or ICE restarts.
+        let now = Instant::now();
+        // Pull the destination addr out before the &mut borrow of self.sessions.
+        let destination = self.primary_candidate_addr();
+
+        let mut matched: Option<(SessionId, ParticipantId)> = None;
+        for (session_id, session) in self.sessions.iter_mut() {
+            for participant in session.participants.values_mut() {
+                // Input is !Copy (handle_input consumes), and Receive::contents
+                // is !Copy too — so we build a fresh one each time we need it.
+                // data.try_into() is a cheap wrapper over the slice.
+                let Ok(probe_contents) = data.try_into() else {
+                    return None;
+                };
+                let probe = Input::Receive(
+                    now,
+                    Receive {
+                        proto: Protocol::Udp,
+                        source,
+                        destination,
+                        contents: probe_contents,
+                    },
+                );
+                if !participant.rtc.accepts(&probe) {
+                    continue;
+                }
+
+                let Ok(input_contents) = data.try_into() else {
+                    return None;
+                };
+                let input = Input::Receive(
+                    now,
+                    Receive {
+                        proto: Protocol::Udp,
+                        source,
+                        destination,
+                        contents: input_contents,
+                    },
+                );
+
+                participant.last_activity_at = now;
+                let pid = participant.id;
+                if let Err(e) = participant.rtc.handle_input(input) {
+                    tracing::warn!(id = %pid, "rtc handle_input error: {e}");
+                    participant.rtc.disconnect();
+                    return None;
+                }
+                matched = Some((*session_id, pid));
+                break;
+            }
+            if matched.is_some() {
+                break;
             }
         }
 
-        tracing::debug!(%source, bytes = data.len(), "no Rtc accepts UDP packet");
+        match matched {
+            Some((sid, pid)) => {
+                self.addr_to_participant.insert(source, (sid, pid));
+                Some((sid, pid))
+            }
+            None => {
+                tracing::debug!(%source, bytes = data.len(), "no Rtc accepts UDP packet");
+                None
+            }
+        }
     }
 
     fn tick(&mut self) {
@@ -541,189 +749,201 @@ impl SfuEngine {
         }
     }
 
-    /// Poll all Rtc instances and forward media IMMEDIATELY (interleaved).
-    ///
-    /// Old architecture (BUG-1): collect all MediaData into a Vec, then forward in a second pass.
-    /// The delay between polling and forwarding grew with participant count.
-    ///
-    /// New architecture: for each participant, poll -> on MediaData, write to every
-    /// subscriber and drain their transmit queues RIGHT AWAY. The packet hits UDP
-    /// within microseconds of being polled, not after we finish iterating everyone.
-    fn poll_all_outputs(&mut self) {
+    /// Sweep every Rtc in every session. Used only after the 20ms timer tick;
+    /// targeted polls handle the high-frequency UDP/command paths.
+    fn poll_all(&mut self) {
         let session_ids: Vec<SessionId> = self.sessions.keys().copied().collect();
-
         for session_id in session_ids {
-            let pids: Vec<ParticipantId> = match self.sessions.get(&session_id) {
-                Some(s) => s.participants.keys().copied().collect(),
-                None => continue,
+            self.poll_session(session_id);
+        }
+    }
+
+    /// Poll every participant of a single session. Used after Leave (for
+    /// deactivation offers) and similar session-wide changes.
+    fn poll_session(&mut self, session_id: SessionId) {
+        let pids: Vec<ParticipantId> = match self.sessions.get(&session_id) {
+            Some(s) => s.participants.keys().copied().collect(),
+            None => return,
+        };
+        for pid in pids {
+            self.poll_participant(session_id, pid);
+        }
+    }
+
+    /// Drain outputs for one participant, forwarding media inline.
+    ///
+    /// The forwarding architecture (BUG-1 fix): on MediaData we immediately
+    /// call write() + drain_transmits on every subscriber — the RTP packet
+    /// hits the wire within microseconds of being polled, not after we finish
+    /// iterating everyone.
+    fn poll_participant(&mut self, session_id: SessionId, source_pid: ParticipantId) {
+        loop {
+            // Scope the mutable borrow: extract output, then release self.sessions
+            let output = {
+                let Some(session) = self.sessions.get_mut(&session_id) else {
+                    return;
+                };
+                let Some(p) = session.participants.get_mut(&source_pid) else {
+                    return;
+                };
+                if !p.rtc.is_alive() {
+                    return;
+                }
+                p.rtc.poll_output()
             };
+            // Borrow on self.sessions released -- we can re-borrow freely below
 
-            for &source_pid in &pids {
-                loop {
-                    // Scope the mutable borrow: extract output, then release self.sessions
-                    let output = {
-                        let Some(session) = self.sessions.get_mut(&session_id) else {
-                            break;
-                        };
-                        let Some(p) = session.participants.get_mut(&source_pid) else {
-                            break;
-                        };
-                        if !p.rtc.is_alive() {
-                            break;
-                        }
-                        p.rtc.poll_output()
-                    };
-                    // Borrow on self.sessions released -- we can re-borrow freely below
-
-                    match output {
-                        Ok(Output::Transmit(transmit)) => {
-                            tracing::debug!(
-                                %source_pid,
-                                dest = %transmit.destination,
-                                bytes = transmit.contents.len(),
-                                "UDP SEND"
-                            );
-                            if let Err(e) = self
-                                .udp_socket
-                                .try_send_to(&transmit.contents, transmit.destination)
-                            {
-                                tracing::warn!("UDP send dropped: {e}");
+            match output {
+                Ok(Output::Transmit(transmit)) => {
+                    if let Err(e) = self
+                        .udp_socket
+                        .try_send_to(&transmit.contents, transmit.destination)
+                    {
+                        tracing::warn!("UDP send dropped: {e}");
+                    }
+                }
+                Ok(Output::Event(event)) => match event {
+                    Event::IceConnectionStateChange(state) => {
+                        tracing::info!(%source_pid, ?state, "ICE state changed");
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            if let Some(p) = session.participants.get_mut(&source_pid) {
+                                p.ice_disconnected =
+                                    matches!(state, IceConnectionState::Disconnected);
                             }
-                        }
-                        Ok(Output::Event(event)) => match event {
-                            Event::IceConnectionStateChange(state) => {
-                                tracing::info!(%source_pid, ?state, "ICE state changed");
-                                if let Some(session) = self.sessions.get_mut(&session_id) {
-                                    if let Some(p) = session.participants.get_mut(&source_pid) {
-                                        p.ice_disconnected = matches!(
-                                            state,
-                                            IceConnectionState::Disconnected
-                                        );
-                                    }
-                                }
-                            }
-                            Event::MediaAdded(e) => {
-                                tracing::info!(
-                                    %source_pid,
-                                    mid = %e.mid,
-                                    kind = ?e.kind,
-                                    "media track added"
-                                );
-                                // Record on source + queue TrackOut on all others (single pass)
-                                if let Some(session) = self.sessions.get_mut(&session_id) {
-                                    for (pid, p) in &mut session.participants {
-                                        if *pid == source_pid {
-                                            p.tracks_in.push(TrackIn {
-                                                mid: e.mid,
-                                                kind: e.kind,
-                                            });
-                                        } else {
-                                            let already = p.tracks_out.iter().any(|t| {
-                                                t.origin == source_pid && t.origin_mid == e.mid
-                                            });
-                                            if !already {
-                                                p.tracks_out.push(TrackOut {
-                                                    origin: source_pid,
-                                                    origin_mid: e.mid,
-                                                    kind: e.kind,
-                                                    state: TrackOutState::ToOpen,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Event::MediaData(data) => {
-                                // Count stats by kind
-                                if let Some(session) = self.sessions.get_mut(&session_id) {
-                                    if let Some(p) = session.participants.get_mut(&source_pid) {
-                                        let is_audio = p.tracks_in.iter().any(|t| {
-                                            t.mid == data.mid && t.kind == MediaKind::Audio
-                                        });
-                                        if is_audio {
-                                            self.stats_audio_fwd += 1;
-                                        } else {
-                                            self.stats_video_fwd += 1;
-                                        }
-                                    }
-                                }
-                                self.forward_media_now(session_id, source_pid, &data);
-                            }
-                            Event::KeyframeRequest(req) => {
-                                // Route PLI/FIR to the PUBLISHER, not the subscriber.
-                                // req.mid is on the subscriber's Rtc. Find which TrackOut
-                                // it belongs to and request from the origin.
-                                if let Some(session) = self.sessions.get_mut(&session_id) {
-                                    let origin =
-                                        session.participants.get(&source_pid).and_then(|p| {
-                                            p.tracks_out.iter().find_map(|t| {
-                                                if t.open_mid() == Some(req.mid) {
-                                                    Some((t.origin, t.origin_mid))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                        });
-                                    if let Some((origin_pid, origin_mid)) = origin
-                                        && let Some(origin_p) =
-                                            session.participants.get_mut(&origin_pid)
-                                        && let Some(mut w) = origin_p.rtc.writer(origin_mid)
-                                    {
-                                        let _ = w.request_keyframe(req.rid, req.kind);
-                                    }
-                                }
-                            }
-                            _ => {}
-                        },
-                        Ok(Output::Timeout(_)) => break,
-                        Err(e) => {
-                            tracing::warn!(%source_pid, "poll_output error: {e}");
-                            if let Some(session) = self.sessions.get_mut(&session_id)
-                                && let Some(p) = session.participants.get_mut(&source_pid)
-                            {
-                                p.rtc.disconnect();
-                            }
-                            break;
                         }
                     }
+                    Event::MediaAdded(e) => {
+                        tracing::info!(
+                            %source_pid,
+                            mid = %e.mid,
+                            kind = ?e.kind,
+                            "media track added"
+                        );
+                        // Record on source + queue TrackOut on all others (single pass)
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            let mut queued_for_others = false;
+                            for (pid, p) in &mut session.participants {
+                                if *pid == source_pid {
+                                    p.tracks_in.push(TrackIn {
+                                        mid: e.mid,
+                                        kind: e.kind,
+                                    });
+                                } else {
+                                    let already = p.tracks_out.iter().any(|t| {
+                                        t.origin == source_pid && t.origin_mid == e.mid
+                                    });
+                                    if !already {
+                                        p.tracks_out.push(TrackOut {
+                                            origin: source_pid,
+                                            origin_mid: e.mid,
+                                            kind: e.kind,
+                                            state: TrackOutState::ToOpen,
+                                        });
+                                        queued_for_others = true;
+                                    }
+                                }
+                            }
+                            if queued_for_others {
+                                self.has_pending_negotiation = true;
+                            }
+                        }
+                    }
+                    Event::MediaData(data) => {
+                        // Count stats by kind
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            if let Some(p) = session.participants.get_mut(&source_pid) {
+                                let is_audio = p.tracks_in.iter().any(|t| {
+                                    t.mid == data.mid && t.kind == MediaKind::Audio
+                                });
+                                if is_audio {
+                                    self.stats_audio_fwd += 1;
+                                } else {
+                                    self.stats_video_fwd += 1;
+                                }
+                            }
+                        }
+                        self.forward_media_now(session_id, source_pid, &data);
+                    }
+                    Event::KeyframeRequest(req) => {
+                        // Route PLI/FIR to the PUBLISHER, not the subscriber.
+                        // req.mid is on the subscriber's Rtc. Find which TrackOut
+                        // it belongs to and request from the origin.
+                        if let Some(session) = self.sessions.get_mut(&session_id) {
+                            let origin =
+                                session.participants.get(&source_pid).and_then(|p| {
+                                    p.tracks_out.iter().find_map(|t| {
+                                        if t.open_mid() == Some(req.mid) {
+                                            Some((t.origin, t.origin_mid))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                });
+                            if let Some((origin_pid, origin_mid)) = origin
+                                && let Some(origin_p) =
+                                    session.participants.get_mut(&origin_pid)
+                                && let Some(mut w) = origin_p.rtc.writer(origin_mid)
+                            {
+                                let _ = w.request_keyframe(req.rid, req.kind);
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                Ok(Output::Timeout(_)) => return,
+                Err(e) => {
+                    tracing::warn!(%source_pid, "poll_output error: {e}");
+                    if let Some(session) = self.sessions.get_mut(&session_id)
+                        && let Some(p) = session.participants.get_mut(&source_pid)
+                    {
+                        p.rtc.disconnect();
+                    }
+                    return;
                 }
             }
         }
-
-        // Negotiate tracks in a separate pass -- batch all ToOpen into one SDP offer per participant
-        self.negotiate_pending_tracks();
     }
 
     /// Forward one MediaData packet to every subscriber immediately.
     /// write() + drain_transmits per target so the RTP packet hits UDP
     /// within the same poll iteration that produced it.
+    ///
+    /// Hot path: the subscriber list is looked up in O(1) from
+    /// `session.forwarding_map`. To iterate without holding a borrow on the
+    /// HashMap while we mutate individual participants, we `mem::take` the
+    /// Vec out of the map, iterate, and put it back. An empty Vec never
+    /// allocates, so this is zero-alloc when a (pid,mid) already exists
+    /// in the map.
     fn forward_media_now(
         &mut self,
         session_id: SessionId,
         source_pid: ParticipantId,
         data: &MediaData,
     ) {
-        // Immutable borrow: collect (target_pid, outgoing_mid) pairs
-        let targets: Vec<(ParticipantId, Mid)> = {
-            let Some(session) = self.sessions.get(&session_id) else {
+        let key = (source_pid, data.mid);
+
+        // Extract subscriber list without cloning — we put it back below.
+        let (mut targets, existed) = {
+            let Some(session) = self.sessions.get_mut(&session_id) else {
                 return;
             };
-            session
-                .participants
-                .iter()
-                .filter(|(pid, _)| **pid != source_pid)
-                .filter_map(|(pid, p)| {
-                    p.tracks_out
-                        .iter()
-                        .find(|t| t.origin == source_pid && t.origin_mid == data.mid)
-                        .and_then(|t| t.open_mid())
-                        .map(|mid| (*pid, mid))
-                })
-                .collect()
+            match session.forwarding_map.get_mut(&key) {
+                Some(entry) => (std::mem::take(entry), true),
+                None => (Vec::new(), false),
+            }
         };
-        // Immutable borrow released
 
-        for (target_pid, mid) in targets {
+        if targets.is_empty() {
+            if existed {
+                // Was there but empty — drop the stale entry.
+                if let Some(session) = self.sessions.get_mut(&session_id) {
+                    session.forwarding_map.remove(&key);
+                }
+            }
+            return;
+        }
+
+        for &(target_pid, target_mid) in &targets {
             let Some(session) = self.sessions.get_mut(&session_id) else {
                 return;
             };
@@ -731,7 +951,7 @@ impl SfuEngine {
                 continue;
             };
 
-            let Some(writer) = target.rtc.writer(mid) else {
+            let Some(writer) = target.rtc.writer(target_mid) else {
                 continue;
             };
             let Some(pt) = writer.match_params(data.params) else {
@@ -757,11 +977,32 @@ impl SfuEngine {
                 }
             }
         }
+
+        // Put the Vec back — same allocation, same capacity, no re-scan on
+        // the next packet for this publisher/mid.
+        if let Some(session) = self.sessions.get_mut(&session_id) {
+            match session.forwarding_map.get_mut(&key) {
+                Some(entry) => {
+                    *entry = std::mem::take(&mut targets);
+                }
+                None => {
+                    // Entry vanished (e.g. publisher left mid-forward). Drop Vec.
+                }
+            }
+        }
     }
 
     /// Create SDP offers for all participants that have ToOpen outgoing tracks.
     /// Batches multiple ToOpen tracks into a single offer per participant.
+    ///
+    /// Gated by `self.has_pending_negotiation` — don't call this every
+    /// audio packet when there's nothing to negotiate.
     fn negotiate_pending_tracks(&mut self) {
+        // Clear the flag up front. Any new ToOpen queued during this pass
+        // (e.g. from an SDP apply that triggers another MediaAdded) will
+        // set it again.
+        self.has_pending_negotiation = false;
+
         let mut to_negotiate: Vec<(SessionId, ParticipantId)> = Vec::new();
         for (session_id, session) in &self.sessions {
             for (pid, participant) in &session.participants {
@@ -773,6 +1014,10 @@ impl SfuEngine {
                     to_negotiate.push((*session_id, *pid));
                 }
             }
+        }
+
+        if to_negotiate.is_empty() {
+            return;
         }
 
         for (session_id, pid) in to_negotiate {
@@ -790,7 +1035,7 @@ impl SfuEngine {
                         .filter_map(|t| {
                             let origin_p = session.participants.get(&t.origin)?;
                             Some(crate::signaling::messages::TrackMapping {
-                                stream_id: t.origin.to_string(),
+                                stream_id: stream_id_for(t.origin, t.kind),
                                 participant_id: t.origin,
                                 user_id: origin_p.user_id.clone(),
                             })
@@ -804,6 +1049,10 @@ impl SfuEngine {
             };
 
             if participant.pending_offer.is_some() {
+                // Can't send a new offer while we're still waiting for an
+                // answer. Re-raise the flag so the next pass retries after
+                // handle_answer clears pending_offer.
+                self.has_pending_negotiation = true;
                 continue;
             }
 
@@ -812,10 +1061,15 @@ impl SfuEngine {
 
             for track in &mut participant.tracks_out {
                 if let TrackOutState::ToOpen = track.state {
+                    // Separate msid per (publisher, kind). If audio and video
+                    // from the same publisher share an msid, Chrome treats
+                    // them as one MediaStream and holds audio playout back
+                    // waiting for video sync — so a mic-only publisher's
+                    // audio gets silently discarded until video appears.
                     let mid = change.add_media(
                         track.kind,
                         Direction::SendOnly,
-                        Some(track.origin.to_string()),
+                        Some(stream_id_for(track.origin, track.kind)),
                         None,
                         None,
                     );

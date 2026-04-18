@@ -1,4 +1,10 @@
-import type { VideoClientOptions, VideoClientEvent, Participant } from "./types";
+import type {
+  VideoClientOptions,
+  VideoClientEvent,
+  Participant,
+  VideoDiagnostics,
+  TrackInfo,
+} from "./types";
 
 type EventHandler = (event: VideoClientEvent) => void;
 
@@ -35,6 +41,10 @@ export class VideoClient {
   private audioContext: AudioContext | null = null;
   private analyserNodes = new Map<string, AnalyserNode>();
   private speakingInterval: ReturnType<typeof setInterval> | null = null;
+  // Per-participant VAD state — tracks how many consecutive poll ticks the
+  // participant has been below the "silence" threshold. Used to give a hang-over
+  // window so normal speech pauses don't flap speaking off.
+  private vadSilenceTicks = new Map<string, number>();
 
   constructor(opts: VideoClientOptions) {
     this.opts = opts;
@@ -61,6 +71,17 @@ export class VideoClient {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private log(msg: string, ...args: any[]) {
     console.log(`[VideoClient] ${msg}`, ...args);
+    // Mirror to debug stream so the debug panel captures everything
+    // the console shows, without consumers having to scrape the console.
+    const data = args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
+    this.emit({ type: "debug", level: "info", msg, data });
+  }
+
+  private debug(level: "info" | "warn" | "error", msg: string, data?: unknown) {
+    if (level === "warn") console.warn(`[VideoClient] ${msg}`, data);
+    else if (level === "error") console.error(`[VideoClient] ${msg}`, data);
+    else console.log(`[VideoClient] ${msg}`, data);
+    this.emit({ type: "debug", level, msg, data });
   }
 
   /** Connect to the session: open WebSocket, create PeerConnection */
@@ -142,7 +163,13 @@ export class VideoClient {
     };
 
     pc.oniceconnectionstatechange = () => {
-      this.log("ICE connection state:", pc.iceConnectionState);
+      this.debug("info", "ICE connection state", { state: pc.iceConnectionState });
+    };
+    pc.onicegatheringstatechange = () => {
+      this.debug("info", "ICE gathering state", { state: pc.iceGatheringState });
+    };
+    pc.onsignalingstatechange = () => {
+      this.debug("info", "signaling state", { state: pc.signalingState });
     };
 
     // Handle remote tracks (from other participants via SFU)
@@ -174,22 +201,19 @@ export class VideoClient {
       // Match stream to participant.
       // Stream_id mapping is registered when we receive "offer" with tracks array.
       // The mapping adds participant under stream_id key in this.participants.
-      let participant = this.participants.get(streamId);
+      const participant = this.participants.get(streamId);
 
       if (!participant) {
-        // Fallback: create placeholder (shouldn't happen if offer has tracks mapping)
-        this.log("creating placeholder participant for stream (no mapping)", { streamId });
-        participant = {
-          participantId: streamId,
-          userId: "remote",
-          audioTrack: null,
-          videoTrack: null,
-          isSpeaking: false,
-          isMicMuted: true,
-          stream,
-        };
-        this.participants.set(streamId, participant);
-        this.emit({ type: "participant_joined", participant });
+        // No mapping — this used to spawn a "remote" placeholder, which
+        // hid real desync bugs (msid sanitization, out-of-order offer/ontrack)
+        // behind ghost tiles in the UI. Now we drop the track and surface
+        // the mismatch in the debug panel.
+        this.debug("warn", "ontrack without participant mapping — dropping", {
+          streamId,
+          trackKind: e.track.kind,
+          knownStreams: Array.from(this.participants.keys()),
+        });
+        return;
       }
 
       if (e.track.kind === "audio") {
@@ -222,7 +246,11 @@ export class VideoClient {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+      this.debug("info", "PC connection state", { state: pc.connectionState });
+      // "disconnected" in WebRTC is a transient state — ICE restart / route
+      // recovery can restore the connection. Only treat failed/closed as fatal,
+      // otherwise a brief network hiccup flips the UI back to "Connecting…".
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         this.emit({ type: "disconnected", reason: `peer connection ${pc.connectionState}` });
       }
     };
@@ -583,7 +611,15 @@ export class VideoClient {
     // Bins 1-11 cover roughly 94-1034 Hz (the voice fundamental range).
     const VOICE_BIN_START = 1;
     const VOICE_BIN_END = 12;
-    const THRESHOLD = 15; // lowered: catches quiet speech
+    // Hysteresis: require louder level to START speaking than to STAY speaking.
+    // Without the gap the state flapped 50 times/sec around a single threshold
+    // (especially with two browsers on one machine picking up each other's
+    // echo). Numbers empirical for Opus decoded at ~-30dBFS speech.
+    const THRESHOLD_ON = 22;
+    const THRESHOLD_OFF = 12;
+    // After level drops below OFF, keep showing "speaking" for this many ticks
+    // so natural pauses between words don't gap out the indicator. 8 * 60ms ≈ 480ms.
+    const MAX_SILENCE_TICKS = 8;
     const data = new Uint8Array(256); // fftSize/2
 
     for (const [pid, analyser] of this.analyserNodes) {
@@ -595,12 +631,38 @@ export class VideoClient {
         sum += data[i];
       }
       const avg = sum / (VOICE_BIN_END - VOICE_BIN_START);
-      const speaking = avg > THRESHOLD;
 
       const participant = this.participants.get(pid);
-      if (participant && participant.isSpeaking !== speaking) {
-        participant.isSpeaking = speaking;
-        this.emit({ type: "speaking_changed", participantId: pid, speaking });
+      if (!participant) continue;
+
+      const wasSpeaking = participant.isSpeaking;
+      let silenceTicks = this.vadSilenceTicks.get(pid) ?? 0;
+      let newSpeaking = wasSpeaking;
+
+      if (wasSpeaking) {
+        if (avg < THRESHOLD_OFF) {
+          silenceTicks++;
+          if (silenceTicks >= MAX_SILENCE_TICKS) {
+            newSpeaking = false;
+            silenceTicks = 0;
+          }
+        } else {
+          silenceTicks = 0;
+        }
+      } else if (avg > THRESHOLD_ON) {
+        newSpeaking = true;
+        silenceTicks = 0;
+      }
+
+      this.vadSilenceTicks.set(pid, silenceTicks);
+
+      if (newSpeaking !== wasSpeaking) {
+        participant.isSpeaking = newSpeaking;
+        this.emit({
+          type: "speaking_changed",
+          participantId: pid,
+          speaking: newSpeaking,
+        });
       }
     }
   }
@@ -622,6 +684,89 @@ export class VideoClient {
     return this.localStream;
   }
 
+  /** Snapshot of current client state + WebRTC stats. For the debug panel. */
+  async getDiagnostics(): Promise<VideoDiagnostics> {
+    const pc = this.pc;
+    const senders: TrackInfo[] = pc
+      ? pc.getSenders().map((s) => ({
+          kind: s.track?.kind,
+          enabled: s.track?.enabled,
+          muted: s.track?.muted,
+          readyState: s.track?.readyState,
+          trackId: s.track?.id,
+        }))
+      : [];
+    const receivers: TrackInfo[] = pc
+      ? pc.getReceivers().map((r) => ({
+          kind: r.track?.kind,
+          enabled: r.track?.enabled,
+          muted: r.track?.muted,
+          readyState: r.track?.readyState,
+          trackId: r.track?.id,
+        }))
+      : [];
+
+    let stats: Array<Record<string, unknown>> = [];
+    if (pc) {
+      try {
+        const raw = await pc.getStats();
+        // Keep only entries that are useful for live-call debugging.
+        const KEEP = new Set([
+          "inbound-rtp",
+          "outbound-rtp",
+          "remote-inbound-rtp",
+          "remote-outbound-rtp",
+          "candidate-pair",
+          "local-candidate",
+          "remote-candidate",
+          "transport",
+        ]);
+        raw.forEach((report) => {
+          if (KEEP.has(report.type)) {
+            // Flatten RTCStats to plain object for JSON serialization.
+            stats.push({ ...report });
+          }
+        });
+      } catch (e) {
+        stats = [{ error: String(e) }];
+      }
+    }
+
+    return {
+      userId: this.opts.userId,
+      sessionId: this.opts.sessionId,
+      participantId: this.participantId,
+      joined: this.joined,
+      micEnabled: this.micEnabled,
+      camEnabled: this.camEnabled,
+      pcConnectionState: pc?.connectionState ?? "none",
+      iceConnectionState: pc?.iceConnectionState ?? "none",
+      iceGatheringState: pc?.iceGatheringState ?? "none",
+      signalingState: pc?.signalingState ?? "none",
+      localDescriptionType: pc?.localDescription?.type,
+      remoteDescriptionType: pc?.remoteDescription?.type,
+      senders,
+      receivers,
+      // this.participants is keyed by both participantId and per-stream aliases
+      // (from offer.tracks mapping), so values() yields the same Participant
+      // multiple times. Dedupe for the dump so the diagnostic list matches
+      // what the UI actually renders.
+      participants: Array.from(
+        new Map(
+          Array.from(this.participants.values()).map((p) => [p.participantId, p]),
+        ).values(),
+      ).map((p) => ({
+        participantId: p.participantId,
+        userId: p.userId,
+        hasAudio: !!p.audioTrack,
+        hasVideo: !!p.videoTrack,
+        isSpeaking: p.isSpeaking,
+        isMicMuted: p.isMicMuted,
+      })),
+      stats,
+    };
+  }
+
   // ── Cleanup ────────────────────────────────────
 
   /** Disconnect and clean up everything */
@@ -633,6 +778,7 @@ export class VideoClient {
     this.audioContext?.close();
     this.audioContext = null;
     this.analyserNodes.clear();
+    this.vadSilenceTicks.clear();
 
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.send({ type: "leave" });

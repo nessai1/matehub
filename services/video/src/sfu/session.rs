@@ -15,6 +15,13 @@ pub struct SfuSession {
     #[allow(dead_code)] // used for logging, will be used for Redis in Stage 2
     pub id: SessionId,
     pub participants: HashMap<ParticipantId, SfuParticipant>,
+    /// Precomputed fan-out map for O(1) lookup on every incoming media packet.
+    /// Key: (publisher, publisher's mid). Value: list of (subscriber, subscriber's mid).
+    ///
+    /// Updated incrementally when a TrackOut transitions to Open, and when a
+    /// participant leaves. Empty entries are pruned. Lives here (not on the
+    /// participants) so media forwarding doesn't have to scan per packet.
+    pub forwarding_map: HashMap<(ParticipantId, Mid), Vec<(ParticipantId, Mid)>>,
 }
 
 impl SfuSession {
@@ -22,7 +29,19 @@ impl SfuSession {
         Self {
             id,
             participants: HashMap::new(),
+            forwarding_map: HashMap::new(),
         }
+    }
+
+    /// Drop every forwarding entry touching `gone` — as publisher (key) or
+    /// subscriber (value). Called on participant leave.
+    pub fn drop_from_forwarding(&mut self, gone: ParticipantId) {
+        self.forwarding_map
+            .retain(|&(publisher, _), _| publisher != gone);
+        for targets in self.forwarding_map.values_mut() {
+            targets.retain(|&(subscriber, _)| subscriber != gone);
+        }
+        self.forwarding_map.retain(|_, targets| !targets.is_empty());
     }
 }
 

@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMembers, usePresence } from "@/hooks/use-members";
+import { usePermissions, P } from "@/hooks/use-permissions";
 import { MemberCard } from "./member-card";
 import type { Member, MemberGroup } from "@/hooks/use-members";
 
 export function MemberSidebar() {
   usePresence();
   const { members, loading, refetch } = useMembers();
+  const { has } = usePermissions();
+  const canInvite = has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS);
 
   const online = members.filter((m) => m.is_online);
   const offline = members.filter((m) => !m.is_online);
@@ -80,16 +83,18 @@ export function MemberSidebar() {
       </ScrollArea>
 
       {/* Add Teammates */}
-      <div className="border-t border-border/50 p-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <UserPlusIcon className="h-3.5 w-3.5" />
-          Add Teammates
-        </Button>
-      </div>
+      {canInvite && (
+        <div className="border-t border-border/50 p-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <UserPlusIcon className="h-3.5 w-3.5" />
+            Add Teammates
+          </Button>
+        </div>
+      )}
     </aside>
   );
 }

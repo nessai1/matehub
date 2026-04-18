@@ -25,6 +25,10 @@ pub struct DataService {
     select_buckets: PreparedStatement,
     update_content: PreparedStatement,
     soft_delete: PreparedStatement,
+    // Read state (source of truth in ScyllaDB, cached in Redis)
+    upsert_read_state: PreparedStatement,
+    select_read_state: PreparedStatement,
+    select_read_states_for_user: PreparedStatement,
 }
 
 impl DataService {
@@ -68,6 +72,28 @@ impl DataService {
             )
             .await?;
 
+        // Read state prepared statements
+        let upsert_read_state = session
+            .prepare(
+                "INSERT INTO read_state (user_id, hub_id, channel_id, last_read_message_id, mention_count, updated_at)
+                 VALUES (?, ?, ?, ?, 0, toTimestamp(now()))",
+            )
+            .await?;
+
+        let select_read_state = session
+            .prepare(
+                "SELECT last_read_message_id, mention_count FROM read_state
+                 WHERE user_id = ? AND hub_id = ? AND channel_id = ?",
+            )
+            .await?;
+
+        let select_read_states_for_user = session
+            .prepare(
+                "SELECT hub_id, channel_id, last_read_message_id, mention_count FROM read_state
+                 WHERE user_id = ?",
+            )
+            .await?;
+
         tracing::info!("DataService: prepared statements cached");
 
         let update_content = session
@@ -93,6 +119,9 @@ impl DataService {
             select_buckets,
             update_content,
             soft_delete,
+            upsert_read_state,
+            select_read_state,
+            select_read_states_for_user,
         })
     }
 
@@ -390,5 +419,71 @@ impl DataService {
             )
             .await?;
         Ok(())
+    }
+
+    // ── Read State (ScyllaDB source of truth) ──────
+
+    /// Mark channel as read up to message_id. Write-through to ScyllaDB.
+    pub async fn mark_read(
+        &self,
+        user_id: &str,
+        hub_id: i64,
+        channel_id: i64,
+        last_read_message_id: i64,
+    ) -> Result<()> {
+        self.session
+            .execute_unpaged(
+                &self.upsert_read_state,
+                (user_id, hub_id, channel_id, last_read_message_id),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Get read state for a single channel. Returns (last_read_message_id, mention_count).
+    pub async fn get_read_state(
+        &self,
+        user_id: &str,
+        hub_id: i64,
+        channel_id: i64,
+    ) -> Result<Option<(i64, i32)>> {
+        let rows = self
+            .session
+            .execute_unpaged(
+                &self.select_read_state,
+                (user_id, hub_id, channel_id),
+            )
+            .await?;
+
+        let result = rows
+            .into_rows_result()?
+            .rows::<(i64, i32)>()?
+            .next()
+            .transpose()?;
+
+        Ok(result)
+    }
+
+    /// Get all read states for a user (for initial sync / cache warm-up).
+    /// Returns Vec<(hub_id, channel_id, last_read_message_id, mention_count)>.
+    pub async fn get_all_read_states(
+        &self,
+        user_id: &str,
+    ) -> Result<Vec<(i64, i64, i64, i32)>> {
+        let rows = self
+            .session
+            .execute_unpaged(
+                &self.select_read_states_for_user,
+                (user_id,),
+            )
+            .await?;
+
+        let result: Vec<(i64, i64, i64, i32)> = rows
+            .into_rows_result()?
+            .rows::<(i64, i64, i64, i32)>()?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(result)
     }
 }

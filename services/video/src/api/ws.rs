@@ -124,12 +124,21 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
             _ => continue,
         };
 
-        tracing::info!(%participant_id, raw = %text.chars().take(120).collect::<String>(), "WS raw message");
+        // Hot path: trickle ICE alone fires this dozens of times per join.
+        // Keep it at debug so we don't allocate the truncated-string field
+        // for every packet when RUST_LOG=info.
+        tracing::debug!(%participant_id, bytes = text.len(), "WS raw message");
 
         let client_msg: ClientMessage = match serde_json::from_str(&text) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!(%participant_id, %e, raw = %text.chars().take(200).collect::<String>(), "failed to parse WS message");
+                // Only on parse failure do we pay for the truncated preview.
+                tracing::warn!(
+                    %participant_id,
+                    %e,
+                    raw = %text.chars().take(200).collect::<String>(),
+                    "failed to parse WS message"
+                );
                 let _ = ws_tx.send(ServerMessage::Error {
                     message: format!("invalid message: {e}"),
                 });
@@ -171,7 +180,8 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                 sdp_mid,
                 sdp_mline_index: _,
             } => {
-                tracing::info!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
+                // Trickle ICE is chatty — keep at debug to not flood logs.
+                tracing::debug!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
                 let _ = sfu_tx.send(SfuCommand::IceCandidate {
                     session_id,
                     participant_id,

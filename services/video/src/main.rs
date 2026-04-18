@@ -16,6 +16,11 @@ use config::Config;
 use sfu::SfuEngine;
 use state::AppState;
 
+// SFU allocates on hot paths (RTP buffers, NACK cache, SRTP contexts).
+// Default malloc is visibly slower than mimalloc under high-pps load.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -48,7 +53,7 @@ async fn main() -> Result<()> {
     tracing::info!(addr = %udp_addr, send_buf = actual_send, recv_buf = actual_recv, "UDP media socket bound");
 
     // Start SFU engine
-    let engine = SfuEngine::new(udp_socket, config.public_ip, sfu_cmd_rx);
+    let engine = SfuEngine::new(udp_socket, config.public_ips.clone(), sfu_cmd_rx);
     tokio::spawn(async move {
         engine.run().await;
     });
@@ -64,7 +69,7 @@ async fn main() -> Result<()> {
     tracing::info!(
         http = %http_addr,
         udp = %udp_addr,
-        public_ip = %config.public_ip,
+        public_ips = ?config.public_ips,
         "matehub-video started"
     );
 

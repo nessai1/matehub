@@ -218,11 +218,20 @@ async fn mark_read(
     State(state): State<AppState>,
     Path(channel_id_raw): Path<String>,
     auth: AuthUser,
-    Json(_body): Json<AckRequest>,
+    Json(body): Json<AckRequest>,
 ) -> StatusCode {
+    let hub_id = str_to_i64(&auth.0.hub_id);
     let channel_id = str_to_i64(&channel_id_raw);
     if let Some(mut redis) = state.redis.clone() {
-        read_state::mark_read(&mut redis, &auth.0.sub, channel_id).await;
+        read_state::mark_read(
+            &mut redis, &state.data,
+            &auth.0.sub, hub_id, channel_id, body.message_id,
+        ).await;
+    } else {
+        // No Redis -- write directly to ScyllaDB
+        if let Err(e) = state.data.mark_read(&auth.0.sub, hub_id, channel_id, body.message_id).await {
+            tracing::error!("mark_read failed: {e}");
+        }
     }
     StatusCode::NO_CONTENT
 }

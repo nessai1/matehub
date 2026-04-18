@@ -29,6 +29,9 @@ export function CallGrid({
   memberInfo,
 }: CallGridProps) {
   const localInfo = memberInfo[currentUserId];
+  const localVideoTrack = isCamEnabled
+    ? localStream?.getVideoTracks()[0] ?? null
+    : null;
 
   const tiles = [
     {
@@ -36,8 +39,8 @@ export function CallGrid({
       userId: currentUserId,
       displayName: localInfo?.displayName ?? currentUserId,
       avatarUrl: localInfo?.avatarUrl ?? null,
-      stream: localStream,
-      hasVideo: isCamEnabled,
+      audioTrack: null, // never play back our own mic — feedback loop
+      videoTrack: localVideoTrack,
       isMicMuted: !isMicEnabled,
       isSpeaking: false,
       isLocal: true,
@@ -49,8 +52,8 @@ export function CallGrid({
         userId: p.userId,
         displayName: info?.displayName ?? p.userId,
         avatarUrl: info?.avatarUrl ?? null,
-        stream: p.stream,
-        hasVideo: p.videoTrack?.enabled ?? false,
+        audioTrack: p.audioTrack,
+        videoTrack: p.videoTrack,
         isMicMuted: p.isMicMuted,
         isSpeaking: p.isSpeaking,
         isLocal: false,
@@ -79,8 +82,8 @@ interface ParticipantTileProps {
   userId: string;
   displayName: string;
   avatarUrl: string | null;
-  stream: MediaStream | null;
-  hasVideo: boolean;
+  audioTrack: MediaStreamTrack | null;
+  videoTrack: MediaStreamTrack | null;
   isMicMuted: boolean;
   isSpeaking: boolean;
   isLocal: boolean;
@@ -89,24 +92,43 @@ interface ParticipantTileProps {
 function ParticipantTile({
   displayName,
   avatarUrl,
-  stream,
-  hasVideo,
+  audioTrack,
+  videoTrack,
   isMicMuted,
   isSpeaking,
   isLocal,
 }: ParticipantTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Attach video track to the <video> element. Rebuilt per track so
+  // React's deps fire on track replacement (replaceTrack keeps object id
+  // but we treat it as a new source here for simplicity).
   useEffect(() => {
-    if (videoRef.current) {
-      if (stream && hasVideo) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
-      } else {
-        videoRef.current.srcObject = null;
-      }
+    const el = videoRef.current;
+    if (!el) return;
+    if (videoTrack) {
+      el.srcObject = new MediaStream([videoTrack]);
+      el.play().catch(() => {});
+    } else {
+      el.srcObject = null;
     }
-  }, [stream, hasVideo]);
+  }, [videoTrack]);
+
+  // Attach audio track to a dedicated hidden <audio> element. Without
+  // a media sink Chrome never primes the audio decoder — packets arrive
+  // but are discarded and jitterBufferEmittedCount stays at 0. Skipped
+  // for the local tile (would feed our own mic back into the speakers).
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (audioTrack && !isLocal) {
+      el.srcObject = new MediaStream([audioTrack]);
+      el.play().catch(() => {});
+    } else {
+      el.srcObject = null;
+    }
+  }, [audioTrack, isLocal]);
 
   const initials = displayName
     .split(" ")
@@ -114,6 +136,8 @@ function ParticipantTile({
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  const hasVideo = !!videoTrack;
 
   return (
     <div
@@ -123,7 +147,7 @@ function ParticipantTile({
           "ring-2 ring-emerald-500 ring-offset-2 ring-offset-background",
       )}
     >
-      {hasVideo && stream ? (
+      {hasVideo ? (
         <video
           ref={videoRef}
           autoPlay
@@ -142,6 +166,10 @@ function ParticipantTile({
           </AvatarFallback>
         </Avatar>
       )}
+
+      {/* Hidden audio sink. Always present for remote tiles so the decoder
+          runs regardless of the video-element mount state. */}
+      {!isLocal && <audio ref={audioRef} autoPlay playsInline hidden />}
 
       {/* Name badge + mic muted indicator */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5">

@@ -5,6 +5,7 @@ import { Mic, PhoneIncoming } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CallGrid, type MemberInfo } from "@/components/hub/call-grid";
 import { CallControls } from "@/components/hub/call-controls";
+import { CallDebugPanel } from "@/components/hub/call-debug-panel";
 import { TextChannelView } from "@/components/hub/text-channel-view";
 import { useVideoClient } from "@/hooks/use-video-client";
 import { useMembers } from "@/hooks/use-members";
@@ -67,6 +68,7 @@ export function VoiceChannelView({
     connect,
     disconnect,
     error,
+    client,
   } = useVideoClient(
     sessionId
       ? {
@@ -176,6 +178,10 @@ export function VoiceChannelView({
       <div className="flex flex-1 flex-col overflow-hidden">
         <TextChannelView channelId={channelId} channelName={channelName} />
       </div>
+
+      {process.env.NODE_ENV === "development" && (
+        <CallDebugPanel client={client} />
+      )}
     </div>
   );
 }

@@ -26,12 +26,16 @@ interface UseVideoClientReturn {
   connect: () => Promise<void>;
   disconnect: () => void;
   error: string | null;
+  /** Underlying SDK client — exposed for debug tooling. Null when not connected. */
+  client: VideoClient | null;
 }
 
 export function useVideoClient(
   opts: UseVideoClientOptions | null,
 ): UseVideoClientReturn {
   const clientRef = useRef<VideoClient | null>(null);
+  // Mirror client ref in state so consumers (debug panel) rerender when it appears.
+  const [client, setClient] = useState<VideoClient | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -153,12 +157,14 @@ export function useVideoClient(
     });
 
     clientRef.current = client;
+    setClient(client);
     await client.connect();
   }, [opts, updateParticipants]);
 
   const disconnect = useCallback(() => {
     clientRef.current?.disconnect();
     clientRef.current = null;
+    setClient(null);
     setIsConnected(false);
     setParticipants([]);
     setLocalStream(null);
@@ -210,5 +216,6 @@ export function useVideoClient(
     connect,
     disconnect,
     error,
+    client,
   };
 }

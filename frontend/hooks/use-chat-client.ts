@@ -35,6 +35,8 @@ export function useChatClient(channelId: string) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Track when each user last sent a message -- ignores stale typing events */
+  const lastMessageAt = useRef<Record<string, number>>({});
   const myUserId = session?.userId ?? "";
   // i64 hash of channelId -- resolved from first history/message response
   const channelHash = useRef<number | null>(null);
@@ -60,8 +62,16 @@ export function useChatClient(channelId: string) {
         case "message.new":
           if (channelHash.current !== null && event.message.channel_id === channelHash.current) {
             setMessages((prev) => [...prev, event.message]);
+            // Author stopped typing since they just sent
+            const authorId = event.message.author_id;
+            lastMessageAt.current[authorId] = Date.now();
+            setTypingUsers((prev) => prev.filter((u) => u !== authorId));
+            if (typingTimers.current[authorId]) {
+              clearTimeout(typingTimers.current[authorId]);
+              delete typingTimers.current[authorId];
+            }
             // Sound: incoming if from someone else, outgoing if mine
-            if (event.message.author_id === myUserId) {
+            if (authorId === myUserId) {
               playSound("message-out");
             } else {
               playSound("message-in");
@@ -95,6 +105,9 @@ export function useChatClient(channelId: string) {
             event.data.user_id !== myUserId
           ) {
             const uid = event.data.user_id;
+            // Ignore stale typing arriving right after a message from same user (NATS ordering)
+            const lastMsg = lastMessageAt.current[uid] ?? 0;
+            if (Date.now() - lastMsg < 2000) break;
             setTypingUsers((prev) =>
               prev.includes(uid) ? prev : [...prev, uid],
             );
