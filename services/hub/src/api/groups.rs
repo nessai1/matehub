@@ -202,6 +202,19 @@ async fn delete_group(
     if !caller.can_manage_position(target.position) {
         return Err(StatusCode::FORBIDDEN);
     }
+    // Can't delete a group you're a member of
+    let caller_in_group: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM member_groups WHERE hub_id = $1 AND user_id = $2 AND group_id = $3)",
+    )
+    .bind(hub_id)
+    .bind(auth.0.sub)
+    .bind(group_id)
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if caller_in_group {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     sqlx::query("DELETE FROM groups WHERE id = $1 AND hub_id = $2")
         .bind(group_id)

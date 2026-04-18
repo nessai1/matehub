@@ -104,10 +104,11 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
 
     // ── Groups ──────────────────────────────────────
     // (id, name, color, position, is_default, hub_permissions)
+    // Position: lower number = higher privilege. Admin at top.
     let groups = [
-        (DEV_GROUP_EVERYONE, "everyone", "#99AAB5", 0, true, 0i32),
-        (DEV_GROUP_ADMIN, "admin", "#E74C3C", 1, false, bits::ALL),
-        (DEV_GROUP_GUESTS, "guests", "#95A5A6", 2, false, 0i32),
+        (DEV_GROUP_ADMIN, "admin", "#E74C3C", 0, false, bits::ALL),
+        (DEV_GROUP_GUESTS, "guests", "#95A5A6", 1, false, 0i32),
+        (DEV_GROUP_EVERYONE, "everyone", "#99AAB5", 100, true, 0i32),
     ];
     for (id, name, color, position, is_default, hub_perms) in &groups {
         sqlx::query(

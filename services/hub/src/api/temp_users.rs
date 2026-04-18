@@ -8,9 +8,12 @@ use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auth::AuthUser;
+use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::TempUser;
 use crate::models::temp_user::{CreateTempUser, TempUserLink};
+use crate::models::permission::bits;
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
@@ -51,19 +54,23 @@ async fn list_temp_users(
 async fn create_temp_user(
     State(pool): State<PgPool>,
     Path(hub_id): Path<Uuid>,
+    auth: AuthUser,
     Json(body): Json<CreateTempUser>,
-    // TODO: extract creator user_id from auth token
 ) -> Result<(StatusCode, Json<TempUserLink>), StatusCode> {
+    let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.has(bits::CREATE_TEMP_LINKS) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let mut conn = hub_connection(&pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Generate URL-safe token
     let token = generate_token();
     let expires_at = Utc::now() + chrono::Duration::seconds(body.ttl_seconds);
-
-    // TODO: creator should come from JWT, hardcode dev user for now
-    let created_by = crate::db::seed::DEV_USER_ALICE;
+    let created_by = auth.0.sub;
 
     let temp_user = sqlx::query_as::<_, TempUser>(
         "INSERT INTO temp_users (hub_id, token, nickname, group_id, created_by, expires_at)
@@ -94,7 +101,14 @@ async fn create_temp_user(
 async fn revoke_temp_user(
     State(pool): State<PgPool>,
     Path((hub_id, temp_user_id)): Path<(Uuid, Uuid)>,
+    auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
+    let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.has(bits::CREATE_TEMP_LINKS) {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let mut conn = hub_connection(&pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

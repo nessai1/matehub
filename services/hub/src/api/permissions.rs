@@ -7,9 +7,11 @@ use axum::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::auth::AuthUser;
+use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::ChannelPermission;
-use crate::models::permission::{SetPermission, effective_permissions};
+use crate::models::permission::{bits, SetPermission, effective_permissions, has_permission};
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
@@ -50,8 +52,16 @@ async fn list_channel_permissions(
 async fn set_channel_permission(
     State(pool): State<PgPool>,
     Path((hub_id, channel_id, group_id)): Path<(Uuid, Uuid, Uuid)>,
+    auth: AuthUser,
     Json(body): Json<SetPermission>,
 ) -> Result<StatusCode, StatusCode> {
+    let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.has(bits::ADMIN_CHANNEL) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let mut conn = hub_connection(&pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -76,7 +86,15 @@ async fn set_channel_permission(
 async fn delete_channel_permission(
     State(pool): State<PgPool>,
     Path((hub_id, channel_id, group_id)): Path<(Uuid, Uuid, Uuid)>,
+    auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
+    let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.has(bits::ADMIN_CHANNEL) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let mut conn = hub_connection(&pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -92,7 +110,6 @@ async fn delete_channel_permission(
 }
 
 /// Get the effective permission bits for a specific user on a channel.
-/// Unions all group allows, then subtracts all group denies.
 #[derive(serde::Serialize)]
 struct EffectiveResponse {
     bits: i32,
@@ -113,7 +130,6 @@ async fn get_effective_permissions(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Get all channel_permissions for groups this user belongs to
     let perms = sqlx::query_as::<_, ChannelPermission>(
         "SELECT cp.channel_id, cp.group_id, cp.allow_bits, cp.deny_bits
          FROM channel_permissions cp
@@ -127,7 +143,6 @@ async fn get_effective_permissions(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    use crate::models::permission::{bits, has_permission};
     let eff = effective_permissions(&perms);
 
     Ok(Json(EffectiveResponse {

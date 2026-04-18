@@ -150,8 +150,16 @@ async fn create_channel(
 async fn update_channel(
     State(state): State<ChannelsState>,
     Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    auth: AuthUser,
     Json(body): Json<UpdateChannel>,
 ) -> Result<Json<Channel>, StatusCode> {
+    let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !perms.has(bits::EDIT_OTHER_CHANNELS) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     if let Some(ref name) = body.name {
         if name.trim().is_empty() || name.len() > 100 {
             return Err(StatusCode::BAD_REQUEST);
@@ -228,8 +236,16 @@ struct UploadResponse {
 async fn upload_icon(
     State(state): State<ChannelsState>,
     Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, StatusCode> {
+    let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !perms.has(bits::EDIT_OTHER_CHANNELS) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let storage = state.storage.as_ref().ok_or_else(|| {
         tracing::error!("S3 not configured");
         StatusCode::SERVICE_UNAVAILABLE
