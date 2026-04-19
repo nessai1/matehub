@@ -1,14 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Mic, PhoneIncoming } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from "react";
+import { Mic } from "lucide-react";
 import { CallGrid, type MemberInfo } from "@/components/hub/call-grid";
 import { CallControls } from "@/components/hub/call-controls";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
 import { ScreenShareProfileDialog } from "@/components/hub/screen-share-profile-dialog";
-import { TextChannelView } from "@/components/hub/text-channel-view";
-import { useVideoClient } from "@/hooks/use-video-client";
+import { useVideoCall } from "@/contexts/video-call-context";
 import { useMembers } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
 
@@ -17,14 +15,11 @@ interface VoiceChannelViewProps {
   channelName: string;
 }
 
-const VIDEO_SERVER_URL =
-  process.env.NEXT_PUBLIC_VIDEO_SERVER_URL ?? "http://localhost:4000";
-
-const DEV_CHANNEL_IDS: Record<string, string> = {
-  "voice-test": "00000000-0000-0000-0000-000000000101",
-  "stage-test": "00000000-0000-0000-0000-000000000102",
-};
-
+/**
+ * Presentational shell around the active voice call. All state lives in
+ * <VideoCallProvider>; this component just reads it. Joining/leaving is
+ * driven by the page-level router (the act of opening a voice URL auto-joins).
+ */
 export function VoiceChannelView({
   channelId,
   channelName,
@@ -32,33 +27,9 @@ export function VoiceChannelView({
   const { session } = useAuth();
   const { members } = useMembers();
   const username = session?.username ?? "anonymous";
-  const token = session?.token ?? "";
-
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [inCall, setInCall] = useState(false);
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
-
-  // Build memberInfo map for call grid (userId -> display name + avatar)
-  const memberInfo = useMemo<Record<string, MemberInfo>>(() => {
-    const map: Record<string, MemberInfo> = {};
-    // Current user from session
-    if (session) {
-      map[session.username] = {
-        displayName: session.displayName,
-        avatarUrl: session.avatarUrl,
-      };
-    }
-    // Remote users from members API
-    for (const m of members) {
-      map[m.username] = {
-        displayName: m.display_name,
-        avatarUrl: m.avatar_url,
-      };
-    }
-    return map;
-  }, [session, members]);
 
   const {
+    activeVoiceChannelId,
     participants,
     localStream,
     localScreenVideoTrack,
@@ -70,122 +41,72 @@ export function VoiceChannelView({
     toggleCamera,
     publishScreen,
     unpublishScreen,
-    connect,
-    disconnect,
-    error,
+    leaveVoice,
     client,
-  } = useVideoClient(
-    sessionId
-      ? {
-          serverUrl: VIDEO_SERVER_URL,
-          sessionId,
-          userId: username,
-          token,
-        }
-      : null,
-  );
+  } = useVideoCall();
 
-  const joinCall = useCallback(async () => {
-    try {
-      const resp = await fetch(`${VIDEO_SERVER_URL}/v1/sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          channel_id:
-            DEV_CHANNEL_IDS[channelId] ??
-            "00000000-0000-0000-0000-000000000100",
-        }),
-      });
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
-      if (!resp.ok) {
-        console.error("Failed to create session:", resp.status);
-        return;
-      }
-
-      const data = await resp.json();
-      setSessionId(data.session_id);
-      setInCall(true);
-    } catch (e) {
-      console.error("Failed to join call:", e);
+  const memberInfo = useMemo<Record<string, MemberInfo>>(() => {
+    const map: Record<string, MemberInfo> = {};
+    if (session) {
+      map[session.username] = {
+        displayName: session.displayName,
+        avatarUrl: session.avatarUrl,
+      };
     }
-  }, [channelId]);
-
-  useEffect(() => {
-    if (sessionId && inCall) {
-      connect();
+    for (const m of members) {
+      map[m.username] = {
+        displayName: m.display_name,
+        avatarUrl: m.avatar_url,
+      };
     }
-  }, [sessionId, inCall, connect]);
+    return map;
+  }, [session, members]);
 
-  const leaveCall = useCallback(() => {
-    disconnect();
-    setInCall(false);
-    setSessionId(null);
-  }, [disconnect]);
-
-  if (!inCall) {
-    return (
-      <div className="flex flex-1 flex-col">
-        <div className="flex flex-1 flex-col items-center justify-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-            <Mic className="h-8 w-8 text-primary" />
-          </div>
-          <div className="text-center">
-            <h2 className="text-lg font-semibold">{channelName}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Voice channel -- click to join
-            </p>
-          </div>
-          <Button onClick={joinCall} className="gap-2">
-            <PhoneIncoming className="h-4 w-4" />
-            Join Voice
-          </Button>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-      </div>
-    );
-  }
+  // This shouldn't render for a channel we're not in — page.tsx guards that.
+  // But if it does, keep the header lit and say "connecting".
+  const showingActive = activeVoiceChannelId === channelId;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex flex-1 flex-col border-b">
-        <div className="flex h-10 shrink-0 items-center border-b px-4">
-          <Mic className="mr-1.5 h-4 w-4 text-emerald-500" />
-          <span className="text-sm font-medium">{channelName}</span>
-          <span className="ml-2 text-xs text-muted-foreground">
-            {isConnected ? "Connected" : "Connecting..."}
-          </span>
-          <span className="ml-auto text-xs text-muted-foreground">
-            {participants.length + 1} in call
-          </span>
-        </div>
+      <div className="flex h-10 shrink-0 items-center border-b px-4">
+        <Mic className="mr-1.5 h-4 w-4 text-emerald-500" />
+        <span className="text-sm font-medium">{channelName}</span>
+        <span className="ml-2 text-xs text-muted-foreground">
+          {showingActive && isConnected
+            ? "Connected"
+            : showingActive
+              ? "Connecting…"
+              : "Not in call"}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {participants.length + (showingActive ? 1 : 0)} in call
+        </span>
+      </div>
 
-        <div className="flex-1 overflow-auto">
-          <CallGrid
-            participants={participants}
-            localStream={localStream}
-            localScreenVideoTrack={localScreenVideoTrack}
-            currentUserId={username}
-            isCamEnabled={isCamEnabled}
-            isMicEnabled={isMicEnabled}
-            memberInfo={memberInfo}
-          />
-        </div>
-
-        <CallControls
-          isMicEnabled={isMicEnabled}
+      <div className="flex-1 overflow-auto">
+        <CallGrid
+          participants={participants}
+          localStream={localStream}
+          localScreenVideoTrack={localScreenVideoTrack}
+          currentUserId={username}
           isCamEnabled={isCamEnabled}
-          isScreenSharing={isScreenSharing}
-          onToggleMic={toggleMic}
-          onToggleCamera={toggleCamera}
-          onStartShare={() => setShareDialogOpen(true)}
-          onStopShare={() => void unpublishScreen()}
-          onLeave={leaveCall}
+          isMicEnabled={isMicEnabled}
+          memberInfo={memberInfo}
         />
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <TextChannelView channelId={channelId} channelName={channelName} />
-      </div>
+      <CallControls
+        isMicEnabled={isMicEnabled}
+        isCamEnabled={isCamEnabled}
+        isScreenSharing={isScreenSharing}
+        onToggleMic={toggleMic}
+        onToggleCamera={toggleCamera}
+        onStartShare={() => setShareDialogOpen(true)}
+        onStopShare={() => void unpublishScreen()}
+        onLeave={leaveVoice}
+      />
 
       <ScreenShareProfileDialog
         open={shareDialogOpen}

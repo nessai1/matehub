@@ -328,7 +328,27 @@ export class VideoClient {
   }
 
   private async createAndSendOffer() {
-    const pc = this.pc!;
+    const pc = this.pc;
+    if (!pc) {
+      this.debug("warn", "createAndSendOffer: PC gone before start");
+      return;
+    }
+    // The user may have hit Leave while getUserMedia's permission prompt was
+    // open — in that case disconnect() has already closed `pc`. Every `await`
+    // below is a chance for that to happen; check the state after each one
+    // and bail cleanly instead of calling methods on a closed PC (which
+    // throws InvalidStateError and drops a Next.js error overlay, effectively
+    // locking the UI).
+    //
+    // TS's RTCSignalingState type excludes "closed" after the first narrowing
+    // check since it doesn't know the state mutates across awaits; the cast
+    // is deliberate, not a code smell.
+    const isClosed = () => (pc.signalingState as string) === "closed";
+
+    if (isClosed()) {
+      this.debug("warn", "createAndSendOffer: PC closed before start");
+      return;
+    }
 
     // Get user media BEFORE creating offer so tracks are in the SDP.
     // This ensures str0m sees actual sending tracks, not empty sendrecv transceivers.
@@ -338,6 +358,10 @@ export class VideoClient {
         audio: true,
         video: { width: 640, height: 480 },
       });
+      if (isClosed()) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       this.localStream = stream;
 
       for (const track of stream.getTracks()) {
@@ -357,13 +381,18 @@ export class VideoClient {
       this.camEnabled = false;
     } catch (e) {
       this.log("getUserMedia failed, falling back to recvonly", e);
-      // Fallback: receive-only if no camera/mic available
+      // Fallback: receive-only if no camera/mic available. Same guard —
+      // disconnect() during the permission prompt leaves pc closed here.
+      if (isClosed()) return;
       pc.addTransceiver("audio", { direction: "recvonly" });
       pc.addTransceiver("video", { direction: "recvonly" });
     }
 
+    if (isClosed()) return;
     const offer = await pc.createOffer();
+    if (isClosed()) return;
     await pc.setLocalDescription(offer);
+    if (isClosed()) return;
 
     // Trickle ICE: send offer immediately, candidates will follow via ice_candidate messages.
     // No waiting for gathering -- shaves seconds off connect time.
@@ -377,6 +406,16 @@ export class VideoClient {
 
   private async handleServerMessage(msg: Record<string, unknown>) {
     this.log("server msg:", msg.type, msg);
+    // Server messages are processed through msgQueue — if disconnect() fires
+    // between a message arriving and us getting scheduled, pc is gone.
+    // Rather than throwing on every SDP op, just drop the message.
+    // (See createAndSendOffer for the same cast explanation.)
+    if (!this.pc || (this.pc.signalingState as string) === "closed") {
+      this.debug("warn", "handleServerMessage: PC closed, ignoring", {
+        type: msg.type,
+      });
+      return;
+    }
     switch (msg.type) {
       case "answer": {
         await this.pc!.setRemoteDescription({
@@ -441,8 +480,11 @@ export class VideoClient {
           type: "offer",
           sdp: msg.sdp_offer as string,
         });
+        if ((this.pc!.signalingState as string) === "closed") break;
         const answer = await this.pc!.createAnswer();
+        if ((this.pc!.signalingState as string) === "closed") break;
         await this.pc!.setLocalDescription(answer);
+        if ((this.pc!.signalingState as string) === "closed") break;
         this.send({
           type: "answer",
           sdp_answer: answer.sdp,
@@ -451,11 +493,16 @@ export class VideoClient {
       }
 
       case "ice_candidate": {
-        await this.pc!.addIceCandidate({
-          candidate: msg.candidate as string,
-          sdpMid: msg.sdp_mid as string | null,
-          sdpMLineIndex: msg.sdp_mline_index as number | null,
-        });
+        try {
+          await this.pc!.addIceCandidate({
+            candidate: msg.candidate as string,
+            sdpMid: msg.sdp_mid as string | null,
+            sdpMLineIndex: msg.sdp_mline_index as number | null,
+          });
+        } catch (e) {
+          // Late ICE candidate after PC closed — non-fatal.
+          this.debug("warn", "addIceCandidate failed", { error: String(e) });
+        }
         break;
       }
 

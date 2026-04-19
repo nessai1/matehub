@@ -7,6 +7,7 @@ import {
   type ScreenShareProfile,
   type VideoClientEvent,
 } from "../../packages/sdk-video/src";
+import { playCallSound } from "@/lib/call-sounds";
 
 interface UseVideoClientOptions {
   serverUrl: string;
@@ -231,9 +232,15 @@ export function useVideoClient(
       // below reads directly from the local track. `onended` fires when the
       // user hits "Stop sharing" in Chrome — keep the state in sync.
       if (track) {
-        track.addEventListener("ended", () => setLocalScreenVideoTrack(null), {
-          once: true,
-        });
+        playCallSound("show_desktop");
+        track.addEventListener(
+          "ended",
+          () => {
+            setLocalScreenVideoTrack(null);
+            playCallSound("disable_desktop");
+          },
+          { once: true },
+        );
       }
     } catch (e) {
       // User cancelled picker, or permission denied — not a fatal error,
@@ -245,6 +252,9 @@ export function useVideoClient(
   const unpublishScreen = useCallback(async () => {
     const client = clientRef.current;
     if (!client) return;
+    // The cue is played from the track's `onended` handler — that fires both
+    // when we explicitly stop the track here AND when the user hits Chrome's
+    // own "Stop sharing" bar, so attaching the sound there avoids dedup.
     await client.unpublishScreen();
     setIsScreenSharing(client.isScreenSharing);
     setLocalScreenVideoTrack(null);

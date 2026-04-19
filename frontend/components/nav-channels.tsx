@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { useMembers, type MemberGroup } from "@/hooks/use-members"
 import { usePermissions, P } from "@/hooks/use-permissions"
+import { useVideoCall } from "@/contexts/video-call-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
 type ChannelType = "text" | "voice" | "stage"
@@ -134,6 +135,52 @@ function ChannelLink({
   )
 }
 
+// ── Voice participants (shown under the active voice channel) ───
+
+function VoiceParticipantsRow({
+  userId,
+  displayName,
+  avatarUrl,
+  isSelf,
+  isSpeaking,
+  isMicMuted,
+}: {
+  userId: string
+  displayName: string
+  avatarUrl?: string | null
+  isSelf: boolean
+  isSpeaking: boolean
+  isMicMuted: boolean
+}) {
+  return (
+    <li>
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-md py-1 pl-8 pr-2 text-xs",
+          isSpeaking
+            ? "text-emerald-400"
+            : "text-sidebar-foreground/70",
+        )}
+      >
+        <Avatar size="sm" className="h-4 w-4">
+          {avatarUrl && <AvatarImage src={avatarUrl} />}
+          <AvatarFallback className="text-[8px]">
+            {displayName.charAt(0).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <span className="truncate">
+          {displayName}
+          {isSelf && <span className="ml-1 text-[10px] text-sidebar-foreground/30">(You)</span>}
+        </span>
+        {isMicMuted && (
+          <MicIcon className="ml-auto h-3 w-3 text-red-400/70" />
+        )}
+        {!isMicMuted && userId /* hush "unused" */ && null}
+      </div>
+    </li>
+  )
+}
+
 // ── Add button ───────────────────────────────────
 
 function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -183,6 +230,11 @@ export function NavChannels() {
   const { session } = useAuth()
   const { members } = useMembers()
   const { has: hasPerm } = usePermissions()
+  const {
+    activeVoiceChannelId,
+    participants: voiceParticipants,
+    isMicEnabled: selfMicEnabled,
+  } = useVideoCall()
 
   const { channels: apiChannels, createChannel, updateChannel, deleteChannel, uploadIcon } = useChannels()
 
@@ -278,14 +330,47 @@ export function NavChannels() {
 
       {/* ── Voice Channels ── */}
       <ChannelSection label="Voice Channels">
-        {voiceChannels.map((ch) => (
-          <ChannelLink
-            key={ch.id}
-            channel={ch}
-            active={pathname === `/hub/channel/${ch.id}`}
-            onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
-          />
-        ))}
+        {voiceChannels.map((ch) => {
+          const isActiveCall = activeVoiceChannelId === ch.id
+          return (
+            <div key={ch.id}>
+              <ChannelLink
+                channel={ch}
+                active={pathname === `/hub/channel/${ch.id}`}
+                onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
+              />
+              {isActiveCall && (
+                <ul className="flex flex-col gap-0.5 py-0.5">
+                  {/* Self first — the SDK only reports remote participants. */}
+                  {session && (
+                    <VoiceParticipantsRow
+                      userId={session.username}
+                      displayName={session.displayName}
+                      avatarUrl={session.avatarUrl}
+                      isSelf
+                      isSpeaking={false}
+                      isMicMuted={!selfMicEnabled}
+                    />
+                  )}
+                  {voiceParticipants.map((p) => {
+                    const m = members.find((mm) => mm.username === p.userId)
+                    return (
+                      <VoiceParticipantsRow
+                        key={p.participantId}
+                        userId={p.userId}
+                        displayName={m?.display_name ?? p.userId}
+                        avatarUrl={m?.avatar_url}
+                        isSelf={false}
+                        isSpeaking={p.isSpeaking}
+                        isMicMuted={p.isMicMuted}
+                      />
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          )
+        })}
         {hasPerm(P.CREATE_VOICE_CHANNELS) && (
           <AddButton label="Add Channel" onClick={() => openCreate("voice")} />
         )}
