@@ -27,6 +27,40 @@ struct WsQuery {
     #[allow(dead_code)]
     token: Option<String>,
     user_id: Option<String>,
+    /// Optional UUID form of the user identity. The SFU itself doesn't care
+    /// about the representation, but voice-occupancy NATS events need a UUID
+    /// so the hub service can match it against member rows.
+    user_uuid: Option<String>,
+}
+
+const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
+
+/// Publish a `voice.occupancy` event. `channel_id = None` signals "left".
+/// Failures are logged and swallowed — the call must not block on NATS.
+async fn publish_occupancy(
+    nats: &async_nats::Client,
+    hub_id: Uuid,
+    user_uuid: Uuid,
+    channel_id: Option<Uuid>,
+) {
+    let payload = serde_json::json!({
+        "hub_id": hub_id,
+        "user_id": user_uuid,
+        "channel_id": channel_id,
+    });
+    let bytes = match serde_json::to_vec(&payload) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to encode voice.occupancy event");
+            return;
+        }
+    };
+    if let Err(e) = nats
+        .publish(VOICE_OCCUPANCY_SUBJECT.to_string(), bytes.into())
+        .await
+    {
+        tracing::warn!(error = %e, "failed to publish voice.occupancy event");
+    }
 }
 
 async fn ws_upgrade(
@@ -36,14 +70,38 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let user_id = query.user_id.unwrap_or_else(|| "anonymous".into());
-    ws.on_upgrade(move |socket| handle_ws(socket, state, session_id, user_id))
+    // Fall back: if the client didn't send user_uuid, try parsing user_id as
+    // UUID. Anonymous / non-UUID ids just skip occupancy reporting.
+    let user_uuid = query
+        .user_uuid
+        .as_deref()
+        .or(Some(user_id.as_str()))
+        .and_then(|s| Uuid::parse_str(s).ok());
+    ws.on_upgrade(move |socket| handle_ws(socket, state, session_id, user_id, user_uuid))
 }
 
-async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, user_id: String) {
+async fn handle_ws(
+    socket: WebSocket,
+    state: AppState,
+    session_id: SessionId,
+    user_id: String,
+    user_uuid: Option<Uuid>,
+) {
     let participant_id = Uuid::new_v4();
     let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<ServerMessage>();
 
     tracing::info!(%session_id, %participant_id, %user_id, "participant connecting");
+
+    // Snapshot these before we take the lock so the NATS publish below doesn't
+    // need the AppStateInner guard.
+    let (channel_id, hub_id) = {
+        let inner = state.inner.lock();
+        let Some(session) = inner.sessions.get(&session_id) else {
+            tracing::warn!(%session_id, "session not found for ws connection");
+            return;
+        };
+        (session.channel_id, session.hub_id)
+    };
 
     // Register participant in session state (for REST API visibility)
     {
@@ -96,6 +154,11 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                 audio_muted: true,
             },
         );
+    }
+
+    // Tell the hub: this user is now in this voice channel.
+    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
+        publish_occupancy(nats, hub_id, uid, Some(channel_id)).await;
     }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -298,6 +361,11 @@ async fn handle_ws(socket: WebSocket, state: AppState, session_id: SessionId, us
                 tracing::info!(%session_id, "session destroyed (last participant left)");
             }
         }
+    }
+
+    // Tell the hub: this user left the voice channel.
+    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
+        publish_occupancy(nats, hub_id, uid, None).await;
     }
 
     tracing::info!(%session_id, %participant_id, %user_id, "participant disconnected");

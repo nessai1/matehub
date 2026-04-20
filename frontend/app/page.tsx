@@ -1,17 +1,15 @@
-"use client";
-
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router";
 import { useAuth } from "@/lib/auth";
 
 export default function Home() {
   const { session, isLoading } = useAuth();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isLoading) return;
-    router.replace(session ? "/hub" : "/login");
-  }, [session, isLoading, router]);
+    navigate(session ? "/hub" : "/login", { replace: true });
+  }, [session, isLoading, navigate]);
 
   return (
     <div className="flex h-screen items-center justify-center bg-background">

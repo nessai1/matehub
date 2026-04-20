@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useRef, useState } from "react";
 import type { Attachment, ChatClient } from "@matehub/sdk-chat";
 

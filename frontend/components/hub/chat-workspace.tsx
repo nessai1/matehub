@@ -1,5 +1,3 @@
-"use client";
-
 import { ChevronUpIcon, ChevronDownIcon } from "lucide-react";
 import { TextChannelView } from "@/components/hub/text-channel-view";
 import { useWorkspaceStack } from "@/components/hub/workspace-stack";

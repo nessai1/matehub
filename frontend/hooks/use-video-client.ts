@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   VideoClient,
@@ -13,6 +11,7 @@ interface UseVideoClientOptions {
   serverUrl: string;
   sessionId: string;
   userId: string;
+  userUuid?: string;
   token: string;
 }
 
@@ -73,6 +72,7 @@ export function useVideoClient(
       serverUrl: opts.serverUrl,
       sessionId: opts.sessionId,
       userId: opts.userId,
+      userUuid: opts.userUuid,
       token: opts.token,
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });

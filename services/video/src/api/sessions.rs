@@ -8,7 +8,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::{
-    AppState, ChannelId, ParticipantInfoResponse, Session, SessionId, SessionInfoResponse,
+    AppState, ChannelId, HubId, ParticipantInfoResponse, Session, SessionId, SessionInfoResponse,
     SessionResponse,
 };
 
@@ -21,6 +21,9 @@ pub fn routes() -> Router<AppState> {
 #[derive(Deserialize)]
 struct CreateSessionRequest {
     channel_id: ChannelId,
+    /// Hub owning the channel. Kept on the session so we can tag voice-
+    /// occupancy NATS events without a cross-service DB lookup.
+    hub_id: HubId,
 }
 
 fn ws_base_url(headers: &HeaderMap) -> String {
@@ -54,6 +57,7 @@ async fn create_session(
     let session = Session {
         id: session_id,
         channel_id: req.channel_id,
+        hub_id: req.hub_id,
         participants: std::collections::HashMap::new(),
         created_at: chrono::Utc::now(),
     };

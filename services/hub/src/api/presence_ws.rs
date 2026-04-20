@@ -10,15 +10,30 @@ use axum::{
 use futures_util::StreamExt;
 use serde::Deserialize;
 use sqlx::PgPool;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::auth;
 use crate::presence::{self, RedisPool};
 
+/// One event on the presence broadcast bus, addressed to a specific hub.
+#[derive(Clone, Debug)]
+pub struct PresenceEvent {
+    pub hub_id: Uuid,
+    /// Already-serialized JSON payload that gets forwarded to WS clients
+    /// verbatim. We carry it as a string so every subscriber doesn't have to
+    /// re-serialize.
+    pub payload: String,
+}
+
 #[derive(Clone)]
 pub struct PresenceState {
     pub pool: PgPool,
     pub redis: Option<RedisPool>,
+    /// Fan-out bus for server-initiated events (voice occupancy changes,
+    /// future push notifications, etc). The `voice_occupancy_bus` NATS
+    /// subscriber publishes into this same sender.
+    pub events: broadcast::Sender<PresenceEvent>,
 }
 
 pub fn routes(state: PresenceState) -> Router {
@@ -76,11 +91,13 @@ fn validate_token(token: &str, hub_id: Uuid) -> Option<auth::Claims> {
 }
 
 async fn handle_presence(
-    mut socket: WebSocket,
+    socket: WebSocket,
     state: PresenceState,
     hub_id: Uuid,
     user_id: Uuid,
 ) {
+    use futures_util::SinkExt;
+
     // Mark online -- get unique session_id for this connection
     let session_id = if let Some(mut redis) = state.redis.clone() {
         let sid = presence::set_online(&mut redis, hub_id, user_id).await;
@@ -91,12 +108,17 @@ async fn handle_presence(
         None
     };
 
+    // Subscribe to the server-side event bus (voice occupancy etc).
+    let mut events = state.events.subscribe();
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+
     // Heartbeat loop
     let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
 
     loop {
         tokio::select! {
-            msg = socket.next() => {
+            msg = ws_receiver.next() => {
                 match msg {
                     Some(Ok(Message::Text(_) | Message::Ping(_) | Message::Pong(_))) => {
                         if let (Some(mut redis), Some(sid)) = (state.redis.clone(), session_id.as_deref()) {
@@ -107,8 +129,24 @@ async fn handle_presence(
                     _ => {}
                 }
             }
+            event = events.recv() => {
+                match event {
+                    Ok(ev) if ev.hub_id == hub_id => {
+                        // Server-initiated push. If the WS is full/broken, bail
+                        // out of the loop so cleanup runs.
+                        if ws_sender.send(Message::Text(ev.payload.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(_) => {/* event for a different hub — skip */}
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        tracing::warn!(%hub_id, %user_id, dropped = n, "presence WS lagged");
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
             _ = heartbeat_interval.tick() => {
-                if socket.send(Message::Ping(vec![].into())).await.is_err() {
+                if ws_sender.send(Message::Ping(vec![].into())).await.is_err() {
                     break;
                 }
             }

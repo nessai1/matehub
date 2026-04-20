@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +34,7 @@ import { useAuth } from "@/lib/auth";
 import { usePermissions, P } from "@/hooks/use-permissions";
 import type { Member, MemberGroup } from "@/hooks/use-members";
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 interface AllGroup {
   id: string;

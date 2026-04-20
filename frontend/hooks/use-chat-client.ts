@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, type AuthSession } from "@/lib/auth";
 import {
@@ -10,7 +8,7 @@ import {
   type Attachment,
 } from "@matehub/sdk-chat";
 
-const CHAT_API = process.env.NEXT_PUBLIC_CHAT_API_URL || "http://localhost:3003";
+const CHAT_API = import.meta.env.VITE_CHAT_API_URL || "http://localhost:3003";
 
 
 // ── Sound playback ───────────────────────────────

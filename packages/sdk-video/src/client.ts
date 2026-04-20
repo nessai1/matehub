@@ -142,7 +142,10 @@ export class VideoClient {
 
     const wsProto = this.opts.serverUrl.startsWith("https") ? "wss" : "ws";
     const host = this.opts.serverUrl.replace(/^https?:\/\//, "");
-    const wsUrl = `${wsProto}://${host}/ws/${this.opts.sessionId}?user_id=${this.opts.userId}&token=${this.opts.token}`;
+    const uuidParam = this.opts.userUuid
+      ? `&user_uuid=${this.opts.userUuid}`
+      : "";
+    const wsUrl = `${wsProto}://${host}/ws/${this.opts.sessionId}?user_id=${this.opts.userId}&token=${this.opts.token}${uuidParam}`;
 
     this.log("connect", { wsUrl });
 

@@ -1,8 +1,6 @@
-export default function AuthLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import { Outlet } from "react-router";
+
+export function AuthLayout() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950">
       {/* Grid background */}
@@ -18,7 +16,9 @@ export default function AuthLayout({
       {/* Subtle radial glow */}
       <div className="pointer-events-none absolute top-1/2 left-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/5 blur-[120px]" />
 
-      <div className="relative z-10 w-full max-w-md px-6">{children}</div>
+      <div className="relative z-10 w-full max-w-md px-6">
+        <Outlet />
+      </div>
 
       {/* Bottom signature */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 font-mono text-[10px] tracking-[0.3em] text-zinc-700 uppercase">
@@ -27,3 +27,5 @@ export default function AuthLayout({
     </div>
   );
 }
+
+export default AuthLayout;

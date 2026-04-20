@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
 import { VideoWorkspace } from "@/components/hub/video-workspace/video-workspace";
 import {

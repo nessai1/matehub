@@ -1,7 +1,5 @@
-"use client"
-
 import { useCallback, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useNavigate } from "react-router"
 import { useAuth, type AuthSession } from "@/lib/auth"
 import {
   Avatar,
@@ -39,7 +37,7 @@ import {
   LoaderIcon,
 } from "lucide-react"
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002"
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002"
 
 export function NavUser({
   user,
@@ -52,7 +50,7 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const { session, login, logout } = useAuth()
-  const router = useRouter()
+  const navigate = useNavigate()
   const [editOpen, setEditOpen] = useState(false)
   const [savedName, setSavedName] = useState(session?.displayName ?? user.name)
   const [draftName, setDraftName] = useState(savedName)
@@ -225,7 +223,7 @@ export function NavUser({
                 className="text-destructive focus:text-destructive"
                 onSelect={() => {
                   logout()
-                  router.replace("/login")
+                  navigate("/login", { replace: true })
                 }}
               >
                 <LogOutIcon />

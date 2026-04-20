@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
@@ -22,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { usePermissions, HUB_PERMISSION_LABELS, hasBit, P } from "@/hooks/use-permissions";
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 interface Group {
   id: string;

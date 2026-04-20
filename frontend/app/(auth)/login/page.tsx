@@ -1,17 +1,15 @@
-"use client";
-
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 // TODO: get hub_id from subdomain or config
 const DEV_HUB_ID = "def00000-0000-0000-0000-000000000001";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { login } = useAuth();
   const [loginField, setLoginField] = useState("");
   const [password, setPassword] = useState("");
@@ -52,7 +50,7 @@ export default function LoginPage() {
         expiresIn: data.expires_in,
         avatarUrl: data.avatar_url ?? undefined,
       });
-      router.push("/hub");
+      navigate("/hub");
     } catch {
       setError("Cannot reach server");
       setLoading(false);

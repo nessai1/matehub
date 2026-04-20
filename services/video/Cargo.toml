@@ -27,6 +27,10 @@ tracing-subscriber.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+# NATS — used to publish "voice occupancy" join/leave events so the hub
+# service can fan them out to presence-WS subscribers.
+async-nats.workspace = true
+
 # Utils
 uuid.workspace = true
 bytes.workspace = true

@@ -48,6 +48,11 @@
 }
 
 :root {
+    /* Font families — bound to fontsource-variable npm packages imported
+       from src/main.tsx. Tailwind's font-sans / font-mono utilities read
+       these CSS variables. */
+    --font-sans: "Inter Variable", "Inter", -apple-system, system-ui, sans-serif;
+    --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);

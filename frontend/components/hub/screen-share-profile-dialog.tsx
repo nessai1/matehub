@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Gamepad2, Monitor, FileText } from "lucide-react";
 import {

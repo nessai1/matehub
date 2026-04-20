@@ -1,9 +1,11 @@
-"use client";
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import {
+  seedVoiceOccupancy,
+  setVoiceOccupancy,
+} from "@/lib/voice-occupancy-store";
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 export interface MemberGroup {
   id: string;
@@ -21,6 +23,8 @@ export interface Member {
   groups: MemberGroup[];
   user_type: "permanent" | "temp";
   expires_at: string | null;
+  /** Voice channel the member is currently in (null = not in voice). */
+  current_voice_channel_id: string | null;
 }
 
 export function useMembers() {
@@ -43,7 +47,15 @@ export function useMembers() {
         return;
       }
       if (res.ok) {
-        setMembers(await res.json());
+        const fetched: Member[] = await res.json();
+        setMembers(fetched);
+        // Seed the occupancy store from the authoritative snapshot. Live WS
+        // events take over from here.
+        seedVoiceOccupancy(
+          fetched.map(
+            (m) => [m.user_id, m.current_voice_channel_id] as [string, string | null],
+          ),
+        );
       }
     } catch {
       // silent fail -- will retry on next poll
@@ -90,6 +102,28 @@ export function usePresence() {
       ws.onopen = () => {
         console.log("[Presence] connected");
         retryDelayRef.current = 5_000;
+      };
+
+      ws.onmessage = (ev) => {
+        // Hub pushes server-initiated events as JSON frames (currently just
+        // voice_occupancy). Text frames we don't recognise are ignored —
+        // future event types land here too.
+        if (typeof ev.data !== "string") return;
+        try {
+          const msg = JSON.parse(ev.data) as {
+            type?: string;
+            user_id?: string;
+            channel_id?: string | null;
+          };
+          if (
+            msg.type === "voice_occupancy" &&
+            typeof msg.user_id === "string"
+          ) {
+            setVoiceOccupancy(msg.user_id, msg.channel_id ?? null);
+          }
+        } catch {
+          /* non-JSON frame, ignore */
+        }
       };
 
       ws.onclose = () => {

@@ -1,5 +1,3 @@
-"use client"
-
 import { HubSwitcher } from "@/components/hub-switcher"
 import { NavChannels } from "@/components/nav-channels"
 import { NavUser } from "@/components/nav-user"

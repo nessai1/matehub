@@ -1,5 +1,3 @@
-"use client";
-
 import { RenderVideoTile, type Tile } from "./video-tile";
 
 export function VideoSpotlight({
@@ -36,19 +34,19 @@ export function VideoSpotlight({
         />
       </div>
 
-      {/* Strip */}
+      {/* Strip — fixed-height row of 16:10 thumbnails. Flex (not grid 1fr)
+          so tiles keep their aspect ratio when there are just a few of them
+          instead of stretching to fill the row width. */}
       {strip.length > 0 && (
         <div
-          className="grid gap-2"
-          style={{
-            height: 92,
-            gridTemplateColumns: `repeat(${Math.min(strip.length, 8)}, minmax(0, 1fr))`,
-          }}
+          className="flex gap-2 overflow-x-auto"
+          style={{ height: 92 }}
         >
           {strip.slice(0, 8).map((t) => (
             <div
               key={t.id}
-              className="flex min-h-0 min-w-0 items-center justify-center"
+              className="relative h-full shrink-0"
+              style={{ aspectRatio: "16 / 10" }}
             >
               <RenderVideoTile
                 tile={t}

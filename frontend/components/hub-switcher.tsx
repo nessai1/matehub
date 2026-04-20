@@ -1,5 +1,3 @@
-"use client"
-
 import { useState } from "react"
 import {
   DropdownMenu,
@@ -79,7 +77,7 @@ export function HubSwitcher({
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{currentHub.name}</span>
                   <span className="w-fit rounded bg-blue-600/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
-                    pre-alpha {process.env.NEXT_PUBLIC_APP_VERSION || "v0.0.1"}
+                    pre-alpha {import.meta.env.VITE_APP_VERSION || "v0.0.1"}
                   </span>
                 </div>
                 <ChevronsUpDownIcon className="ml-auto" />

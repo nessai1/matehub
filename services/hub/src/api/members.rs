@@ -31,6 +31,10 @@ struct MemberResponse {
     groups: Vec<GroupBadge>,
     user_type: String, // "permanent" or "temp"
     expires_at: Option<DateTime<Utc>>, // temp users only
+    /// Voice channel the user is currently connected to (if any). Populated
+    /// from Redis voice_occupancy:<hub_id>, which the video service keeps in
+    /// sync via NATS.
+    current_voice_channel_id: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -93,13 +97,18 @@ async fn get_members_full(
 
     // Batch online check from Redis
     let user_ids: Vec<Uuid> = members.iter().map(|m| m.user_id).collect();
-    let online_set = if let Some(ref mut redis) = state.redis {
-        presence::get_online_set(redis, hub_id, &user_ids).await
+    let (online_set, voice_map) = if let Some(ref mut redis) = state.redis {
+        let online = presence::get_online_set(redis, hub_id, &user_ids).await;
+        let voice = presence::voice_occupancy_snapshot(redis, hub_id).await;
+        (online, voice)
     } else {
-        std::collections::HashSet::new()
+        (
+            std::collections::HashSet::new(),
+            std::collections::HashMap::new(),
+        )
     };
 
-    tracing::debug!(%hub_id, online_count = online_set.len(), total = user_ids.len(), "presence check");
+    tracing::debug!(%hub_id, online_count = online_set.len(), voice_count = voice_map.len(), total = user_ids.len(), "presence check");
 
     // Build response
     let mut result: Vec<MemberResponse> = members
@@ -117,6 +126,7 @@ async fn get_members_full(
 
             MemberResponse {
                 is_online: online_set.contains(&m.user_id),
+                current_voice_channel_id: voice_map.get(&m.user_id).copied(),
                 user_id: m.user_id,
                 username: m.username,
                 display_name: m.display_name,

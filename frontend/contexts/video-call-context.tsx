@@ -1,5 +1,3 @@
-"use client";
-
 import {
   createContext,
   useCallback,
@@ -19,21 +17,7 @@ import type {
 } from "../../packages/sdk-video/src";
 
 const VIDEO_SERVER_URL =
-  process.env.NEXT_PUBLIC_VIDEO_SERVER_URL ?? "http://localhost:4000";
-
-// Dev-only channel → session mapping. In production session_id would come from
-// a proper backend mapping service; the SFU is happy to create/return sessions
-// by channel_id, so we just feed it a stable UUID-shaped string.
-const DEV_CHANNEL_IDS: Record<string, string> = {
-  "voice-test": "00000000-0000-0000-0000-000000000101",
-  "stage-test": "00000000-0000-0000-0000-000000000102",
-};
-
-function resolveChannelUuid(channelId: string): string {
-  return (
-    DEV_CHANNEL_IDS[channelId] ?? "00000000-0000-0000-0000-000000000100"
-  );
-}
+  import.meta.env.VITE_VIDEO_SERVER_URL ?? "http://localhost:4000";
 
 interface VideoCallContextValue {
   /** The voice channel the user is currently CONNECTED to (not just viewing). */
@@ -85,6 +69,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       serverUrl: VIDEO_SERVER_URL,
       sessionId,
       userId: session.username,
+      // Real UUID of the user — goes into voice-occupancy NATS events so the
+      // hub service can address members by id, not by display name.
+      userUuid: session.userId,
       token: session.token,
     };
   }, [sessionId, session]);
@@ -112,11 +99,16 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         setSessionId(null);
       }
 
+      if (!session) return;
+
       try {
         const resp = await fetch(`${VIDEO_SERVER_URL}/v1/sessions`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channel_id: resolveChannelUuid(channelId) }),
+          body: JSON.stringify({
+            channel_id: channelId,
+            hub_id: session.hubId,
+          }),
         });
         if (!resp.ok) {
           console.error("joinVoice: create session failed", resp.status);
@@ -130,7 +122,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         console.error("joinVoice: network error", e);
       }
     },
-    [activeVoiceChannelId, vc],
+    [activeVoiceChannelId, vc, session],
   );
 
   const leaveVoice = useCallback(() => {

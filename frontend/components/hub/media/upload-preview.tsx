@@ -1,5 +1,3 @@
-"use client";
-
 import { XIcon, FileIcon, Loader2 } from "lucide-react";
 import type { PendingUpload } from "@/hooks/use-attachment-upload";
 

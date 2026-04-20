@@ -65,6 +65,56 @@ pub async fn is_online(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) -> boo
     conn.exists(&key).await.unwrap_or(false)
 }
 
+// ── Voice occupancy ────────────────────────────────────────────────────────
+// Which voice channel (if any) each user is currently connected to. Live
+// state owned by the video service; hub caches it in Redis and rebroadcasts
+// changes to presence-WS clients.
+
+fn voice_occupancy_key(hub_id: Uuid) -> String {
+    format!("voice_occupancy:{hub_id}")
+}
+
+/// Mark user as being in a voice channel. Idempotent.
+pub async fn voice_occupancy_set(
+    conn: &mut RedisPool,
+    hub_id: Uuid,
+    user_id: Uuid,
+    channel_id: Uuid,
+) {
+    let key = voice_occupancy_key(hub_id);
+    match conn
+        .hset::<_, _, _, ()>(&key, user_id.to_string(), channel_id.to_string())
+        .await
+    {
+        Ok(()) => tracing::debug!(%key, %user_id, %channel_id, "voice occupancy SET OK"),
+        Err(e) => tracing::error!(%key, "voice occupancy SET failed: {e}"),
+    }
+}
+
+/// Remove user from voice-channel tracking. Idempotent.
+pub async fn voice_occupancy_clear(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) {
+    let key = voice_occupancy_key(hub_id);
+    let _: Result<(), _> = conn.hdel(&key, user_id.to_string()).await;
+    tracing::debug!(%key, %user_id, "voice occupancy CLEAR");
+}
+
+/// Read every user → channel mapping for a hub.
+pub async fn voice_occupancy_snapshot(
+    conn: &mut RedisPool,
+    hub_id: Uuid,
+) -> std::collections::HashMap<Uuid, Uuid> {
+    let key = voice_occupancy_key(hub_id);
+    let map: std::collections::HashMap<String, String> =
+        conn.hgetall(&key).await.unwrap_or_default();
+    map.into_iter()
+        .filter_map(|(k, v)| {
+            let uid = Uuid::parse_str(&k).ok()?;
+            let cid = Uuid::parse_str(&v).ok()?;
+            Some((uid, cid))
+        })
+        .collect()
+}
+
 /// Batch check: which of these user_ids are online
 pub async fn get_online_set(
     conn: &mut RedisPool,

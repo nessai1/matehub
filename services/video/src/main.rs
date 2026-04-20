@@ -36,7 +36,22 @@ async fn main() -> Result<()> {
     // can be polled from a blocking OS thread (no async runtime needed).
     let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::unbounded();
 
-    let state = AppState::new(sfu_cmd_tx);
+    // NATS connection for voice-occupancy events. Optional — if the box isn't
+    // running NATS yet the video service still handles calls, just without
+    // the sidebar roster push. Hub service degrades to polling.
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let nats = match async_nats::connect(&nats_url).await {
+        Ok(c) => {
+            tracing::info!(%nats_url, "NATS connected (voice occupancy)");
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!(%nats_url, error = %e, "NATS connect failed — voice occupancy disabled");
+            None
+        }
+    };
+
+    let state = AppState::new(sfu_cmd_tx, nats);
 
     // Bind UDP socket for media — std (blocking) socket, not tokio::net.
     // Media path runs on its own OS thread; it uses SO_RCVTIMEO for the tick

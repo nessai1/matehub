@@ -15,6 +15,7 @@ use crate::signaling::ServerMessage;
 pub type SessionId = Uuid;
 pub type ChannelId = Uuid;
 pub type ParticipantId = Uuid;
+pub type HubId = Uuid;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -24,6 +25,10 @@ pub struct AppState {
     /// crossbeam Sender is Clone + Send + Sync — safe to share across WS tasks
     /// and to call `.send()` without awaiting.
     pub sfu_cmd_tx: Sender<SfuCommand>,
+    /// Optional NATS client for publishing voice-occupancy events to the hub
+    /// service. `None` when NATS isn't reachable — video still works, but the
+    /// sidebar roster falls back to polling.
+    pub nats: Option<async_nats::Client>,
 }
 
 pub struct AppStateInner {
@@ -32,13 +37,14 @@ pub struct AppStateInner {
 }
 
 impl AppState {
-    pub fn new(sfu_cmd_tx: Sender<SfuCommand>) -> Self {
+    pub fn new(sfu_cmd_tx: Sender<SfuCommand>, nats: Option<async_nats::Client>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AppStateInner {
                 sessions: HashMap::new(),
                 channel_to_session: HashMap::new(),
             })),
             sfu_cmd_tx,
+            nats,
         }
     }
 }
@@ -46,6 +52,9 @@ impl AppState {
 pub struct Session {
     pub id: SessionId,
     pub channel_id: ChannelId,
+    /// Hub this session belongs to. Needed so voice-occupancy events can be
+    /// routed to the right hub's presence WS clients.
+    pub hub_id: HubId,
     pub participants: HashMap<ParticipantId, Participant>,
     pub created_at: DateTime<Utc>,
 }

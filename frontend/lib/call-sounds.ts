@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * Tiny audio-cue player for voice-call UX events.
  *
@@ -21,13 +19,23 @@ export type CallSound =
 // Reuse one HTMLAudioElement per cue so rapid repeats don't leak DOM nodes.
 const cache: Partial<Record<CallSound, HTMLAudioElement>> = {};
 
+// Per-cue volume. The join/leave chimes are the ones that fire right when the
+// mic is about to pick up ambient audio — a loud cue clips into the start of
+// the conversation, so those get dialed way down.
+const VOLUME: Record<CallSound, number> = {
+  join_call: 0.15,
+  leave_call: 0.2,
+  show_desktop: 0.4,
+  disable_desktop: 0.4,
+};
+
 function load(name: CallSound): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   const hit = cache[name];
   if (hit) return hit;
   const el = new Audio(`/sounds/${name}.ogg`);
   el.preload = "auto";
-  el.volume = 0.5;
+  el.volume = VOLUME[name];
   cache[name] = el;
   return el;
 }

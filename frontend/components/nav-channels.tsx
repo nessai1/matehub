@@ -1,5 +1,3 @@
-"use client"
-
 import { useCallback, useState } from "react"
 import { useChannels } from "@/hooks/use-channels"
 import {
@@ -29,6 +27,7 @@ import { useMembers, type MemberGroup } from "@/hooks/use-members"
 import { usePermissions, P } from "@/hooks/use-permissions"
 import { useVideoCall } from "@/contexts/video-call-context"
 import { useHubSelection } from "@/contexts/hub-selection-context"
+import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
 export type ChannelType = "text" | "voice" | "stage"
@@ -238,6 +237,7 @@ export function NavChannels() {
     isMicEnabled: selfMicEnabled,
   } = useVideoCall()
   const { selectedTextChannelId, selectTextChannel } = useHubSelection()
+  const occupancy = useVoiceOccupancy()
 
   // Text and voice selections are independent — both get highlighted
   // concurrently when the user is in a call AND reading a text channel.
@@ -340,7 +340,18 @@ export function NavChannels() {
       {/* ── Voice Channels ── */}
       <ChannelSection label="Voice Channels">
         {voiceChannels.map((ch) => {
+          // Roster is occupancy-driven — list everyone in this voice channel,
+          // whether or not *we* are in it. Speaking/mic-muted state only
+          // exists for the channel we ourselves are connected to (SDK gives
+          // it via voiceParticipants); for other channels those stay at
+          // their defaults.
           const isActiveCall = activeVoiceChannelId === ch.id
+          const inThisChannel = members.filter(
+            (m) => occupancy.get(m.user_id) === ch.id,
+          )
+          const sdkByUserId = new Map(
+            voiceParticipants.map((p) => [p.userId, p]),
+          )
           return (
             <div key={ch.id}>
               <ChannelLink
@@ -349,30 +360,29 @@ export function NavChannels() {
                 onSelect={() => void joinVoice(ch.id)}
                 onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
               />
-              {isActiveCall && (
+              {inThisChannel.length > 0 && (
                 <ul className="flex flex-col gap-0.5 py-0.5">
-                  {/* Self first — the SDK only reports remote participants. */}
-                  {session && (
-                    <VoiceParticipantsRow
-                      userId={session.username}
-                      displayName={session.displayName}
-                      avatarUrl={session.avatarUrl}
-                      isSelf
-                      isSpeaking={false}
-                      isMicMuted={!selfMicEnabled}
-                    />
-                  )}
-                  {voiceParticipants.map((p) => {
-                    const m = members.find((mm) => mm.username === p.userId)
+                  {inThisChannel.map((m) => {
+                    const isSelf = m.user_id === session?.userId
+                    // SDK keys participants by the SFU `user_id` (display
+                    // name / username). Try both keys to find mic-muted /
+                    // speaking state when we're the one in this call.
+                    const sdk = isActiveCall
+                      ? sdkByUserId.get(m.username) ?? sdkByUserId.get(m.user_id)
+                      : undefined
                     return (
                       <VoiceParticipantsRow
-                        key={p.participantId}
-                        userId={p.userId}
-                        displayName={m?.display_name ?? p.userId}
-                        avatarUrl={m?.avatar_url}
-                        isSelf={false}
-                        isSpeaking={p.isSpeaking}
-                        isMicMuted={p.isMicMuted}
+                        key={m.user_id}
+                        userId={m.user_id}
+                        displayName={m.display_name}
+                        avatarUrl={m.avatar_url}
+                        isSelf={isSelf}
+                        isSpeaking={sdk?.isSpeaking ?? false}
+                        isMicMuted={
+                          isSelf
+                            ? !selfMicEnabled
+                            : sdk?.isMicMuted ?? false
+                        }
                       />
                     )
                   })}

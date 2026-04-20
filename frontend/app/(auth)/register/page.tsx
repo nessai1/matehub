@@ -1,7 +1,5 @@
-"use client";
-
 import { FormEvent, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
@@ -15,7 +13,7 @@ interface InviteData {
 
 export default function RegisterPage() {
   const params = useParams<{ invite: string }>();
-  const router = useRouter();
+  const navigate = useNavigate();
   const { login } = useAuth();
 
   const [invite, setInvite] = useState<InviteData | null>(null);
@@ -32,7 +30,7 @@ export default function RegisterPage() {
     const resolve = async () => {
       try {
         const hubApi =
-          process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+          import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
         const res = await fetch(`${hubApi}/v1/invite/${params.invite}`);
         if (!res.ok) {
           setError("Invite link is invalid or expired");
@@ -57,7 +55,7 @@ export default function RegisterPage() {
 
     try {
       const hubApi =
-        process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+        import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
       const res = await fetch(`${hubApi}/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -87,7 +85,7 @@ export default function RegisterPage() {
         hubSlug: invite.hub_slug,
         token: data.token,
       });
-      router.push("/hub");
+      navigate("/hub");
     } catch {
       setError("Cannot reach server");
       setSubmitting(false);

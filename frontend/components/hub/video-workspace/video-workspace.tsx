@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
@@ -362,9 +360,7 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
         onConfirm={(profile) => void publishScreen(profile)}
       />
 
-      {process.env.NODE_ENV === "development" && (
-        <CallDebugPanel client={client} />
-      )}
+      {import.meta.env.DEV && <CallDebugPanel client={client} />}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { Outlet } from "react-router";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth-guard";
 import { MemberSidebar } from "@/components/hub/member-sidebar";
@@ -7,11 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { VideoCallProvider } from "@/contexts/video-call-context";
 import { HubSelectionProvider } from "@/contexts/hub-selection-context";
 
-export default function HubLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export function HubLayout() {
   return (
     <Suspense>
       <AuthGuard>
@@ -28,7 +25,7 @@ export default function HubLayout({
                   <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
                     <div className="flex flex-1 gap-2 overflow-hidden">
                       <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-background">
-                        {children}
+                        <Outlet />
                       </main>
                       <Suspense>
                         <MemberSidebar />
@@ -44,3 +41,5 @@ export default function HubLayout({
     </Suspense>
   );
 }
+
+export default HubLayout;

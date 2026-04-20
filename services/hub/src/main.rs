@@ -4,6 +4,7 @@ mod db;
 mod models;
 mod presence;
 mod storage;
+mod voice_occupancy_bus;
 
 use std::sync::Arc;
 
@@ -52,7 +53,18 @@ async fn main() -> Result<()> {
     // Redis for presence (optional)
     let redis = presence::connect_redis().await;
 
-    let app = api::routes(pool, s3, redis, dev_mode)
+    // Presence broadcast bus — voice-occupancy NATS subscriber pushes into
+    // this, every WS client subscribes to it. `256` is the per-subscriber
+    // ring buffer: bursty enough that a briefly-blocked WS doesn't lose
+    // events, small enough that memory is bounded at N_clients × 256.
+    let (events_tx, _) = tokio::sync::broadcast::channel(256);
+
+    // Start NATS → Redis/WS bridge in the background. Swallows failures so
+    // the hub still comes up when NATS is down in a dev box.
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    voice_occupancy_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
+
+    let app = api::routes(pool, s3, redis, events_tx, dev_mode)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .route("/health", axum::routing::get(|| async { "ok" }));

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { RenderVideoTile, type Tile, type TileSize } from "./video-tile";
 

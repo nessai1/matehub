@@ -1,9 +1,7 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 export interface UserPermissions {
   hub_bits: number;

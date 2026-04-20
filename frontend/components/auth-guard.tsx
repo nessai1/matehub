@@ -1,19 +1,17 @@
-"use client";
-
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router";
 import { useAuth } from "@/lib/auth";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { session, isLoading } = useAuth();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (isLoading) return;
     if (!session) {
-      router.replace("/login");
+      navigate("/login", { replace: true });
     }
-  }, [session, isLoading, router]);
+  }, [session, isLoading, navigate]);
 
   if (isLoading || !session) {
     return (

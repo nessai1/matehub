@@ -1,7 +1,5 @@
-"use client";
-
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
@@ -18,7 +16,7 @@ type Phase = "resolving" | "ready" | "entering" | "error";
 
 export default function JoinPage() {
   const params = useParams<{ token: string }>();
-  const router = useRouter();
+  const navigate = useNavigate();
   const { login } = useAuth();
 
   const [phase, setPhase] = useState<Phase>("resolving");
@@ -40,7 +38,7 @@ export default function JoinPage() {
     const resolve = async () => {
       try {
         const hubApi =
-          process.env.NEXT_PUBLIC_HUB_API_URL || "http://localhost:3002";
+          import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
         const res = await fetch(`${hubApi}/v1/join/${params.token}`);
         if (!res.ok) {
           if (res.status === 404) {
@@ -76,8 +74,8 @@ export default function JoinPage() {
       hubSlug: data.hub_slug,
       token: data.session_token,
     });
-    router.push("/hub");
-  }, [data, login, router]);
+    navigate("/hub");
+  }, [data, login, navigate]);
 
   return (
     <div className="flex flex-col items-center">

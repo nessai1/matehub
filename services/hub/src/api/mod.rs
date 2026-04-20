@@ -15,9 +15,11 @@ use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
 
+use tokio::sync::broadcast;
+
 use crate::api::channels::ChannelsState;
 use crate::api::members::MembersState;
-use crate::api::presence_ws::PresenceState;
+use crate::api::presence_ws::{PresenceEvent, PresenceState};
 use crate::api::profile::ProfileState;
 use crate::presence::RedisPool;
 use crate::storage::S3Storage;
@@ -26,6 +28,7 @@ pub fn routes(
     pool: PgPool,
     s3: Option<Arc<S3Storage>>,
     redis: Option<RedisPool>,
+    events: broadcast::Sender<PresenceEvent>,
     dev_mode: bool,
 ) -> Router {
     let channels_state = ChannelsState {
@@ -43,6 +46,7 @@ pub fn routes(
     let presence_state = PresenceState {
         pool: pool.clone(),
         redis,
+        events,
     };
 
     let mut app = Router::new()

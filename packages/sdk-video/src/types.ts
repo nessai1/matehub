@@ -3,8 +3,13 @@ export interface VideoClientOptions {
   serverUrl: string;
   /** Session ID to connect to */
   sessionId: string;
-  /** User identifier */
+  /** User identifier. This is the display-friendly id used inside SFU
+   *  messages (e.g. "alice"). Kept as the existing SFU API expects. */
   userId: string;
+  /** Canonical UUID of the user. Attached to voice-occupancy NATS events so
+   *  the hub service can match it against member rows regardless of what
+   *  `userId` above happens to be. */
+  userUuid?: string;
   /** Auth token (dev mode: "dev-alice-token") */
   token: string;
   /** ICE servers (STUN/TURN). Empty array for local dev. */
