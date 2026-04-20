@@ -50,6 +50,8 @@ import type { Message } from "@matehub/sdk-chat";
 interface TextChannelViewProps {
   channelId: string;
   channelName: string;
+  /** Skip the built-in h-10 header (used when a parent workspace provides its own). */
+  hideHeader?: boolean;
 }
 
 // ── Sonyflake timestamp extraction ───────────────
@@ -201,7 +203,7 @@ function TypingIndicator({
 
 // ── Main component ───────────────────────────────
 
-export function TextChannelView({ channelId, channelName }: TextChannelViewProps) {
+export function TextChannelView({ channelId, channelName, hideHeader }: TextChannelViewProps) {
   const { session } = useAuth();
   const { client, messages, connectionState, typingUsers, sendMessage, sendTyping, loadMore } =
     useChatClient(channelId);
@@ -392,28 +394,29 @@ export function TextChannelView({ channelId, channelName }: TextChannelViewProps
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* ── Header ── */}
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-        <Hash className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{channelName}</span>
-        {!isConnected && (
-          <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-            {isConnecting ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Connecting...
-              </>
-            ) : connectionState === "reconnecting" ? (
-              <>
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Reconnecting...
-              </>
-            ) : (
-              <span className="text-destructive">Disconnected</span>
-            )}
-          </span>
-        )}
-      </header>
+      {!hideHeader && (
+        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
+          <Hash className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">{channelName}</span>
+          {!isConnected && (
+            <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+              {isConnecting ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Connecting...
+                </>
+              ) : connectionState === "reconnecting" ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Reconnecting...
+                </>
+              ) : (
+                <span className="text-destructive">Disconnected</span>
+              )}
+            </span>
+          )}
+        </header>
+      )}
 
       {/* ── Message list ── */}
       <div

@@ -1,9 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { useChannels, type Channel as ApiChannel } from "@/hooks/use-channels"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { useChannels } from "@/hooks/use-channels"
 import {
   Collapsible,
   CollapsibleContent,
@@ -30,11 +28,12 @@ import { useAuth } from "@/lib/auth"
 import { useMembers, type MemberGroup } from "@/hooks/use-members"
 import { usePermissions, P } from "@/hooks/use-permissions"
 import { useVideoCall } from "@/contexts/video-call-context"
+import { useHubSelection } from "@/contexts/hub-selection-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
-type ChannelType = "text" | "voice" | "stage"
+export type ChannelType = "text" | "voice" | "stage"
 
-interface Channel {
+export interface Channel {
   id: string
   name: string
   type: ChannelType
@@ -64,7 +63,7 @@ const iconMap: Record<string, React.ElementType> = {
 
 // ── Channel icon (colored square / image / default) ──
 
-function ChannelIcon({ channel, className }: { channel: Channel; className?: string }) {
+export function ChannelIcon({ channel, className }: { channel: Channel; className?: string }) {
   const Icon = (channel.iconId && iconMap[channel.iconId]) || defaultIcons[channel.type]
 
   if (channel.iconImage) {
@@ -96,10 +95,12 @@ function ChannelIcon({ channel, className }: { channel: Channel; className?: str
 function ChannelLink({
   channel,
   active,
+  onSelect,
   onEdit,
 }: {
   channel: Channel
   active: boolean
+  onSelect: () => void
   onEdit?: () => void
 }) {
   return (
@@ -112,17 +113,18 @@ function ChannelLink({
             : "border-l-[3px] border-transparent text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
         )}
       >
-        <Link
-          href={`/hub/channel/${channel.id}`}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-sm"
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
         >
           <ChannelIcon channel={channel} />
           <span className="truncate">{channel.name}</span>
-        </Link>
+        </button>
         {onEdit && (
           <button
             onClick={(e) => {
-              e.preventDefault()
+              e.stopPropagation()
               onEdit()
             }}
             className="mr-1 rounded p-1 text-sidebar-foreground/30 opacity-0 transition-all hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/ch:opacity-100"
@@ -226,15 +228,21 @@ function ChannelSection({
 // ── Main export ──────────────────────────────────
 
 export function NavChannels() {
-  const pathname = usePathname()
   const { session } = useAuth()
   const { members } = useMembers()
   const { has: hasPerm } = usePermissions()
   const {
     activeVoiceChannelId,
+    joinVoice,
     participants: voiceParticipants,
     isMicEnabled: selfMicEnabled,
   } = useVideoCall()
+  const { selectedTextChannelId, selectTextChannel } = useHubSelection()
+
+  // Text and voice selections are independent — both get highlighted
+  // concurrently when the user is in a call AND reading a text channel.
+  const isTextActive = (id: string) => selectedTextChannelId === id
+  const isVoiceActive = (id: string) => activeVoiceChannelId === id
 
   const { channels: apiChannels, createChannel, updateChannel, deleteChannel, uploadIcon } = useChannels()
 
@@ -319,7 +327,8 @@ export function NavChannels() {
           <ChannelLink
             key={ch.id}
             channel={ch}
-            active={pathname === `/hub/channel/${ch.id}`}
+            active={isTextActive(ch.id)}
+            onSelect={() => selectTextChannel(ch.id)}
             onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
           />
         ))}
@@ -336,7 +345,8 @@ export function NavChannels() {
             <div key={ch.id}>
               <ChannelLink
                 channel={ch}
-                active={pathname === `/hub/channel/${ch.id}`}
+                active={isVoiceActive(ch.id)}
+                onSelect={() => void joinVoice(ch.id)}
                 onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
               />
               {isActiveCall && (
