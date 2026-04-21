@@ -1,37 +1,18 @@
 use anyhow::Result;
 use sqlx::PgPool;
-use uuid::Uuid;
 
-/// Well-known UUIDs for dev seed data.
-/// Deterministic so they survive restarts.
-pub const DEV_HUB_ID: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
-]);
+/// Reserved IDs for dev seed data. Intentionally far below the Snowflake ID
+/// space (which starts at ~4.5 × 10¹⁴), so there's no way a runtime-generated
+/// ID can ever collide with these.
+pub const DEV_HUB_ID: i64 = 1;
 
-pub const DEV_USER_ALICE: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01,
-]);
+pub const DEV_USER_ALICE: i64 = 1001;
+pub const DEV_USER_BOB: i64 = 1002;
+pub const DEV_USER_CHARLIE: i64 = 1003;
 
-pub const DEV_USER_BOB: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02,
-]);
-
-pub const DEV_USER_CHARLIE: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03,
-]);
-
-// Groups
-const DEV_GROUP_EVERYONE: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x01,
-]);
-
-const DEV_GROUP_ADMIN: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x02,
-]);
-
-const DEV_GROUP_GUESTS: Uuid = Uuid::from_bytes([
-    0xDE, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x03,
-]);
+const DEV_GROUP_EVERYONE: i64 = 2001;
+const DEV_GROUP_ADMIN: i64 = 2002;
+const DEV_GROUP_GUESTS: i64 = 2003;
 
 use crate::models::permission::bits;
 
@@ -41,11 +22,11 @@ const MEMBER_PERMS: i32 = bits::MEMBER_CHANNEL;
 pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     tracing::info!("running dev seed...");
 
-    // Bypass RLS for seeding (superuser or set hub context)
-    sqlx::raw_sql(&format!("SET LOCAL app.current_hub_id = '{}'", DEV_HUB_ID))
+    // Bypass RLS for seeding (the pooled connection sets this per-session).
+    sqlx::raw_sql(&format!("SET LOCAL app.current_hub_id = '{DEV_HUB_ID}'"))
         .execute(pool)
         .await
-        .ok(); // ignore if RLS not yet active
+        .ok();
 
     // Users first (hub FK references creator_id -> users)
     let password_hash = bcrypt::hash("123123", bcrypt::DEFAULT_COST)?;
@@ -84,7 +65,7 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
 
-    // Members (keep old table for backwards compat, role = group name)
+    // Members
     let roles = [
         (DEV_USER_ALICE, "admin"),
         (DEV_USER_BOB, "member"),
@@ -103,8 +84,6 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Groups ──────────────────────────────────────
-    // (id, name, color, position, is_default, hub_permissions)
-    // Position: lower number = higher privilege. Admin at top.
     let groups = [
         (DEV_GROUP_ADMIN, "admin", "#E74C3C", 0, false, bits::ALL),
         (DEV_GROUP_GUESTS, "guests", "#95A5A6", 1, false, 0i32),
@@ -129,12 +108,9 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
 
     // ── Member <-> Group assignments ────────────────
     let member_groups = [
-        // Alice: everyone + admin
         (DEV_USER_ALICE, DEV_GROUP_EVERYONE),
         (DEV_USER_ALICE, DEV_GROUP_ADMIN),
-        // Bob: everyone
         (DEV_USER_BOB, DEV_GROUP_EVERYONE),
-        // Charlie: everyone
         (DEV_USER_CHARLIE, DEV_GROUP_EVERYONE),
     ];
     for (user_id, group_id) in &member_groups {
@@ -150,23 +126,30 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Channels ────────────────────────────────────
-    // "general" is created by ensure_default_channel (same as production)
     super::ensure_default_channel(pool, DEV_HUB_ID).await?;
 
-    // Dev-only extra channels
     let extra_channels: &[(&str, &str, i32)] = &[
         ("random", "text", 1),
         ("voice-test", "voice", 2),
         ("stage-test", "stage", 3),
     ];
     for (name, ch_type, position) in extra_channels {
-        sqlx::query(
-            "INSERT INTO channels (hub_id, name, type, position)
-             SELECT $1, $2, $3, $4
-             WHERE NOT EXISTS (
-                 SELECT 1 FROM channels WHERE hub_id = $1 AND name = $2
-             )",
+        let existing: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM channels WHERE hub_id = $1 AND name = $2",
         )
+        .bind(DEV_HUB_ID)
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+        if existing.is_some() {
+            continue;
+        }
+
+        sqlx::query(
+            "INSERT INTO channels (id, hub_id, name, type, position)
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(matehub_common::snowflake::next_id())
         .bind(DEV_HUB_ID)
         .bind(name)
         .bind(ch_type)
@@ -176,21 +159,16 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Channel permissions ─────────────────────────
-    // Fetch channel IDs (they're auto-generated, not deterministic)
-    let channel_rows: Vec<(Uuid, String)> =
+    let channel_rows: Vec<(i64, String)> =
         sqlx::query_as("SELECT id, name FROM channels WHERE hub_id = $1")
             .bind(DEV_HUB_ID)
             .fetch_all(pool)
             .await?;
 
     for (ch_id, ch_name) in &channel_rows {
-        // admin group: full access everywhere
         upsert_perm(pool, *ch_id, DEV_GROUP_ADMIN, ALL_PERMS, 0).await?;
-
-        // everyone group: standard member access
         upsert_perm(pool, *ch_id, DEV_GROUP_EVERYONE, MEMBER_PERMS, 0).await?;
 
-        // guests: read-only in text, connect+speak in voice, no access to stage
         match ch_name.as_str() {
             "general" | "random" => {
                 upsert_perm(pool, *ch_id, DEV_GROUP_GUESTS, bits::READ, 0).await?;
@@ -206,7 +184,7 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     tracing::info!(
-        hub_id = %DEV_HUB_ID,
+        hub_id = DEV_HUB_ID,
         "dev seed complete: hub 'Dev Hub', 3 users, 3 groups, 4 channels with permissions"
     );
     Ok(())
@@ -214,8 +192,8 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
 
 async fn upsert_perm(
     pool: &PgPool,
-    channel_id: Uuid,
-    group_id: Uuid,
+    channel_id: i64,
+    group_id: i64,
     allow: i32,
     deny: i32,
 ) -> Result<()> {

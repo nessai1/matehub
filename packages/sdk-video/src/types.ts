@@ -3,12 +3,13 @@ export interface VideoClientOptions {
   serverUrl: string;
   /** Session ID to connect to */
   sessionId: string;
-  /** User identifier. This is the display-friendly id used inside SFU
-   *  messages (e.g. "alice"). Kept as the existing SFU API expects. */
-  userId: string;
-  /** Canonical UUID of the user. Attached to voice-occupancy NATS events so
-   *  the hub service can match it against member rows regardless of what
-   *  `userId` above happens to be. */
+  /** User identifier. Snowflake i64 for authenticated users; the SFU treats
+   *  it as an opaque tag in participant messages. */
+  userId: number;
+  /** Legacy canonical UUID of the user. Attached to voice-occupancy NATS
+   *  events so the hub service can match it against member rows when the
+   *  display-id is a display name. Now that userId is always a Snowflake,
+   *  this is only populated for temp users whose "real" id lives elsewhere. */
   userUuid?: string;
   /** Auth token (dev mode: "dev-alice-token") */
   token: string;
@@ -73,7 +74,7 @@ export interface TrackInfo {
 
 export interface VideoDiagnostics {
   /** Local user identifier (so the dump says who this client is). */
-  userId: string;
+  userId: number;
   /** Session this client is connected to. */
   sessionId: string;
   participantId: string | null;

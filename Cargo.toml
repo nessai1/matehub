@@ -4,6 +4,7 @@ members = [
     "services/video",
     "services/chat",
     "services/hub",
+    "services/general",
     "services/transcoder",
     "packages/common-rust",
 ]

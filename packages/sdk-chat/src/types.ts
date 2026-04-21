@@ -5,8 +5,8 @@ export interface ChatClientOptions {
   baseUrl: string;
   /** JWT access token */
   token: string;
-  /** Hub ID this client is scoped to */
-  hubId: string;
+  /** Hub ID this client is scoped to (i64 Snowflake). */
+  hubId: number;
 }
 
 // ── Connection state ─────────────────────────────
@@ -129,4 +129,12 @@ export interface SyncChannelResponse {
 
 export interface SyncResponse {
   channels: SyncChannelResponse[];
+}
+
+// ── Read State ───────────────────────────────────
+
+export interface ChannelReadState {
+  channel_id: number;
+  last_read_message_id: number;
+  mention_count: number;
 }

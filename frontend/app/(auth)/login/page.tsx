@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 // TODO: get hub_id from subdomain or config
-const DEV_HUB_ID = "def00000-0000-0000-0000-000000000001";
+const DEV_HUB_ID = 1;
 
 export default function LoginPage() {
   const navigate = useNavigate();

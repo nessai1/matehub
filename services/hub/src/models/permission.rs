@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Permission bits -- shared vocabulary across all services.
 ///
@@ -36,8 +35,8 @@ pub mod bits {
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChannelPermission {
-    pub channel_id: Uuid,
-    pub group_id: Uuid,
+    pub channel_id: i64,
+    pub group_id: i64,
     pub allow_bits: i32,
     pub deny_bits: i32,
 }

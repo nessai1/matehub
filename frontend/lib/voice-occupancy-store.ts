@@ -12,10 +12,10 @@
 
 type Listener = () => void;
 
-type Occupancy = ReadonlyMap<string, string>;
+type Occupancy = ReadonlyMap<number, number>;
 
 const listeners = new Set<Listener>();
-let current: Map<string, string> = new Map();
+let current: Map<number, number> = new Map();
 let snapshot: Occupancy = current;
 
 function notify() {
@@ -41,19 +41,18 @@ export function getVoiceOccupancyServerSnapshot(): Occupancy {
 }
 
 /** Replace the whole map in one shot — used for the /members-full bulk sync. */
-export function seedVoiceOccupancy(pairs: Iterable<[string, string | null]>) {
-  const next = new Map<string, string>();
+export function seedVoiceOccupancy(pairs: Iterable<[number, number | null]>) {
+  const next = new Map<number, number>();
   for (const [uid, cid] of pairs) {
-    if (cid) next.set(uid, cid);
+    if (cid !== null) next.set(uid, cid);
   }
-  // Avoid notify-on-equal: comparing two maps shallowly is cheap.
   if (mapsEqual(current, next)) return;
   current = next;
   notify();
 }
 
 /** Apply a single user's change. `channelId === null` means "left voice". */
-export function setVoiceOccupancy(userId: string, channelId: string | null) {
+export function setVoiceOccupancy(userId: number, channelId: number | null) {
   if (channelId === null) {
     if (!current.has(userId)) return;
     current.delete(userId);
@@ -64,7 +63,7 @@ export function setVoiceOccupancy(userId: string, channelId: string | null) {
   notify();
 }
 
-function mapsEqual(a: Map<string, string>, b: Map<string, string>): boolean {
+function mapsEqual(a: Map<number, number>, b: Map<number, number>): boolean {
   if (a.size !== b.size) return false;
   for (const [k, v] of a) {
     if (b.get(k) !== v) return false;

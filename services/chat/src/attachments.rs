@@ -14,7 +14,7 @@ use matehub_common::storage::UploadError;
 use crate::api::AppState;
 use crate::attachment::{Attachment, AttachmentStatus};
 use crate::auth::AuthUser;
-use crate::snowflake;
+use matehub_common::snowflake;
 
 const MAX_FILE_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
 /// Max bytes we'll fully buffer for images (needed to probe width/height).
@@ -48,12 +48,11 @@ pub fn routes() -> Router<AppState> {
 
 async fn upload_attachment(
     State(state): State<AppState>,
-    Path(channel_id_raw): Path<String>,
+    Path(channel_id): Path<i64>,
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<Attachment>, StatusCode> {
-    let hub_id = crate::api::str_to_i64(&auth.0.hub_id);
-    let channel_id = crate::api::str_to_i64(&channel_id_raw);
+    let hub_id = auth.0.hub_id;
 
     let field = multipart
         .next_field()
@@ -184,40 +183,82 @@ fn extract_image_dimensions(data: &[u8]) -> (Option<u32>, Option<u32>) {
 
 /// Stream attachment with HTTP Range support (for video player seek + lazy load).
 /// Proxies S3 with Range header forwarding.
+///
+/// Flow:
+///   1. Look up the attachment metadata by id (sidecar `attachments` table).
+///   2. Verify the caller's JWT hub_id matches the attachment's hub_id.
+///   3. Issue a reqwest GET to the stored S3 URL, forwarding the client's
+///      Range header verbatim. S3 answers with 206 + a partial body.
+///   4. Stream the reqwest response body through to the client, mirroring
+///      Content-Type / Content-Length / Content-Range / Accept-Ranges.
+///
+/// Why proxy instead of 302→S3 direct: (a) auth stays server-side — leaked
+/// attachment ids don't bypass hub membership; (b) S3 endpoint/bucket layout
+/// stays hidden from the client; (c) later switch to a private bucket +
+/// presigned URLs is one handler change, not a client-wide update.
 async fn stream_attachment(
-    State(_state): State<AppState>,
-    Path(_attachment_id): Path<String>,
+    State(state): State<AppState>,
+    Path(attachment_id): Path<String>,
+    auth: AuthUser,
     headers: HeaderMap,
 ) -> Result<Response, StatusCode> {
-    // Phase 1: redirect to direct S3 URL (public bucket).
-    // Phase 2: proxy with Range forwarding + presigned URLs.
-    // For now return the S3 URL that clients can fetch directly (browsers handle Range natively).
-    //
-    // TODO: look up attachment_id -> S3 URL from DB/cache, return 302 or proxy.
-    // Without DB lookup table yet, this endpoint is a stub.
+    let row = state
+        .data
+        .get_attachment_index(&attachment_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(%attachment_id, "attachment index read failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
-    let _ = headers.get(header::RANGE);
-    Err(StatusCode::NOT_IMPLEMENTED)
-}
+    // Authz: the JWT must be scoped to the same hub the attachment lives in.
+    if row.hub_id != auth.0.hub_id {
+        tracing::warn!(
+            %attachment_id,
+            claim_hub = auth.0.hub_id,
+            row_hub = row.hub_id,
+            "cross-hub attachment access denied"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
 
-#[allow(dead_code)]
-fn build_range_response(
-    body: Body,
-    content_type: &str,
-    total_size: u64,
-    start: u64,
-    end: u64,
-) -> Response {
-    let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    headers.insert(
-        header::CONTENT_RANGE,
-        HeaderValue::from_str(&format!("bytes {start}-{end}/{total_size}")).unwrap(),
+    let mut req_builder = reqwest::Client::new().get(&row.url);
+    if let Some(range) = headers.get(header::RANGE) {
+        if let Ok(s) = range.to_str() {
+            req_builder = req_builder.header(header::RANGE, s);
+        }
+    }
+
+    let s3_resp = req_builder.send().await.map_err(|e| {
+        tracing::error!(%attachment_id, url = %row.url, "S3 fetch failed: {e}");
+        StatusCode::BAD_GATEWAY
+    })?;
+
+    let status = StatusCode::from_u16(s3_resp.status().as_u16())
+        .unwrap_or(StatusCode::BAD_GATEWAY);
+
+    // Pass through the headers S3 set so the browser video element knows
+    // how to drive range requests. We don't blindly forward every header —
+    // that leaks S3 metadata (ETag, AMZ request ids, etc). Only the ones
+    // the media stack actually reads.
+    let mut out_headers = HeaderMap::new();
+    out_headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_str(&row.content_type)
+            .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
     );
-    headers.insert(
-        header::CONTENT_LENGTH,
-        HeaderValue::from_str(&(end - start + 1).to_string()).unwrap(),
-    );
-    (StatusCode::PARTIAL_CONTENT, headers, body).into_response()
+    out_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    for name in [header::CONTENT_LENGTH, header::CONTENT_RANGE, header::LAST_MODIFIED] {
+        if let Some(v) = s3_resp.headers().get(&name) {
+            out_headers.insert(name, v.clone());
+        }
+    }
+
+    // reqwest response body → axum body as a bytes stream. Memory is bounded
+    // by reqwest's own read buffer, not the file size — 1 GB video doesn't
+    // pin 1 GB of RAM.
+    let body = Body::from_stream(s3_resp.bytes_stream());
+
+    Ok((status, out_headers, body).into_response())
 }

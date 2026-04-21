@@ -1,4 +1,5 @@
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use matehub_common::snowflake;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -23,7 +24,7 @@ pub fn routes(pool: PgPool) -> Router {
 struct LoginRequest {
     login: String,
     password: String,
-    hub_id: Uuid,
+    hub_id: i64,
     #[serde(default)]
     remember_me: bool,
 }
@@ -31,15 +32,13 @@ struct LoginRequest {
 #[derive(serde::Serialize)]
 struct LoginResponse {
     access_token: String,
-    /// Only present if remember_me was true
     refresh_token: Option<String>,
-    /// Access token lifetime in seconds (client uses for auto-refresh scheduling)
     expires_in: i64,
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
-    hub_id: Uuid,
+    hub_id: i64,
     hub_slug: String,
 }
 
@@ -51,7 +50,6 @@ struct RefreshRequest {
 #[derive(serde::Serialize)]
 struct RefreshResponse {
     access_token: String,
-    /// New refresh token (rotation -- old one is revoked)
     refresh_token: String,
     expires_in: i64,
 }
@@ -69,7 +67,7 @@ async fn login(
 ) -> Result<Json<LoginResponse>, StatusCode> {
     #[derive(sqlx::FromRow)]
     struct UserRow {
-        id: Uuid,
+        id: i64,
         username: String,
         display_name: String,
         avatar_url: Option<String>,
@@ -104,7 +102,7 @@ async fn login(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let groups: Vec<Uuid> = sqlx::query_scalar(
+    let groups: Vec<i64> = sqlx::query_scalar(
         "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
     )
     .bind(body.hub_id)
@@ -119,10 +117,8 @@ async fn login(
         .await
         .map_err(|_| StatusCode::NOT_FOUND)?;
 
-    // Create access token
     let access_token = issue_access_token(user.id, &user.username, body.hub_id, &groups)?;
 
-    // Create refresh token only if "remember me"
     let refresh_token = if body.remember_me {
         Some(issue_refresh_token(&pool, user.id, body.hub_id).await?)
     } else {
@@ -131,7 +127,7 @@ async fn login(
 
     tracing::info!(
         username = %user.username,
-        %body.hub_id,
+        hub_id = body.hub_id,
         remember = body.remember_me,
         "user logged in"
     );
@@ -159,8 +155,8 @@ async fn refresh(
 
     #[derive(sqlx::FromRow)]
     struct RefreshRow {
-        user_id: Uuid,
-        hub_id: Uuid,
+        user_id: i64,
+        hub_id: i64,
         expires_at: chrono::DateTime<chrono::Utc>,
     }
 
@@ -174,7 +170,6 @@ async fn refresh(
     .ok_or(StatusCode::UNAUTHORIZED)?;
 
     if row.expires_at < chrono::Utc::now() {
-        // Expired -- delete and reject
         let _ = sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = $1")
             .bind(&token_hash)
             .execute(&pool)
@@ -182,14 +177,13 @@ async fn refresh(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Get user info for new access token
     let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = $1")
         .bind(row.user_id)
         .fetch_one(&pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let groups: Vec<Uuid> = sqlx::query_scalar(
+    let groups: Vec<i64> = sqlx::query_scalar(
         "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
     )
     .bind(row.hub_id)
@@ -200,7 +194,6 @@ async fn refresh(
 
     let access_token = issue_access_token(row.user_id, &username, row.hub_id, &groups)?;
 
-    // Rotate: delete old refresh token, issue new one
     let _ = sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = $1")
         .bind(&token_hash)
         .execute(&pool)
@@ -234,10 +227,10 @@ async fn logout(
 // ── Helpers ─────────────────────────────────────
 
 fn issue_access_token(
-    user_id: Uuid,
+    user_id: i64,
     username: &str,
-    hub_id: Uuid,
-    groups: &[Uuid],
+    hub_id: i64,
+    groups: &[i64],
 ) -> Result<String, StatusCode> {
     let now = chrono::Utc::now().timestamp();
     let claims = Claims {
@@ -254,15 +247,15 @@ fn issue_access_token(
 
 async fn issue_refresh_token(
     pool: &PgPool,
-    user_id: Uuid,
-    hub_id: Uuid,
+    user_id: i64,
+    hub_id: i64,
 ) -> Result<String, StatusCode> {
-    // Generate random token
+    // Random opaque token (two UUIDs concatenated — 256 bits of entropy).
     let raw_token = Uuid::new_v4().to_string() + &Uuid::new_v4().to_string();
     let token_hash = hash_token(&raw_token);
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(REFRESH_TOKEN_TTL_SECS);
 
-    // Clean up old tokens for this user+hub (max 5 active sessions)
+    // Keep max 5 active refresh tokens per user+hub; delete the oldest.
     sqlx::query(
         "DELETE FROM refresh_tokens WHERE id IN (
             SELECT id FROM refresh_tokens
@@ -278,9 +271,10 @@ async fn issue_refresh_token(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, hub_id, token_hash, expires_at)
-         VALUES ($1, $2, $3, $4)",
+        "INSERT INTO refresh_tokens (id, user_id, hub_id, token_hash, expires_at)
+         VALUES ($1, $2, $3, $4, $5)",
     )
+    .bind(snowflake::next_id())
     .bind(user_id)
     .bind(hub_id)
     .bind(&token_hash)

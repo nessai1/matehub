@@ -28,12 +28,13 @@ import { usePermissions, P } from "@/hooks/use-permissions"
 import { useVideoCall } from "@/contexts/video-call-context"
 import { useHubSelection } from "@/contexts/hub-selection-context"
 import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
+import { useUnreadCounts } from "@/contexts/chat-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
 export type ChannelType = "text" | "voice" | "stage"
 
 export interface Channel {
-  id: string
+  id: number
   name: string
   type: ChannelType
   position: number
@@ -96,12 +97,15 @@ function ChannelLink({
   active,
   onSelect,
   onEdit,
+  unread,
 }: {
   channel: Channel
   active: boolean
   onSelect: () => void
   onEdit?: () => void
+  unread?: number
 }) {
+  const showBadge = !active && unread != null && unread > 0
   return (
     <li>
       <div
@@ -109,6 +113,8 @@ function ChannelLink({
           "group/ch flex items-center rounded-md transition-all",
           active
             ? "border-l-[3px] border-sidebar-primary bg-sidebar-accent font-semibold text-sidebar-foreground"
+            : unread && unread > 0
+            ? "border-l-[3px] border-transparent font-semibold text-sidebar-foreground hover:bg-sidebar-accent/50"
             : "border-l-[3px] border-transparent text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
         )}
       >
@@ -120,6 +126,14 @@ function ChannelLink({
           <ChannelIcon channel={channel} />
           <span className="truncate">{channel.name}</span>
         </button>
+        {showBadge && (
+          <span
+            className="mr-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sidebar-primary px-1 font-mono text-[10px] font-bold leading-none text-sidebar-primary-foreground"
+            aria-label={`${unread} unread`}
+          >
+            {unread! > 99 ? "99+" : unread}
+          </span>
+        )}
         {onEdit && (
           <button
             onClick={(e) => {
@@ -146,7 +160,7 @@ function VoiceParticipantsRow({
   isSpeaking,
   isMicMuted,
 }: {
-  userId: string
+  userId: number
   displayName: string
   avatarUrl?: string | null
   isSelf: boolean
@@ -238,11 +252,12 @@ export function NavChannels() {
   } = useVideoCall()
   const { selectedTextChannelId, selectTextChannel } = useHubSelection()
   const occupancy = useVoiceOccupancy()
+  const unreadCounts = useUnreadCounts()
 
   // Text and voice selections are independent — both get highlighted
   // concurrently when the user is in a call AND reading a text channel.
-  const isTextActive = (id: string) => selectedTextChannelId === id
-  const isVoiceActive = (id: string) => activeVoiceChannelId === id
+  const isTextActive = (id: number) => selectedTextChannelId === id
+  const isVoiceActive = (id: number) => activeVoiceChannelId === id
 
   const { channels: apiChannels, createChannel, updateChannel, deleteChannel, uploadIcon } = useChannels()
 
@@ -268,7 +283,7 @@ export function NavChannels() {
 
   // Collect groups for editor
   const allGroups: MemberGroup[] = []
-  const seen = new Set<string>()
+  const seen = new Set<number>()
   for (const m of members) {
     for (const g of m.groups) {
       if (!seen.has(g.id)) {
@@ -293,7 +308,7 @@ export function NavChannels() {
   }
 
   const handleSave = useCallback(async (data: ChannelEditorData) => {
-    let targetId: string | null = null
+    let targetId: number | null = null
 
     if (editorMode === "create") {
       const ch = await createChannel({
@@ -330,6 +345,7 @@ export function NavChannels() {
             active={isTextActive(ch.id)}
             onSelect={() => selectTextChannel(ch.id)}
             onEdit={hasPerm(P.EDIT_OTHER_CHANNELS) ? () => openEdit(ch) : undefined}
+            unread={unreadCounts.get(ch.id)?.unread}
           />
         ))}
         {hasPerm(P.CREATE_TEXT_CHANNELS) && (
@@ -368,7 +384,7 @@ export function NavChannels() {
                     // name / username). Try both keys to find mic-muted /
                     // speaking state when we're the one in this call.
                     const sdk = isActiveCall
-                      ? sdkByUserId.get(m.username) ?? sdkByUserId.get(m.user_id)
+                      ? sdkByUserId.get(m.username) ?? sdkByUserId.get(String(m.user_id))
                       : undefined
                     return (
                       <VoiceParticipantsRow

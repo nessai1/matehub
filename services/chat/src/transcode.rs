@@ -157,6 +157,23 @@ async fn handle_result(
     data.update_attachments(hub_id, channel_id, bucket, message_id, &attachments)
         .await?;
 
+    // Keep the streaming-proxy index in sync: URL/content-type/size just
+    // changed from the source file to the transcoded output.
+    if let TranscodeStatus::Ok {
+        url,
+        content_type,
+        size,
+        ..
+    } = &status
+    {
+        if let Err(e) = data
+            .update_attachment_index_row(&attachment_id, url, content_type, *size as i64)
+            .await
+        {
+            tracing::error!(%attachment_id, "attachment index update failed: {e}");
+        }
+    }
+
     // Broadcast WS event so clients refresh
     let payload = serde_json::json!({
         "message_id": message_id,

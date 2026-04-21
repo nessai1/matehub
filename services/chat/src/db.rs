@@ -67,6 +67,24 @@ CREATE TABLE IF NOT EXISTS matehub_chat.channel_buckets (
 ) WITH CLUSTERING ORDER BY (bucket DESC)
 "#;
 
+// Attachment index: look up by id → S3 url + metadata.
+// Attachments are stored inline in messages.attachments (list<text>) for the
+// chat render path; this table is a sidecar index for the streaming proxy so
+// `/v1/attachments/{id}/stream` doesn't have to scan messages. Hub_id is
+// duplicated here so the stream handler can authorize without joining.
+const ATTACHMENTS_CQL: &str = r#"
+CREATE TABLE IF NOT EXISTS matehub_chat.attachments (
+    attachment_id text PRIMARY KEY,
+    hub_id        bigint,
+    channel_id    bigint,
+    message_id    bigint,
+    bucket        int,
+    url           text,
+    content_type  text,
+    size          bigint
+)
+"#;
+
 pub async fn connect(scylla_url: &str) -> Result<ScyllaPool> {
     let session = SessionBuilder::new()
         .known_node(scylla_url)
@@ -85,6 +103,7 @@ pub async fn migrate(session: &ScyllaPool) -> Result<()> {
     session.query_unpaged(REACTIONS_CQL, &[]).await?;
     session.query_unpaged(READ_STATE_CQL, &[]).await?;
     session.query_unpaged(CHANNEL_BUCKETS_CQL, &[]).await?;
+    session.query_unpaged(ATTACHMENTS_CQL, &[]).await?;
     tracing::info!("ScyllaDB tables created");
 
     session.use_keyspace("matehub_chat", false).await?;

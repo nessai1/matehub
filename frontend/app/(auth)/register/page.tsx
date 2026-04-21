@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 interface InviteData {
   email: string;
   hub_name: string;
-  hub_id: string;
+  hub_id: number;
   hub_slug: string;
 }
 

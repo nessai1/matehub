@@ -9,7 +9,6 @@ use axum::{
 use axum_extra::extract::Multipart;
 use serde::Deserialize;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::storage::S3Storage;
@@ -36,14 +35,14 @@ struct UpdateProfileRequest {
 
 #[derive(serde::Serialize)]
 struct ProfileResponse {
-    user_id: Uuid,
+    user_id: i64,
     display_name: String,
     avatar_url: Option<String>,
 }
 
 async fn update_profile(
     State(state): State<ProfileState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<ProfileResponse>, StatusCode> {
@@ -102,7 +101,7 @@ struct UploadResponse {
 
 async fn upload_avatar(
     State(state): State<ProfileState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, StatusCode> {

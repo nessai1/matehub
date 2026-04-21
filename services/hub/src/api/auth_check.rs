@@ -1,17 +1,12 @@
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::models::permission::bits;
 
 /// User's resolved hub-level permissions + position info.
 pub struct UserPerms {
-    /// Union of hub_permissions from all user's groups.
     pub hub_bits: i32,
-    /// Highest (lowest number = most privileged) group position.
     pub top_position: i32,
-    /// Whether user is in the "admin" group (name-based check).
     pub is_admin: bool,
-    /// Whether user is the hub creator.
     pub is_creator: bool,
 }
 
@@ -20,14 +15,10 @@ impl UserPerms {
         self.is_admin || (self.hub_bits & bit == bit)
     }
 
-    /// Can this user manage a target at the given position?
-    /// Only if caller's top_position < target_position (lower = more privileged).
     pub fn can_manage_position(&self, target_position: i32) -> bool {
         self.is_admin || self.top_position < target_position
     }
 
-    /// Can this user grant the given bits?
-    /// Only bits that the user themselves possess.
     pub fn grantable_bits(&self) -> i32 {
         if self.is_admin {
             bits::ALL
@@ -37,11 +28,10 @@ impl UserPerms {
     }
 }
 
-/// Resolve a user's hub-level permissions by querying their groups.
 pub async fn resolve_user_perms(
     pool: &PgPool,
-    hub_id: Uuid,
-    user_id: Uuid,
+    hub_id: i64,
+    user_id: i64,
 ) -> Result<UserPerms, sqlx::Error> {
     #[derive(sqlx::FromRow)]
     struct Row {
@@ -82,11 +72,10 @@ pub async fn resolve_user_perms(
     })
 }
 
-/// Resolve a target user's highest group position.
 pub async fn resolve_target_position(
     pool: &PgPool,
-    hub_id: Uuid,
-    target_user_id: Uuid,
+    hub_id: i64,
+    target_user_id: i64,
 ) -> Result<i32, sqlx::Error> {
     let pos: Option<i32> = sqlx::query_scalar(
         "SELECT MIN(g.position)

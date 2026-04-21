@@ -1,4 +1,3 @@
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use axum::{
@@ -14,7 +13,7 @@ use crate::data_service::DataService;
 use crate::fanout::FanoutService;
 use crate::models::{Message, SendMessageRequest, events};
 use crate::read_state::{self, RedisPool};
-use crate::snowflake;
+use matehub_common::snowflake;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,24 +24,13 @@ pub struct AppState {
     pub sessions: crate::session::SessionStore,
 }
 
-/// Convert a string ID (UUID or numeric) to i64 for ScyllaDB.
-/// Tries i64 parse first, falls back to deterministic hash of the string.
-pub fn str_to_i64(s: &str) -> i64 {
-    if let Ok(n) = s.parse::<i64>() {
-        return n;
-    }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    s.hash(&mut hasher);
-    // Ensure positive by masking sign bit
-    (hasher.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64
-}
-
 pub fn routes(state: AppState) -> Router {
     Router::new()
         .route("/v1/channels/{channel_id}/messages", post(send_message).get(get_history))
         .route("/v1/channels/{channel_id}/messages/{message_id}", patch(edit_message).delete(delete_message))
         .route("/v1/channels/{channel_id}/typing", post(typing))
         .route("/v1/channels/{channel_id}/ack", post(mark_read))
+        .route("/v1/read-states", get(get_read_states))
         .route("/v1/sync", post(sync))
         .merge(crate::attachments::routes())
         .route("/health", get(|| async { "ok" }))
@@ -53,12 +41,13 @@ pub fn routes(state: AppState) -> Router {
 
 async fn send_message(
     State(state): State<AppState>,
-    Path(channel_id_raw): Path<String>,
+    Path(channel_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<Message>), StatusCode> {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
+    let hub_id = auth.0.hub_id;
+    // Scylla/Redis keys still store user_id as text — stringify once at the boundary.
+    let user_id = auth.0.sub.to_string();
 
     if body.content.trim().is_empty() && body.attachments.as_ref().is_none_or(|a| a.is_empty()) {
         return Err(StatusCode::BAD_REQUEST);
@@ -66,19 +55,19 @@ async fn send_message(
 
     // Rate limit: 5 messages/5s per user per channel
     if let Some(mut redis) = state.redis.clone() {
-        if !read_state::check_rate_limit(&mut redis, &auth.0.sub, channel_id, 5, 5).await {
+        if !read_state::check_rate_limit(&mut redis, &user_id, channel_id, 5, 5).await {
             return Err(StatusCode::TOO_MANY_REQUESTS);
         }
     }
 
     // Idempotency: if client_id was seen, return cached message_id
     if let (Some(client_id), Some(mut redis)) = (body.client_id.as_deref(), state.redis.clone()) {
-        if let Some(existing_id) = read_state::check_idempotency(&mut redis, &auth.0.sub, client_id).await {
+        if let Some(existing_id) = read_state::check_idempotency(&mut redis, &user_id, client_id).await {
             tracing::debug!(client_id, existing_id, "idempotent duplicate");
             // Return minimal response -- client already has the message
             return Ok((StatusCode::OK, Json(Message {
                 hub_id, channel_id, message_id: existing_id,
-                author_id: auth.0.sub.clone(), author_type: auth.0.user_type.clone(),
+                author_id: user_id.clone(), author_type: auth.0.user_type.clone(),
                 content: body.content.clone(), thread_root_id: body.thread_root_id,
                 mentions: vec![], mention_groups: vec![], mention_everyone: false,
                 attachments: vec![], edited_at: None, deleted_at: None,
@@ -93,7 +82,7 @@ async fn send_message(
     let msg = state
         .data
         .write_message(
-            hub_id, channel_id, &auth.0.sub, &auth.0.user_type,
+            hub_id, channel_id, &user_id, &auth.0.user_type,
             &content, mentions, vec![],
             content.contains("@everyone"),
             body.attachments.unwrap_or_default(),
@@ -107,7 +96,32 @@ async fn send_message(
 
     // Store idempotency
     if let (Some(client_id), Some(mut redis)) = (body.client_id.as_deref(), state.redis.clone()) {
-        read_state::set_idempotency(&mut redis, &auth.0.sub, client_id, msg.message_id).await;
+        read_state::set_idempotency(&mut redis, &user_id, client_id, msg.message_id).await;
+    }
+
+    // Index attachments for the streaming proxy. Done here (not in upload)
+    // because only now do we know which message_id/bucket they belong to;
+    // aborted sends (no POST /messages) leave no index entry to garbage-collect.
+    for att in &msg.attachments {
+        if att.id.is_empty() {
+            continue; // legacy bare-URL attachment — no id to key on
+        }
+        if let Err(e) = state
+            .data
+            .insert_attachment_index_row(
+                &att.id,
+                msg.hub_id,
+                msg.channel_id,
+                msg.message_id,
+                msg.bucket,
+                &att.url,
+                &att.content_type,
+                att.size as i64,
+            )
+            .await
+        {
+            tracing::error!(id = %att.id, "attachment index insert failed: {e}");
+        }
     }
 
     // Fan out
@@ -152,12 +166,11 @@ struct EditRequest {
 
 async fn edit_message(
     State(state): State<AppState>,
-    Path((channel_id_raw, message_id)): Path<(String, i64)>,
+    Path((channel_id, message_id)): Path<(i64, i64)>,
     auth: AuthUser,
     Json(body): Json<EditRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
+    let hub_id = auth.0.hub_id;
 
     let content = sanitize_content(body.content.trim());
 
@@ -165,7 +178,7 @@ async fn edit_message(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let bucket = snowflake::current_bucket(); // TODO: extract from message_id or lookup
+    let bucket = snowflake::bucket_from_id(message_id);
 
     let mentions = parse_mentions(&content);
 
@@ -196,12 +209,11 @@ async fn edit_message(
 
 async fn delete_message(
     State(state): State<AppState>,
-    Path((channel_id_raw, message_id)): Path<(String, i64)>,
+    Path((channel_id, message_id)): Path<(i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
-    let bucket = snowflake::current_bucket();
+    let hub_id = auth.0.hub_id;
+    let bucket = snowflake::bucket_from_id(message_id);
 
     state.data
         .delete_message(hub_id, channel_id, bucket, message_id)
@@ -223,12 +235,12 @@ async fn delete_message(
 
 async fn typing(
     State(state): State<AppState>,
-    Path(channel_id_raw): Path<String>,
+    Path(channel_id): Path<i64>,
     auth: AuthUser,
 ) -> StatusCode {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
-    state.fanout.publish_typing(hub_id, channel_id, &auth.0.sub).await;
+    let hub_id = auth.0.hub_id;
+    let user_id = auth.0.sub.to_string();
+    state.fanout.publish_typing(hub_id, channel_id, &user_id).await;
     StatusCode::NO_CONTENT
 }
 
@@ -241,20 +253,20 @@ struct AckRequest {
 
 async fn mark_read(
     State(state): State<AppState>,
-    Path(channel_id_raw): Path<String>,
+    Path(channel_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<AckRequest>,
 ) -> StatusCode {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
+    let hub_id = auth.0.hub_id;
+    let user_id = auth.0.sub.to_string();
     if let Some(mut redis) = state.redis.clone() {
         read_state::mark_read(
             &mut redis, &state.data,
-            &auth.0.sub, hub_id, channel_id, body.message_id,
+            &user_id, hub_id, channel_id, body.message_id,
         ).await;
     } else {
         // No Redis -- write directly to ScyllaDB
-        if let Err(e) = state.data.mark_read(&auth.0.sub, hub_id, channel_id, body.message_id).await {
+        if let Err(e) = state.data.mark_read(&user_id, hub_id, channel_id, body.message_id).await {
             tracing::error!("mark_read failed: {e}");
         }
     }
@@ -274,12 +286,11 @@ fn default_limit() -> i32 { 50 }
 
 async fn get_history(
     State(state): State<AppState>,
-    Path(channel_id_raw): Path<String>,
+    Path(channel_id): Path<i64>,
     auth: AuthUser,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<Message>>, StatusCode> {
-    let hub_id = str_to_i64(&auth.0.hub_id);
-    let channel_id = str_to_i64(&channel_id_raw);
+    let hub_id = auth.0.hub_id;
     let limit = query.limit.clamp(1, 100);
 
     let messages = state.data
@@ -291,6 +302,44 @@ async fn get_history(
         })?;
 
     Ok(Json(messages))
+}
+
+// ── Read States (bulk fetch for sidebar badges) ─────
+
+#[derive(serde::Serialize)]
+struct ReadStateItem {
+    channel_id: i64,
+    last_read_message_id: i64,
+    mention_count: i32,
+}
+
+async fn get_read_states(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<ReadStateItem>>, StatusCode> {
+    let hub_id = auth.0.hub_id;
+    let user_id = auth.0.sub.to_string();
+
+    let rows = state
+        .data
+        .get_all_read_states(&user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("get_all_read_states failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let items: Vec<ReadStateItem> = rows
+        .into_iter()
+        .filter(|(h, _, _, _)| *h == hub_id)
+        .map(|(_, channel_id, last_read_message_id, mention_count)| ReadStateItem {
+            channel_id,
+            last_read_message_id,
+            mention_count,
+        })
+        .collect();
+
+    Ok(Json(items))
 }
 
 // ── Sync (offline catch-up) ─────────────────────
@@ -323,7 +372,7 @@ async fn sync(
     auth: AuthUser,
     Json(body): Json<SyncRequest>,
 ) -> Result<Json<SyncResponse>, StatusCode> {
-    let hub_id = str_to_i64(&auth.0.hub_id);
+    let hub_id = auth.0.hub_id;
 
     if body.channels.len() > 50 {
         return Err(StatusCode::BAD_REQUEST);

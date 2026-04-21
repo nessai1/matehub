@@ -1,0 +1,12 @@
+You've been invited to {{ hub_name }}
+=====================================
+
+{{ inviter_name }} invited you to join the "{{ hub_name }}" hub on MateHub.
+
+Accept the invitation:
+{{ invite_url }}
+
+This invitation expires in 7 days. If you weren't expecting it, you
+can ignore this email.
+
+— The MateHub team

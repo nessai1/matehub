@@ -4,11 +4,11 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
+use matehub_common::snowflake;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::api::auth_check::{resolve_user_perms, resolve_target_position};
+use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::Group;
 use crate::models::group::{CreateGroup, UpdateGroup};
@@ -30,7 +30,7 @@ pub fn routes(pool: PgPool) -> Router {
 
 async fn list_groups(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<Group>>, StatusCode> {
     let mut conn = hub_connection(&pool, hub_id)
         .await
@@ -48,11 +48,10 @@ async fn list_groups(
 
 async fn create_group(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<CreateGroup>,
 ) -> Result<(StatusCode, Json<Group>), StatusCode> {
-    // Must have MANAGE_ROLES
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -60,7 +59,6 @@ async fn create_group(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Can only grant bits that caller has
     let requested_bits = body.hub_permissions.unwrap_or(0);
     if requested_bits & !caller.grantable_bits() != 0 {
         return Err(StatusCode::FORBIDDEN);
@@ -77,14 +75,14 @@ async fn create_group(
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // New group is always below caller (higher position number)
     let new_pos = max_pos.unwrap_or(0) + 1;
 
     let group = sqlx::query_as::<_, Group>(
-        "INSERT INTO groups (hub_id, name, color, position, hub_permissions)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO groups (id, hub_id, name, color, position, hub_permissions)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING *",
     )
+    .bind(snowflake::next_id())
     .bind(hub_id)
     .bind(&body.name)
     .bind(&body.color)
@@ -99,7 +97,7 @@ async fn create_group(
 
 async fn update_group(
     State(pool): State<PgPool>,
-    Path((hub_id, group_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, group_id)): Path<(i64, i64)>,
     auth: AuthUser,
     Json(body): Json<UpdateGroup>,
 ) -> Result<Json<Group>, StatusCode> {
@@ -111,7 +109,6 @@ async fn update_group(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch target group
     let target = sqlx::query_as::<_, Group>(
         "SELECT * FROM groups WHERE id = $1 AND hub_id = $2",
     )
@@ -125,19 +122,16 @@ async fn update_group(
     let is_protected = target.name == "admin" || target.name == "everyone";
 
     if is_protected {
-        // admin/everyone: only name and color allowed
         if body.position.is_some() || body.hub_permissions.is_some() {
             return Err(StatusCode::FORBIDDEN);
         }
     } else {
-        // Must have MANAGE_ROLES and be above the target group
         if !caller.has(bits::MANAGE_ROLES) {
             return Err(StatusCode::FORBIDDEN);
         }
         if !caller.can_manage_position(target.position) {
             return Err(StatusCode::FORBIDDEN);
         }
-        // Can only grant bits that caller has
         if let Some(new_bits) = body.hub_permissions {
             if new_bits & !caller.grantable_bits() != 0 {
                 return Err(StatusCode::FORBIDDEN);
@@ -170,7 +164,7 @@ async fn update_group(
 
 async fn delete_group(
     State(pool): State<PgPool>,
-    Path((hub_id, group_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, group_id)): Path<(i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
@@ -194,15 +188,12 @@ async fn delete_group(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Can't delete admin or everyone
     if target.name == "admin" || target.name == "everyone" || target.is_default {
         return Err(StatusCode::FORBIDDEN);
     }
-    // Can only delete groups below caller
     if !caller.can_manage_position(target.position) {
         return Err(StatusCode::FORBIDDEN);
     }
-    // Can't delete a group you're a member of
     let caller_in_group: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM member_groups WHERE hub_id = $1 AND user_id = $2 AND group_id = $3)",
     )
@@ -228,7 +219,7 @@ async fn delete_group(
 
 async fn add_member_to_group(
     State(pool): State<PgPool>,
-    Path((hub_id, group_id, user_id)): Path<(Uuid, Uuid, Uuid)>,
+    Path((hub_id, group_id, user_id)): Path<(i64, i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
@@ -238,7 +229,6 @@ async fn add_member_to_group(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Fetch target group position
     let target_group_pos: i32 = sqlx::query_scalar(
         "SELECT position FROM groups WHERE id = $1 AND hub_id = $2",
     )
@@ -249,7 +239,6 @@ async fn add_member_to_group(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Can only assign groups below caller
     if !caller.can_manage_position(target_group_pos) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -274,7 +263,7 @@ async fn add_member_to_group(
 
 async fn remove_member_from_group(
     State(pool): State<PgPool>,
-    Path((hub_id, group_id, user_id)): Path<(Uuid, Uuid, Uuid)>,
+    Path((hub_id, group_id, user_id)): Path<(i64, i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
@@ -284,7 +273,6 @@ async fn remove_member_from_group(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Fetch target group
     #[derive(sqlx::FromRow)]
     struct GroupInfo { name: String, position: i32 }
     let target_group = sqlx::query_as::<_, GroupInfo>(
@@ -297,12 +285,10 @@ async fn remove_member_from_group(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Can only manage groups below caller
     if !caller.can_manage_position(target_group.position) {
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Can't remove hub creator from admin
     if target_group.name == "admin" {
         let is_creator: bool = sqlx::query_scalar(
             "SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1",

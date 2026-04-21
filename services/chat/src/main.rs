@@ -12,7 +12,6 @@ mod gateway;
 mod models;
 mod read_state;
 mod session;
-mod snowflake;
 
 use std::sync::Arc;
 
@@ -46,7 +45,7 @@ async fn main() -> Result<()> {
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
 
     // Initialize Snowflake ID generator
-    snowflake::init();
+    matehub_common::snowflake::init();
 
     // Connect to ScyllaDB
     let scylla = db::connect(&scylla_url).await?;

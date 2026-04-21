@@ -9,7 +9,7 @@ pub async fn spawn_app() -> String {
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
 
-    matehub_chat::snowflake::init();
+    matehub_common::snowflake::init();
 
     let scylla = matehub_chat::db::connect(&scylla_url).await.unwrap();
     matehub_chat::db::migrate(&scylla).await.unwrap();
@@ -47,7 +47,9 @@ pub async fn spawn_app() -> String {
     format!("http://{addr}")
 }
 
-/// Create a test JWT (matches hub service's shared secret)
+/// Create a test JWT (matches hub service's shared secret).
+/// `sub` is derived deterministically from the username so separate test runs
+/// see the same author_id and existing assertions stay stable.
 pub fn test_jwt(username: &str, hub_id: i64) -> String {
     use jsonwebtoken::{EncodingKey, Header, encode};
 
@@ -55,11 +57,12 @@ pub fn test_jwt(username: &str, hub_id: i64) -> String {
         .unwrap_or_else(|_| "matehub-dev-secret-change-in-prod".into());
 
     let now = chrono::Utc::now().timestamp();
+    let sub = test_user_id(username);
     let claims = serde_json::json!({
-        "sub": format!("test-user-{username}"),
+        "sub": sub,
         "username": username,
         "user_type": "permanent",
-        "hub_id": hub_id.to_string(),
+        "hub_id": hub_id,
         "groups": [],
         "iat": now,
         "exp": now + 3600,
@@ -71,6 +74,15 @@ pub fn test_jwt(username: &str, hub_id: i64) -> String {
         &EncodingKey::from_secret(secret.as_bytes()),
     )
     .unwrap()
+}
+
+/// Deterministic numeric user ID for a test username.
+pub fn test_user_id(username: &str) -> i64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    username.hash(&mut h);
+    (h.finish() & 0x7FFF_FFFF_FFFF_FFFF) as i64
 }
 
 #[allow(dead_code)]

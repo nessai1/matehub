@@ -16,4 +16,5 @@ export type {
   SyncChannelRequest,
   SyncChannelResponse,
   SyncResponse,
+  ChannelReadState,
 } from "./types";

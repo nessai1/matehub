@@ -11,7 +11,6 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use sqlx::PgPool;
 use tokio::sync::broadcast;
-use uuid::Uuid;
 
 use crate::auth;
 use crate::presence::{self, RedisPool};
@@ -19,7 +18,7 @@ use crate::presence::{self, RedisPool};
 /// One event on the presence broadcast bus, addressed to a specific hub.
 #[derive(Clone, Debug)]
 pub struct PresenceEvent {
-    pub hub_id: Uuid,
+    pub hub_id: i64,
     /// Already-serialized JSON payload that gets forwarded to WS clients
     /// verbatim. We carry it as a string so every subscriber doesn't have to
     /// re-serialize.
@@ -30,9 +29,6 @@ pub struct PresenceEvent {
 pub struct PresenceState {
     pub pool: PgPool,
     pub redis: Option<RedisPool>,
-    /// Fan-out bus for server-initiated events (voice occupancy changes,
-    /// future push notifications, etc). The `voice_occupancy_bus` NATS
-    /// subscriber publishes into this same sender.
     pub events: broadcast::Sender<PresenceEvent>,
 }
 
@@ -49,11 +45,10 @@ struct WsQuery {
 
 async fn ws_upgrade(
     State(state): State<PresenceState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    // Validate token before upgrading
     let claims = match validate_token(&query.token, hub_id) {
         Some(c) => c,
         None => return axum::http::StatusCode::UNAUTHORIZED.into_response(),
@@ -62,8 +57,9 @@ async fn ws_upgrade(
     ws.on_upgrade(move |socket| handle_presence(socket, state, hub_id, claims.sub))
 }
 
-fn validate_token(token: &str, hub_id: Uuid) -> Option<auth::Claims> {
-    // Dev token support
+fn validate_token(token: &str, hub_id: i64) -> Option<auth::Claims> {
+    // Dev token shortcut (`dev-{username}-token`). No signature, just routed
+    // through the seed user map so local frontend work bypasses the real login.
     if token.starts_with("dev-") && token.ends_with("-token") {
         let username = token.strip_prefix("dev-")?.strip_suffix("-token")?;
         let user_id = match username {
@@ -93,12 +89,11 @@ fn validate_token(token: &str, hub_id: Uuid) -> Option<auth::Claims> {
 async fn handle_presence(
     socket: WebSocket,
     state: PresenceState,
-    hub_id: Uuid,
-    user_id: Uuid,
+    hub_id: i64,
+    user_id: i64,
 ) {
     use futures_util::SinkExt;
 
-    // Mark online -- get unique session_id for this connection
     let session_id = if let Some(mut redis) = state.redis.clone() {
         let sid = presence::set_online(&mut redis, hub_id, user_id).await;
         tracing::info!(%hub_id, %user_id, %sid, "presence connected");
@@ -108,12 +103,10 @@ async fn handle_presence(
         None
     };
 
-    // Subscribe to the server-side event bus (voice occupancy etc).
     let mut events = state.events.subscribe();
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
-    // Heartbeat loop
     let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
 
     loop {
@@ -132,8 +125,6 @@ async fn handle_presence(
             event = events.recv() => {
                 match event {
                     Ok(ev) if ev.hub_id == hub_id => {
-                        // Server-initiated push. If the WS is full/broken, bail
-                        // out of the loop so cleanup runs.
                         if ws_sender.send(Message::Text(ev.payload.into())).await.is_err() {
                             break;
                         }
@@ -153,7 +144,6 @@ async fn handle_presence(
         }
     }
 
-    // Mark offline -- only if OUR session is still the active one
     tracing::info!(%hub_id, %user_id, "presence disconnected");
 
     if let (Some(mut redis), Some(sid)) = (state.redis.clone(), session_id.as_deref()) {

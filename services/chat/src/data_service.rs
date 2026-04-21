@@ -7,7 +7,7 @@ use scylla::statement::prepared::PreparedStatement;
 
 use crate::attachment::Attachment;
 use crate::models::Message;
-use crate::snowflake;
+use matehub_common::snowflake;
 
 /// Data Service: persistence layer between business logic and ScyllaDB.
 /// Encapsulates token-aware routing, prepared statements, bucket management.
@@ -33,6 +33,10 @@ pub struct DataService {
     // Attachment ops (for transcode result application)
     select_attachments: PreparedStatement,
     update_attachments: PreparedStatement,
+    // Attachment index (for streaming proxy lookups)
+    insert_attachment_index: PreparedStatement,
+    select_attachment_index: PreparedStatement,
+    update_attachment_index: PreparedStatement,
 }
 
 impl DataService {
@@ -112,6 +116,27 @@ impl DataService {
             )
             .await?;
 
+        let insert_attachment_index = session
+            .prepare(
+                "INSERT INTO attachments (attachment_id, hub_id, channel_id, message_id, bucket, url, content_type, size)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .await?;
+
+        let select_attachment_index = session
+            .prepare(
+                "SELECT hub_id, channel_id, message_id, bucket, url, content_type, size
+                 FROM attachments WHERE attachment_id = ?",
+            )
+            .await?;
+
+        let update_attachment_index = session
+            .prepare(
+                "UPDATE attachments SET url = ?, content_type = ?, size = ?
+                 WHERE attachment_id = ?",
+            )
+            .await?;
+
         tracing::info!("DataService: prepared statements cached");
 
         let update_content = session
@@ -142,6 +167,9 @@ impl DataService {
             select_read_states_for_user,
             select_attachments,
             update_attachments,
+            insert_attachment_index,
+            select_attachment_index,
+            update_attachment_index,
         })
     }
 
@@ -564,4 +592,95 @@ impl DataService {
             .await?;
         Ok(())
     }
+
+    // ── Attachment index (streaming proxy lookups) ─────
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_attachment_index_row(
+        &self,
+        attachment_id: &str,
+        hub_id: i64,
+        channel_id: i64,
+        message_id: i64,
+        bucket: i32,
+        url: &str,
+        content_type: &str,
+        size: i64,
+    ) -> Result<()> {
+        self.session
+            .execute_unpaged(
+                &self.insert_attachment_index,
+                (
+                    attachment_id,
+                    hub_id,
+                    channel_id,
+                    message_id,
+                    bucket,
+                    url,
+                    content_type,
+                    size,
+                ),
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_attachment_index(
+        &self,
+        attachment_id: &str,
+    ) -> Result<Option<AttachmentIndexRow>> {
+        let rows = self
+            .session
+            .execute_unpaged(&self.select_attachment_index, (attachment_id,))
+            .await?;
+
+        let row = rows
+            .into_rows_result()?
+            .rows::<(i64, i64, i64, i32, String, String, i64)>()?
+            .next()
+            .transpose()?;
+
+        Ok(row.map(
+            |(hub_id, channel_id, message_id, bucket, url, content_type, size)| {
+                AttachmentIndexRow {
+                    hub_id,
+                    channel_id,
+                    message_id,
+                    bucket,
+                    url,
+                    content_type,
+                    size,
+                }
+            },
+        ))
+    }
+
+    pub async fn update_attachment_index_row(
+        &self,
+        attachment_id: &str,
+        url: &str,
+        content_type: &str,
+        size: i64,
+    ) -> Result<()> {
+        self.session
+            .execute_unpaged(
+                &self.update_attachment_index,
+                (url, content_type, size, attachment_id),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+pub struct AttachmentIndexRow {
+    pub hub_id: i64,
+    #[allow(dead_code)]
+    pub channel_id: i64,
+    #[allow(dead_code)]
+    pub message_id: i64,
+    #[allow(dead_code)]
+    pub bucket: i32,
+    pub url: String,
+    pub content_type: String,
+    pub size: i64,
 }

@@ -1,6 +1,6 @@
-use std::sync::Arc;
-
 use tokio::net::TcpListener;
+
+use matehub_hub::db::seed::DEV_HUB_ID;
 
 /// Spawn hub service on random port with real DB.
 /// Returns base URL (e.g., "http://127.0.0.1:12345").
@@ -12,12 +12,13 @@ pub async fn spawn_app() -> String {
     let database_url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub_test".into());
 
+    matehub_common::snowflake::init();
+
     let pool = matehub_hub::db::connect(&database_url).await.unwrap();
 
-    // Run migrations (idempotent -- skips already applied)
     matehub_hub::db::migrate(&pool).await.unwrap();
 
-    // Clean data tables in FK-safe order, then re-seed
+    // Clean data tables in FK-safe order, then re-seed.
     sqlx::raw_sql(
         "TRUNCATE temp_users, channel_permissions, member_groups, groups, channels, hub_members, refresh_tokens, hubs, users CASCADE;"
     )
@@ -29,7 +30,10 @@ pub async fn spawn_app() -> String {
 
     let redis = matehub_hub::presence::connect_redis().await;
 
-    let app = matehub_hub::api::routes(pool, None, redis, true)
+    // Empty events bus — tests don't depend on voice occupancy push.
+    let (events_tx, _) = tokio::sync::broadcast::channel(16);
+
+    let app = matehub_hub::api::routes(pool, None, redis, events_tx, true)
         .layer(tower_http::cors::CorsLayer::permissive());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -50,7 +54,7 @@ pub async fn login(base: &str, username: &str) -> String {
         .json(&serde_json::json!({
             "login": username,
             "password": "123123",
-            "hub_id": "def00000-0000-0000-0000-000000000001"
+            "hub_id": DEV_HUB_ID,
         }))
         .send()
         .await

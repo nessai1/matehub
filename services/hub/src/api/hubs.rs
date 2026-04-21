@@ -6,7 +6,6 @@ use axum::{
 };
 use serde::Serialize;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::models::Hub;
 
@@ -19,7 +18,7 @@ pub fn routes(pool: PgPool) -> Router {
 
 async fn get_hub(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Hub>, StatusCode> {
     let hub = sqlx::query_as::<_, Hub>("SELECT * FROM hubs WHERE id = $1")
         .bind(hub_id)
@@ -32,7 +31,7 @@ async fn get_hub(
 
 #[derive(Serialize, sqlx::FromRow)]
 struct MemberRow {
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
@@ -41,7 +40,7 @@ struct MemberRow {
 
 async fn get_members(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<MemberRow>>, StatusCode> {
     let members = sqlx::query_as::<_, MemberRow>(
         "SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url, hm.role

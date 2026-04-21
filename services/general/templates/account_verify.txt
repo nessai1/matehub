@@ -1,0 +1,12 @@
+Confirm your MateHub email
+==========================
+
+Thanks for signing up. Visit the link below to confirm your email
+address and activate your account:
+
+{{ verify_url }}
+
+This link expires in 24 hours. If you didn't create a MateHub account,
+you can safely ignore this email.
+
+— The MateHub team

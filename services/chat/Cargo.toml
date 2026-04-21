@@ -25,7 +25,6 @@ redis.workspace = true
 jsonwebtoken.workspace = true
 
 # IDs
-sonyflake.workspace = true
 uuid.workspace = true
 
 # Observability

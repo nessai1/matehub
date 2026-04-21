@@ -37,7 +37,7 @@ import type { Member, MemberGroup } from "@/hooks/use-members";
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 interface AllGroup {
-  id: string;
+  id: number;
   name: string;
   color: string | null;
   position: number;
@@ -85,7 +85,7 @@ export function MemberCard({
   const pickerGroups = apiGroups.length > 0 ? apiGroups : allGroups.map((g) => ({ ...g, position: 0 }));
 
   const toggleGroup = useCallback(
-    async (groupId: string, add: boolean) => {
+    async (groupId: number, add: boolean) => {
       if (!session) return;
       const url = `${HUB_API}/v1/hubs/${session.hubId}/groups/${groupId}/members/${member.user_id}`;
       await fetch(url, {

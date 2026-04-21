@@ -1,0 +1,39 @@
+[package]
+name = "matehub-general"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+axum.workspace = true
+sqlx.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+jsonwebtoken.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tower-http.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+dotenvy.workspace = true
+bcrypt = "0.17"
+sha2 = "0.10"
+matehub-common.workspace = true
+
+# Trait object async support (dyn MailTransport)
+async-trait = "0.1"
+
+# HTML templating for mail bodies
+askama = "0.12"
+
+# K8s client for hub provisioning (stub for now, fleshed out in a later milestone)
+kube = { version = "0.95", features = ["client", "runtime"] }
+k8s-openapi = { version = "0.23", features = ["latest"] }
+
+[dev-dependencies]
+pretty_assertions.workspace = true

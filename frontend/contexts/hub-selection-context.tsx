@@ -10,33 +10,31 @@ import {
  * Which text channel is shown in the chat workspace. Pure SPA state — the URL
  * never changes when the user navigates. Persisted to localStorage so the
  * selection survives reloads.
- *
- * Voice state lives in VideoCallProvider (mic/cam/participants/etc); we only
- * need to track the text channel here. The two selections are independent:
- * you can be in voice "office-watch" AND reading text "anime" at the same
- * time, and both render simultaneously.
  */
 
 const STORAGE_KEY = "matehub:selected-text-channel";
 
-function readStored(): string | null {
+function readStored(): number | null {
   if (typeof window === "undefined") return null;
   try {
-    return window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
   } catch {
     return null;
   }
 }
 
-let cache: string | null | undefined;
+let cache: number | null | undefined;
 const listeners = new Set<() => void>();
 
-function getSnapshot(): string | null {
+function getSnapshot(): number | null {
   if (cache === undefined) cache = readStored();
   return cache ?? null;
 }
 
-function getServerSnapshot(): string | null {
+function getServerSnapshot(): number | null {
   return null;
 }
 
@@ -44,7 +42,8 @@ function subscribe(fn: () => void) {
   listeners.add(fn);
   const onStorage = (e: StorageEvent) => {
     if (e.key === STORAGE_KEY) {
-      cache = e.newValue;
+      const n = e.newValue === null ? null : Number(e.newValue);
+      cache = n !== null && Number.isFinite(n) ? n : null;
       fn();
     }
   };
@@ -55,11 +54,11 @@ function subscribe(fn: () => void) {
   };
 }
 
-function write(id: string | null) {
+function write(id: number | null) {
   cache = id;
   if (typeof window !== "undefined") {
     try {
-      if (id) window.localStorage.setItem(STORAGE_KEY, id);
+      if (id !== null) window.localStorage.setItem(STORAGE_KEY, String(id));
       else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       /* ignore */
@@ -71,8 +70,8 @@ function write(id: string | null) {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 interface HubSelectionValue {
-  selectedTextChannelId: string | null;
-  selectTextChannel: (id: string) => void;
+  selectedTextChannelId: number | null;
+  selectTextChannel: (id: number) => void;
 }
 
 const HubSelectionContext = createContext<HubSelectionValue | null>(null);
@@ -83,7 +82,7 @@ export function HubSelectionProvider({ children }: { children: ReactNode }) {
     getSnapshot,
     getServerSnapshot,
   );
-  const selectTextChannel = useCallback((id: string) => {
+  const selectTextChannel = useCallback((id: number) => {
     write(id);
   }, []);
 

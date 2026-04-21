@@ -1,6 +1,5 @@
 use matehub_hub::api::auth_check::UserPerms;
 use matehub_hub::models::permission::{bits, effective_permissions, has_permission, ChannelPermission};
-use uuid::Uuid;
 
 // ── Bit constants ──────────────────────────────────
 
@@ -42,8 +41,8 @@ fn each_bit_is_power_of_two() {
 
 fn make_perm(allow: i32, deny: i32) -> ChannelPermission {
     ChannelPermission {
-        channel_id: Uuid::nil(),
-        group_id: Uuid::nil(),
+        channel_id: 0,
+        group_id: 0,
         allow_bits: allow,
         deny_bits: deny,
     }

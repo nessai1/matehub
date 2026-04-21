@@ -12,4 +12,3 @@ pub mod gateway;
 pub mod models;
 pub mod read_state;
 pub mod session;
-pub mod snowflake;

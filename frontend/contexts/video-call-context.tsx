@@ -21,7 +21,7 @@ const VIDEO_SERVER_URL =
 
 interface VideoCallContextValue {
   /** The voice channel the user is currently CONNECTED to (not just viewing). */
-  activeVoiceChannelId: string | null;
+  activeVoiceChannelId: number | null;
 
   // — Re-exported useVideoClient fields —
   client: VideoClient | null;
@@ -39,7 +39,7 @@ interface VideoCallContextValue {
   error: string | null;
 
   /** Join a voice channel by its ID. Leaves the current call first if any. */
-  joinVoice: (channelId: string) => Promise<void>;
+  joinVoice: (channelId: number) => Promise<void>;
   /** Leave the current call (noop if not in one). */
   leaveVoice: () => void;
 }
@@ -57,7 +57,7 @@ export function useVideoCall(): VideoCallContextValue {
 export function VideoCallProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   // Channel the user is connected to. When null → not in a call.
-  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<string | null>(
+  const [activeVoiceChannelId, setActiveVoiceChannelId] = useState<number | null>(
     null,
   );
   // Session id allocated by the SFU for that channel.
@@ -68,10 +68,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     return {
       serverUrl: VIDEO_SERVER_URL,
       sessionId,
-      userId: session.username,
-      // Real UUID of the user — goes into voice-occupancy NATS events so the
-      // hub service can address members by id, not by display name.
-      userUuid: session.userId,
+      // Canonical Snowflake user id — flows into SFU participant messages and
+      // into voice-occupancy NATS events that the hub service matches against
+      // `users.id`. No more display-name/uuid split.
+      userId: session.userId,
       token: session.token,
     };
   }, [sessionId, session]);
@@ -88,7 +88,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [sessionId, activeVoiceChannelId]);
 
   const joinVoice = useCallback(
-    async (channelId: string) => {
+    async (channelId: number) => {
       // Already in this call? Noop.
       if (activeVoiceChannelId === channelId) return;
 

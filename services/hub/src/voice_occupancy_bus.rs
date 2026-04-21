@@ -5,15 +5,11 @@
 //! module subscribes to that subject, updates the Redis hash that
 //! `GET /v1/hubs/<id>/members-full` reads, and fans the change out to every
 //! connected presence-WS client of the same hub.
-//!
-//! Frontend clients therefore see occupancy change within one WS round-trip
-//! — no polling, no 10-second staleness window.
 
 use async_nats::Subscriber;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
-use uuid::Uuid;
 
 use crate::api::presence_ws::PresenceEvent;
 use crate::presence::{self, RedisPool};
@@ -23,23 +19,20 @@ pub const SUBJECT: &str = "voice.occupancy";
 /// Payload published by the video service.
 #[derive(Debug, Clone, Deserialize)]
 pub struct OccupancyEvent {
-    pub hub_id: Uuid,
-    pub user_id: Uuid,
+    pub hub_id: i64,
+    pub user_id: i64,
     /// `None` when the user leaves.
-    pub channel_id: Option<Uuid>,
+    pub channel_id: Option<i64>,
 }
 
-/// Wire format sent to WS subscribers. Keeping the shape dead simple so the
-/// frontend parsing has no branches.
+/// Wire format sent to WS subscribers.
 #[derive(Debug, Serialize)]
 struct WireEvent<'a> {
     r#type: &'a str,
-    user_id: Uuid,
-    channel_id: Option<Uuid>,
+    user_id: i64,
+    channel_id: Option<i64>,
 }
 
-/// Connect to NATS, subscribe to `voice.occupancy`, and spawn the run loop.
-/// Swallows connection failures so the hub stays up in a dev box without NATS.
 pub async fn spawn(
     nats_url: &str,
     redis: Option<RedisPool>,
@@ -81,7 +74,6 @@ async fn run(
             }
         };
 
-        // 1. Persist in Redis so /members-full sees the latest state.
         if let Some(mut conn) = redis.clone() {
             match ev.channel_id {
                 Some(cid) => {
@@ -93,8 +85,6 @@ async fn run(
             }
         }
 
-        // 2. Fan out to every WS client of this hub. If nobody's subscribed
-        //    the send just returns Err(SendError) — ignored.
         let payload = serde_json::to_string(&WireEvent {
             r#type: "voice_occupancy",
             user_id: ev.user_id,

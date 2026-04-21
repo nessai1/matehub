@@ -8,6 +8,7 @@ import type {
   SyncChannelRequest,
   SyncResponse,
   Attachment,
+  ChannelReadState,
 } from "./types";
 
 type EventHandler = (event: ChatClientEvent) => void;
@@ -387,7 +388,7 @@ export class ChatClient {
   }
 
   /** Send a message to a channel. */
-  async sendMessage(channelId: string | number, opts: SendMessageOptions): Promise<Message> {
+  async sendMessage(channelId: number, opts: SendMessageOptions): Promise<Message> {
     const res = await fetch(`${this.apiBase}/v1/channels/${channelId}/messages`, {
       method: "POST",
       headers: this.headers,
@@ -403,7 +404,7 @@ export class ChatClient {
   }
 
   /** Edit a message. */
-  async editMessage(channelId: string | number, messageId: number, content: string): Promise<void> {
+  async editMessage(channelId: number, messageId: number, content: string): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -416,7 +417,7 @@ export class ChatClient {
   }
 
   /** Delete a message. */
-  async deleteMessage(channelId: string | number, messageId: number): Promise<void> {
+  async deleteMessage(channelId: number, messageId: number): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -428,7 +429,7 @@ export class ChatClient {
   }
 
   /** Fetch message history (newest first). */
-  async getHistory(channelId: string | number, opts?: HistoryOptions): Promise<Message[]> {
+  async getHistory(channelId: number, opts?: HistoryOptions): Promise<Message[]> {
     const params = new URLSearchParams();
     if (opts?.limit) params.set("limit", String(opts.limit));
     if (opts?.before) params.set("before", String(opts.before));
@@ -450,7 +451,7 @@ export class ChatClient {
    * `signal` (AbortSignal) allows cancellation.
    */
   uploadAttachment(
-    channelId: string | number,
+    channelId: number,
     file: File,
     opts?: {
       onProgress?: (percent: number) => void;
@@ -500,7 +501,7 @@ export class ChatClient {
   }
 
   /** Send typing indicator. */
-  async sendTyping(channelId: string | number): Promise<void> {
+  async sendTyping(channelId: number): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/typing`, {
       method: "POST",
       headers: this.headers,
@@ -508,12 +509,21 @@ export class ChatClient {
   }
 
   /** Mark a channel as read up to a message. */
-  async markRead(channelId: string | number, messageId: number): Promise<void> {
+  async markRead(channelId: number, messageId: number): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/ack`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({ message_id: messageId }),
     });
+  }
+
+  /** Bulk-fetch this user's read states for every channel they've touched. */
+  async getReadStates(): Promise<ChannelReadState[]> {
+    const res = await fetch(`${this.apiBase}/v1/read-states`, {
+      headers: this.headers,
+    });
+    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    return res.json();
   }
 
   /** Sync multiple channels after offline period. */

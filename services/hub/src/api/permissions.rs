@@ -5,7 +5,6 @@ use axum::{
     routing::{get, put},
 };
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::api::auth_check::resolve_user_perms;
@@ -32,7 +31,7 @@ pub fn routes(pool: PgPool) -> Router {
 
 async fn list_channel_permissions(
     State(pool): State<PgPool>,
-    Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, channel_id)): Path<(i64, i64)>,
 ) -> Result<Json<Vec<ChannelPermission>>, StatusCode> {
     let mut conn = hub_connection(&pool, hub_id)
         .await
@@ -51,7 +50,7 @@ async fn list_channel_permissions(
 
 async fn set_channel_permission(
     State(pool): State<PgPool>,
-    Path((hub_id, channel_id, group_id)): Path<(Uuid, Uuid, Uuid)>,
+    Path((hub_id, channel_id, group_id)): Path<(i64, i64, i64)>,
     auth: AuthUser,
     Json(body): Json<SetPermission>,
 ) -> Result<StatusCode, StatusCode> {
@@ -85,7 +84,7 @@ async fn set_channel_permission(
 
 async fn delete_channel_permission(
     State(pool): State<PgPool>,
-    Path((hub_id, channel_id, group_id)): Path<(Uuid, Uuid, Uuid)>,
+    Path((hub_id, channel_id, group_id)): Path<(i64, i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
@@ -109,7 +108,6 @@ async fn delete_channel_permission(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Get the effective permission bits for a specific user on a channel.
 #[derive(serde::Serialize)]
 struct EffectiveResponse {
     bits: i32,
@@ -124,7 +122,7 @@ struct EffectiveResponse {
 
 async fn get_effective_permissions(
     State(pool): State<PgPool>,
-    Path((hub_id, channel_id, user_id)): Path<(Uuid, Uuid, Uuid)>,
+    Path((hub_id, channel_id, user_id)): Path<(i64, i64, i64)>,
 ) -> Result<Json<EffectiveResponse>, StatusCode> {
     let mut conn = hub_connection(&pool, hub_id)
         .await

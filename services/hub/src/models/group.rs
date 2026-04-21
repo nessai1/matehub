@@ -1,11 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Group {
-    pub id: Uuid,
-    pub hub_id: Uuid,
+    pub id: i64,
+    pub hub_id: i64,
     pub name: String,
     pub color: Option<String>,
     pub position: i32,

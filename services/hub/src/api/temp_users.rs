@@ -5,8 +5,8 @@ use axum::{
     routing::{get, post},
 };
 use chrono::Utc;
+use matehub_common::snowflake;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::api::auth_check::resolve_user_perms;
@@ -25,14 +25,13 @@ pub fn routes(pool: PgPool) -> Router {
             "/hubs/{hub_id}/temp-users/{temp_user_id}/revoke",
             post(revoke_temp_user),
         )
-        // Public entry point: join via magic link token
         .route("/join/{token}", get(join_via_token))
         .with_state(pool)
 }
 
 async fn list_temp_users(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<TempUser>>, StatusCode> {
     let mut conn = hub_connection(&pool, hub_id)
         .await
@@ -53,7 +52,7 @@ async fn list_temp_users(
 
 async fn create_temp_user(
     State(pool): State<PgPool>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<CreateTempUser>,
 ) -> Result<(StatusCode, Json<TempUserLink>), StatusCode> {
@@ -73,10 +72,11 @@ async fn create_temp_user(
     let created_by = auth.0.sub;
 
     let temp_user = sqlx::query_as::<_, TempUser>(
-        "INSERT INTO temp_users (hub_id, token, nickname, group_id, created_by, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO temp_users (id, hub_id, token, nickname, group_id, created_by, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *",
     )
+    .bind(snowflake::next_id())
     .bind(hub_id)
     .bind(&token)
     .bind(&body.nickname)
@@ -100,7 +100,7 @@ async fn create_temp_user(
 
 async fn revoke_temp_user(
     State(pool): State<PgPool>,
-    Path((hub_id, temp_user_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, temp_user_id)): Path<(i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
@@ -128,21 +128,18 @@ async fn revoke_temp_user(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    // TODO: notify video/chat services to disconnect this session via NATS
-
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Public endpoint: validate token, return hub info for redirect.
-/// The frontend uses this to auto-login the temp user.
 #[derive(serde::Serialize)]
 struct JoinResponse {
-    hub_id: Uuid,
+    hub_id: i64,
     hub_name: String,
     hub_slug: String,
-    temp_user_id: Uuid,
+    temp_user_id: i64,
     nickname: String,
-    /// Session token for WS connections to video/chat services
+    /// Session token for WS connections to video/chat services.
     session_token: String,
 }
 
@@ -150,7 +147,6 @@ async fn join_via_token(
     State(pool): State<PgPool>,
     Path(token): Path<String>,
 ) -> Result<Json<JoinResponse>, StatusCode> {
-    // Token lookup is cross-hub (no RLS context yet -- we don't know the hub)
     let temp_user = sqlx::query_as::<_, TempUser>(
         "SELECT * FROM temp_users
          WHERE token = $1 AND revoked_at IS NULL AND expires_at > now()",
@@ -161,22 +157,19 @@ async fn join_via_token(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
 
-    // Get hub info
     let hub = sqlx::query_as::<_, crate::models::Hub>("SELECT * FROM hubs WHERE id = $1")
         .bind(temp_user.hub_id)
         .fetch_one(&pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Evict previous session (1:1 model)
+    let new_session = uuid::Uuid::new_v4().to_string();
     sqlx::query("UPDATE temp_users SET active_session = $2 WHERE id = $1")
         .bind(temp_user.id)
-        .bind(Uuid::new_v4().to_string()) // new session ID
+        .bind(&new_session)
         .execute(&pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // TODO: if there was a previous active_session, notify video/chat to disconnect it
 
     Ok(Json(JoinResponse {
         hub_id: hub.id,
@@ -184,7 +177,7 @@ async fn join_via_token(
         hub_slug: hub.slug,
         temp_user_id: temp_user.id,
         nickname: temp_user.nickname,
-        // TODO: generate proper JWT with temp_user claims
+        // TODO: issue a real JWT with user_type="temp"; stub preserves the prior shape.
         session_token: format!("temp-{}-{}", temp_user.id, token),
     }))
 }
@@ -193,7 +186,6 @@ fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();
-    // URL-safe base64 without padding
     base64_url_encode(&bytes)
 }
 

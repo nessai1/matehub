@@ -1,0 +1,12 @@
+Welcome to MateHub
+==================
+
+Your email is confirmed. Head to your dashboard to create your first
+hub and invite your team:
+
+{{ dashboard_url }}
+
+Questions, feedback, or you broke something spectacular? Just reply to
+this email — it lands in a real inbox.
+
+— The MateHub team

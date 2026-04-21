@@ -25,7 +25,8 @@ async fn send_message_and_get_history() {
     let msg: Value = resp.json().await.unwrap();
     assert_eq!(msg["content"], "Hello ScyllaDB!");
     assert!(msg["message_id"].as_i64().unwrap() > 0);
-    assert_eq!(msg["author_id"], "test-user-alice");
+    // author_id is stringified Snowflake (Scylla column is still `text` until #5's schema bump)
+    assert_eq!(msg["author_id"], common::test_user_id("alice").to_string());
 
     // Get history
     let resp = client

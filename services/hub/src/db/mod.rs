@@ -2,8 +2,8 @@ pub mod rls;
 pub mod seed;
 
 use anyhow::Result;
+use matehub_common::snowflake;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 pub async fn connect(database_url: &str) -> Result<PgPool> {
     let pool = PgPool::connect(database_url).await?;
@@ -13,38 +13,9 @@ pub async fn connect(database_url: &str) -> Result<PgPool> {
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001_init", include_str!("../../migrations/001_init.sql")),
-    (
-        "002_groups_permissions_temp_users",
-        include_str!("../../migrations/002_groups_permissions_temp_users.sql"),
-    ),
-    (
-        "003_presence",
-        include_str!("../../migrations/003_presence.sql"),
-    ),
-    (
-        "004_user_password",
-        include_str!("../../migrations/004_user_password.sql"),
-    ),
-    (
-        "005_user_email",
-        include_str!("../../migrations/005_user_email.sql"),
-    ),
-    (
-        "006_refresh_tokens",
-        include_str!("../../migrations/006_refresh_tokens.sql"),
-    ),
-    (
-        "007_channel_icon",
-        include_str!("../../migrations/007_channel_icon.sql"),
-    ),
-    (
-        "008_hub_permissions",
-        include_str!("../../migrations/008_hub_permissions.sql"),
-    ),
 ];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
-    // Create migration tracking table
     sqlx::raw_sql(
         "CREATE TABLE IF NOT EXISTS _migrations (
             name TEXT PRIMARY KEY,
@@ -81,14 +52,22 @@ pub async fn migrate(pool: &PgPool) -> Result<()> {
 
 /// Ensure a "general" text channel exists for a hub.
 /// Called on hub creation (API + dev seed). Idempotent.
-pub async fn ensure_default_channel(pool: &PgPool, hub_id: Uuid) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO channels (hub_id, name, type, position)
-         SELECT $1, 'general', 'text', 0
-         WHERE NOT EXISTS (
-             SELECT 1 FROM channels WHERE hub_id = $1 AND name = 'general' AND type = 'text'
-         )",
+pub async fn ensure_default_channel(pool: &PgPool, hub_id: i64) -> Result<()> {
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM channels WHERE hub_id = $1 AND name = 'general' AND type = 'text'",
     )
+    .bind(hub_id)
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_some() {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "INSERT INTO channels (id, hub_id, name, type, position) VALUES ($1, $2, 'general', 'text', 0)",
+    )
+    .bind(snowflake::next_id())
     .bind(hub_id)
     .execute(pool)
     .await?;

@@ -35,6 +35,11 @@ async fn main() -> Result<()> {
         .map(|v| v == "1" || v == "true")
         .unwrap_or(true);
 
+    // Snowflake generator: every service in the hub cluster shares the same
+    // ID space. Must run before any code that calls `snowflake::next_id()`
+    // (seed, channel/group creation, refresh-token insert, etc).
+    matehub_common::snowflake::init();
+
     let pool = db::connect(&database_url).await?;
     db::migrate(&pool).await?;
 

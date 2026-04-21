@@ -7,8 +7,8 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::Multipart;
+use matehub_common::snowflake;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::auth::AuthUser;
 use crate::api::auth_check::resolve_user_perms;
@@ -47,7 +47,7 @@ pub fn routes(state: ChannelsState) -> Router {
 
 async fn list_channels(
     State(state): State<ChannelsState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<Channel>>, StatusCode> {
     let mut conn = hub_connection(&state.pool, hub_id)
         .await
@@ -68,7 +68,7 @@ async fn list_channels(
 
 async fn get_channel(
     State(state): State<ChannelsState>,
-    Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, channel_id)): Path<(i64, i64)>,
 ) -> Result<Json<Channel>, StatusCode> {
     let mut conn = hub_connection(&state.pool, hub_id)
         .await
@@ -91,7 +91,7 @@ async fn get_channel(
 
 async fn create_channel(
     State(state): State<ChannelsState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<CreateChannel>,
 ) -> Result<(StatusCode, Json<Channel>), StatusCode> {
@@ -103,7 +103,6 @@ async fn create_channel(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Permission check
     let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -128,10 +127,11 @@ async fn create_channel(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let channel = sqlx::query_as::<_, Channel>(
-        "INSERT INTO channels (hub_id, name, type, position, icon_id, icon_color)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO channels (id, hub_id, name, type, position, icon_id, icon_color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING *",
     )
+    .bind(snowflake::next_id())
     .bind(hub_id)
     .bind(body.name.trim())
     .bind(&body.channel_type)
@@ -149,7 +149,7 @@ async fn create_channel(
 
 async fn update_channel(
     State(state): State<ChannelsState>,
-    Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, channel_id)): Path<(i64, i64)>,
     auth: AuthUser,
     Json(body): Json<UpdateChannel>,
 ) -> Result<Json<Channel>, StatusCode> {
@@ -199,7 +199,7 @@ async fn update_channel(
 
 async fn delete_channel(
     State(state): State<ChannelsState>,
-    Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, channel_id)): Path<(i64, i64)>,
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
@@ -235,7 +235,7 @@ struct UploadResponse {
 
 async fn upload_icon(
     State(state): State<ChannelsState>,
-    Path((hub_id, channel_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, channel_id)): Path<(i64, i64)>,
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, StatusCode> {
@@ -288,7 +288,6 @@ async fn upload_icon(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Update channel icon_image_url in DB
     let mut conn = hub_connection(&state.pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

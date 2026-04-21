@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Hash,
   SendHorizontal,
@@ -43,10 +43,10 @@ import { UploadPreview } from "@/components/hub/media/upload-preview";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
-import type { Message } from "@matehub/sdk-chat";
+import type { ChatMessage as ChatMessageT } from "@/contexts/chat-context";
 
 interface TextChannelViewProps {
-  channelId: string;
+  channelId: number;
   channelName: string;
   /** Skip the built-in h-10 header (used when a parent workspace provides its own). */
   hideHeader?: boolean;
@@ -61,6 +61,50 @@ const SONYFLAKE_EPOCH_MS = 1409529600000;
 function snowflakeToDate(id: number): Date {
   const time10ms = Math.floor(id / 16777216); // >> 24 bits
   return new Date(SONYFLAKE_EPOCH_MS + time10ms * 10);
+}
+
+/** Truncate a Date to local midnight. Used to compare "same calendar day". */
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** "Today" / "Yesterday" / "DD.MM.YYYY" for a message-separator row. */
+function formatDateSeparator(d: Date): string {
+  const today = startOfDay(new Date());
+  const yesterday = today - 86400 * 1000;
+  const day = startOfDay(d);
+  if (day === today) return "Today";
+  if (day === yesterday) return "Yesterday";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <div
+      role="separator"
+      className="my-3 flex items-center gap-3 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+    >
+      <div className="h-px flex-1 bg-border/50" />
+      <span>{label}</span>
+      <div className="h-px flex-1 bg-border/50" />
+    </div>
+  );
+}
+
+/** Red tick that anchors where unread messages start. */
+function UnreadDivider() {
+  return (
+    <div
+      role="separator"
+      className="my-2 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-destructive"
+    >
+      <div className="h-px flex-1 bg-destructive/40" />
+      <span>New</span>
+      <div className="h-px flex-1 bg-destructive/40" />
+    </div>
+  );
 }
 
 function formatTime(messageId: number): string {
@@ -78,12 +122,14 @@ function ChatMessage({
   isGrouped,
   allGroups,
   onGroupsChanged,
+  onRetry,
 }: {
-  message: Message;
+  message: ChatMessageT;
   member?: Member;
   isGrouped: boolean;
   allGroups: MemberGroup[];
   onGroupsChanged: () => void;
+  onRetry?: (clientId: string) => void;
 }) {
   const displayName = member?.display_name || member?.username || message.author_id;
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -118,9 +164,35 @@ function ChatMessage({
       el
     );
 
+  const pending = message._status === "sending";
+  const failed = message._status === "failed";
+  // Sending: fade + show "sending" tag. Failed: red border + retry button.
+  const statusClass = pending
+    ? "opacity-50"
+    : failed
+      ? "rounded border-l-2 border-destructive pl-2"
+      : "";
+
+  const statusBadge = pending ? (
+    <span className="text-[10px] italic text-muted-foreground">sending…</span>
+  ) : failed ? (
+    <span className="flex items-center gap-1 text-[10px] text-destructive">
+      failed
+      {message.client_id && onRetry && (
+        <button
+          type="button"
+          onClick={() => onRetry(message.client_id!)}
+          className="underline hover:no-underline"
+        >
+          retry
+        </button>
+      )}
+    </span>
+  ) : null;
+
   if (isGrouped) {
     return (
-      <div className="group relative py-0.5 pl-11 hover:bg-muted/30">
+      <div className={cn("group relative py-0.5 pl-11 hover:bg-muted/30", statusClass)}>
         <span className="pointer-events-none absolute right-2 top-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
           {formatTime(message.message_id)}
         </span>
@@ -132,13 +204,14 @@ function ChatMessage({
             />
           )}
           <MessageAttachments attachments={message.attachments} />
+          {statusBadge && <div className="mt-0.5">{statusBadge}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="group relative mt-3 flex gap-3 py-1 hover:bg-muted/30 first:mt-0">
+    <div className={cn("group relative mt-3 flex gap-3 py-1 hover:bg-muted/30 first:mt-0", statusClass)}>
       {wrapWithCard(avatarEl)}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -149,6 +222,7 @@ function ChatMessage({
           {message.edited_at && (
             <span className="text-[10px] text-muted-foreground">(edited)</span>
           )}
+          {statusBadge}
         </div>
         {message.content && (
           <div
@@ -174,7 +248,10 @@ function TypingIndicator({
   if (users.length === 0) return null;
 
   const names = users.map((uid) => {
-    const m = members.find((mm) => mm.user_id === uid);
+    // `typingUsers` arrive from the server as stringified snowflakes (JSON);
+    // `Member.user_id` is numeric, so match both against a parsed form.
+    const uidNum = Number(uid);
+    const m = members.find((mm) => mm.user_id === uidNum);
     return m?.display_name || m?.username || uid;
   });
 
@@ -203,8 +280,17 @@ function TypingIndicator({
 
 export function TextChannelView({ channelId, channelName, hideHeader }: TextChannelViewProps) {
   const { session } = useAuth();
-  const { client, messages, connectionState, typingUsers, sendMessage, sendTyping, loadMore } =
-    useChatClient(channelId);
+  const {
+    client,
+    messages,
+    connectionState,
+    typingUsers,
+    dividerPos,
+    sendMessage,
+    sendTyping,
+    loadMore,
+    retryMessage,
+  } = useChatClient(channelId);
   const { uploads, addFiles, clearAll, readyAttachments, hasInFlight } =
     useAttachmentUpload(client, channelId);
   const { members, loading: membersLoading, refetch } = useMembers();
@@ -225,16 +311,17 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
   const isAtBottom = useRef(true);
   const typingThrottle = useRef(0);
 
-  // Member lookup map (useMemo so re-render happens when members load)
+  // Member lookup map (useMemo so re-render happens when members load).
+  // Keys stored as strings because Message.author_id arrives stringified
+  // (Scylla column is still `text` until the next schema bump).
   const memberMap = useMemo(() => {
     const map = new Map<string, Member>();
-    for (const m of members) map.set(m.user_id, m);
+    for (const m of members) map.set(String(m.user_id), m);
     return map;
   }, [members]);
 
-  // Collect unique groups for MemberCard
   const allGroups = useMemo(() => {
-    const seen = new Set<string>();
+    const seen = new Set<number>();
     const groups: MemberGroup[] = [];
     for (const m of members) {
       for (const g of m.groups) {
@@ -372,7 +459,7 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
 
   // ── Check if messages should be grouped (same author, <2min apart) ──
 
-  function isGroupedWith(prev: Message | undefined, curr: Message): boolean {
+  function isGroupedWith(prev: ChatMessageT | undefined, curr: ChatMessageT): boolean {
     if (!prev) return false;
     return prev.author_id === curr.author_id;
   }
@@ -453,16 +540,38 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
 
         {!membersLoading && (
           <div className="py-2">
-            {messages.map((msg, i) => (
-              <ChatMessage
-                key={msg.message_id}
-                message={msg}
-                member={memberMap.get(msg.author_id)}
-                isGrouped={isGroupedWith(messages[i - 1], msg)}
-                allGroups={allGroups}
-                onGroupsChanged={refetch}
-              />
-            ))}
+            {messages.map((msg, i) => {
+              const prev = messages[i - 1];
+              const msgDate = snowflakeToDate(msg.message_id);
+              const newDay =
+                !prev ||
+                startOfDay(msgDate) !== startOfDay(snowflakeToDate(prev.message_id));
+              // "New messages" divider: first message whose id exceeds the
+              // snapshot taken on channel entry. Only the first message across
+              // the boundary gets the separator, not every one after it.
+              const crossedUnread =
+                dividerPos != null &&
+                msg.message_id > dividerPos &&
+                (!prev || prev.message_id <= dividerPos);
+              // On a day boundary we reset grouping so the first message of the
+              // day always shows avatar + name, never the compact variant.
+              // Same on an unread boundary.
+              const grouped = !newDay && !crossedUnread && isGroupedWith(prev, msg);
+              return (
+                <Fragment key={msg.client_id ?? msg.message_id}>
+                  {newDay && <DateSeparator label={formatDateSeparator(msgDate)} />}
+                  {crossedUnread && !newDay && <UnreadDivider />}
+                  <ChatMessage
+                    message={msg}
+                    member={memberMap.get(msg.author_id)}
+                    isGrouped={grouped}
+                    allGroups={allGroups}
+                    onGroupsChanged={refetch}
+                    onRetry={retryMessage}
+                  />
+                </Fragment>
+              );
+            })}
           </div>
         )}
         <div ref={bottomRef} />

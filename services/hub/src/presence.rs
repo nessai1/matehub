@@ -25,12 +25,14 @@ pub async fn connect_redis() -> Option<RedisPool> {
     }
 }
 
-fn presence_key(hub_id: Uuid, user_id: Uuid) -> String {
+fn presence_key(hub_id: i64, user_id: i64) -> String {
     format!("presence:{hub_id}:{user_id}")
 }
 
 /// Mark user as online. Returns a session_id to use in set_offline.
-pub async fn set_online(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) -> String {
+/// The session_id is a random UUID — opaque, only used to distinguish concurrent
+/// connections of the same user from each other.
+pub async fn set_online(conn: &mut RedisPool, hub_id: i64, user_id: i64) -> String {
     let session_id = Uuid::new_v4().to_string();
     let key = presence_key(hub_id, user_id);
     match conn.set_ex::<_, _, ()>(&key, &session_id, PRESENCE_TTL_SECS).await {
@@ -41,13 +43,13 @@ pub async fn set_online(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) -> St
 }
 
 /// Refresh presence -- re-SET with our session_id to reset TTL atomically
-pub async fn refresh(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid, session_id: &str) {
+pub async fn refresh(conn: &mut RedisPool, hub_id: i64, user_id: i64, session_id: &str) {
     let key = presence_key(hub_id, user_id);
     let _: Result<(), _> = conn.set_ex(&key, session_id, PRESENCE_TTL_SECS).await;
 }
 
 /// Mark user as offline -- only if the session_id matches (don't kill newer sessions)
-pub async fn set_offline(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid, session_id: &str) {
+pub async fn set_offline(conn: &mut RedisPool, hub_id: i64, user_id: i64, session_id: &str) {
     let key = presence_key(hub_id, user_id);
     let current: Option<String> = conn.get(&key).await.unwrap_or(None);
     if current.as_deref() == Some(session_id) {
@@ -60,26 +62,23 @@ pub async fn set_offline(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid, sess
 
 /// Check if a single user is online
 #[allow(dead_code)]
-pub async fn is_online(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) -> bool {
+pub async fn is_online(conn: &mut RedisPool, hub_id: i64, user_id: i64) -> bool {
     let key = presence_key(hub_id, user_id);
     conn.exists(&key).await.unwrap_or(false)
 }
 
 // ── Voice occupancy ────────────────────────────────────────────────────────
-// Which voice channel (if any) each user is currently connected to. Live
-// state owned by the video service; hub caches it in Redis and rebroadcasts
-// changes to presence-WS clients.
 
-fn voice_occupancy_key(hub_id: Uuid) -> String {
+fn voice_occupancy_key(hub_id: i64) -> String {
     format!("voice_occupancy:{hub_id}")
 }
 
 /// Mark user as being in a voice channel. Idempotent.
 pub async fn voice_occupancy_set(
     conn: &mut RedisPool,
-    hub_id: Uuid,
-    user_id: Uuid,
-    channel_id: Uuid,
+    hub_id: i64,
+    user_id: i64,
+    channel_id: i64,
 ) {
     let key = voice_occupancy_key(hub_id);
     match conn
@@ -92,7 +91,7 @@ pub async fn voice_occupancy_set(
 }
 
 /// Remove user from voice-channel tracking. Idempotent.
-pub async fn voice_occupancy_clear(conn: &mut RedisPool, hub_id: Uuid, user_id: Uuid) {
+pub async fn voice_occupancy_clear(conn: &mut RedisPool, hub_id: i64, user_id: i64) {
     let key = voice_occupancy_key(hub_id);
     let _: Result<(), _> = conn.hdel(&key, user_id.to_string()).await;
     tracing::debug!(%key, %user_id, "voice occupancy CLEAR");
@@ -101,15 +100,15 @@ pub async fn voice_occupancy_clear(conn: &mut RedisPool, hub_id: Uuid, user_id: 
 /// Read every user → channel mapping for a hub.
 pub async fn voice_occupancy_snapshot(
     conn: &mut RedisPool,
-    hub_id: Uuid,
-) -> std::collections::HashMap<Uuid, Uuid> {
+    hub_id: i64,
+) -> std::collections::HashMap<i64, i64> {
     let key = voice_occupancy_key(hub_id);
     let map: std::collections::HashMap<String, String> =
         conn.hgetall(&key).await.unwrap_or_default();
     map.into_iter()
         .filter_map(|(k, v)| {
-            let uid = Uuid::parse_str(&k).ok()?;
-            let cid = Uuid::parse_str(&v).ok()?;
+            let uid = k.parse::<i64>().ok()?;
+            let cid = v.parse::<i64>().ok()?;
             Some((uid, cid))
         })
         .collect()
@@ -118,9 +117,9 @@ pub async fn voice_occupancy_snapshot(
 /// Batch check: which of these user_ids are online
 pub async fn get_online_set(
     conn: &mut RedisPool,
-    hub_id: Uuid,
-    user_ids: &[Uuid],
-) -> std::collections::HashSet<Uuid> {
+    hub_id: i64,
+    user_ids: &[i64],
+) -> std::collections::HashSet<i64> {
     let mut online = std::collections::HashSet::new();
     if user_ids.is_empty() {
         return online;

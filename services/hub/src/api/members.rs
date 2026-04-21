@@ -2,7 +2,6 @@ use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{del
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::presence;
 
@@ -22,31 +21,31 @@ pub fn routes(state: MembersState) -> Router {
 
 #[derive(Serialize)]
 struct MemberResponse {
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
     is_online: bool,
     last_seen_at: Option<DateTime<Utc>>,
     groups: Vec<GroupBadge>,
-    user_type: String, // "permanent" or "temp"
-    expires_at: Option<DateTime<Utc>>, // temp users only
+    user_type: String,
+    expires_at: Option<DateTime<Utc>>,
     /// Voice channel the user is currently connected to (if any). Populated
     /// from Redis voice_occupancy:<hub_id>, which the video service keeps in
     /// sync via NATS.
-    current_voice_channel_id: Option<Uuid>,
+    current_voice_channel_id: Option<i64>,
 }
 
 #[derive(Serialize)]
 struct GroupBadge {
-    id: Uuid,
+    id: i64,
     name: String,
     color: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
 struct MemberRow {
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
@@ -55,21 +54,20 @@ struct MemberRow {
 
 #[derive(sqlx::FromRow)]
 struct MemberGroupRow {
-    user_id: Uuid,
-    group_id: Uuid,
+    user_id: i64,
+    group_id: i64,
     group_name: String,
     group_color: Option<String>,
 }
 
 async fn get_members_full(
     State(mut state): State<MembersState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<MemberResponse>>, StatusCode> {
     let mut conn = crate::db::rls::hub_connection(&state.pool, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch permanent members
     let members = sqlx::query_as::<_, MemberRow>(
         "SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url, hm.last_seen_at
          FROM users u
@@ -82,7 +80,6 @@ async fn get_members_full(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Fetch all member-group assignments for this hub
     let member_groups = sqlx::query_as::<_, MemberGroupRow>(
         "SELECT mg.user_id, mg.group_id, g.name AS group_name, g.color AS group_color
          FROM member_groups mg
@@ -95,8 +92,7 @@ async fn get_members_full(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Batch online check from Redis
-    let user_ids: Vec<Uuid> = members.iter().map(|m| m.user_id).collect();
+    let user_ids: Vec<i64> = members.iter().map(|m| m.user_id).collect();
     let (online_set, voice_map) = if let Some(ref mut redis) = state.redis {
         let online = presence::get_online_set(redis, hub_id, &user_ids).await;
         let voice = presence::voice_occupancy_snapshot(redis, hub_id).await;
@@ -110,7 +106,6 @@ async fn get_members_full(
 
     tracing::debug!(%hub_id, online_count = online_set.len(), voice_count = voice_map.len(), total = user_ids.len(), "presence check");
 
-    // Build response
     let mut result: Vec<MemberResponse> = members
         .into_iter()
         .map(|m| {
@@ -139,7 +134,6 @@ async fn get_members_full(
         })
         .collect();
 
-    // Online first, then alphabetical
     result.sort_by(|a, b| {
         b.is_online
             .cmp(&a.is_online)
@@ -161,7 +155,7 @@ struct MyPermissionsResponse {
 
 async fn my_permissions(
     State(state): State<MembersState>,
-    Path(hub_id): Path<Uuid>,
+    Path(hub_id): Path<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<MyPermissionsResponse>, StatusCode> {
     use crate::api::auth_check::resolve_user_perms;
@@ -182,7 +176,7 @@ async fn my_permissions(
 
 async fn kick_member(
     State(state): State<MembersState>,
-    Path((hub_id, user_id)): Path<(Uuid, Uuid)>,
+    Path((hub_id, user_id)): Path<(i64, i64)>,
     auth: crate::auth::AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     use crate::api::auth_check::{resolve_user_perms, resolve_target_position};
@@ -196,12 +190,10 @@ async fn kick_member(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Can't kick yourself
     if auth.0.sub == user_id {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Can't kick hub creator
     let target_is_creator: bool = sqlx::query_scalar(
         "SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1",
     )
@@ -214,7 +206,6 @@ async fn kick_member(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Can only kick users with lower position (higher number)
     let target_pos = resolve_target_position(&state.pool, hub_id, user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -222,7 +213,6 @@ async fn kick_member(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Remove from all groups + hub membership
     sqlx::query("DELETE FROM member_groups WHERE hub_id = $1 AND user_id = $2")
         .bind(hub_id)
         .bind(user_id)
@@ -237,7 +227,7 @@ async fn kick_member(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    tracing::info!(%hub_id, %user_id, caller = %auth.0.sub, "member kicked");
+    tracing::info!(%hub_id, %user_id, caller = auth.0.sub, "member kicked");
 
     Ok(StatusCode::NO_CONTENT)
 }

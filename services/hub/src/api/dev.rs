@@ -6,7 +6,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::db::seed;
 use crate::models::User;
@@ -30,7 +29,7 @@ fn default_username() -> String {
 
 #[derive(Serialize, sqlx::FromRow)]
 struct DevMeRow {
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
     role: String,
@@ -38,16 +37,15 @@ struct DevMeRow {
 
 #[derive(Serialize)]
 struct DevMeResponse {
-    user_id: Uuid,
+    user_id: i64,
     username: String,
     display_name: String,
-    hub_id: Uuid,
+    hub_id: i64,
     role: String,
     token: String,
 }
 
 /// GET /dev/me?user=alice
-/// Returns user info + a fake dev token. No real auth.
 async fn dev_me(
     State(pool): State<PgPool>,
     Query(query): Query<DevMeQuery>,
@@ -75,7 +73,7 @@ async fn dev_me(
     }))
 }
 
-/// GET /dev/users -- list all dev users
+/// GET /dev/users — list all dev users
 async fn dev_users(State(pool): State<PgPool>) -> Result<Json<Vec<User>>, StatusCode> {
     let users = sqlx::query_as::<_, User>("SELECT * FROM users ORDER BY username")
         .fetch_all(&pool)
