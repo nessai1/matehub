@@ -22,12 +22,11 @@ async fn main() -> Result<()> {
         .or_else(|_| dotenvy::from_path(".env"))
         .or_else(|_| dotenvy::dotenv().map(|_| ()));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,sqlx=warn".into()),
-        )
-        .init();
+    matehub_common::observability::init_tracing("info,sqlx=warn");
+
+    // Snowflake generator for account/hub/outbox IDs. Must run before any
+    // code path that calls `snowflake::next_id()`.
+    matehub_common::snowflake::init();
 
     let config = Config::from_env()?;
     let pool = db::connect(&config.database_url).await?;
@@ -51,16 +50,28 @@ async fn main() -> Result<()> {
         config.mail_from.clone(),
     ));
 
+    let (metrics_layer, metrics_handle) =
+        matehub_common::observability::metrics_layer_and_handle();
+
     let app = Router::new()
         .merge(api::auth::routes())
         .merge(api::account::routes())
         .merge(api::dashboard::routes())
         .merge(api::hubs::routes())
         .merge(api::landing::routes())
+        .merge(api::sso::routes())
         .merge(api::webhooks::routes())
         .with_state(state)
+        .route(
+            "/metrics",
+            axum::routing::get({
+                let h = metrics_handle.clone();
+                move || async move { h.render() }
+            }),
+        )
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(metrics_layer);
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

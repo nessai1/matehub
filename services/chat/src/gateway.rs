@@ -263,6 +263,8 @@ async fn run_session<R: AsyncRead + Unpin>(
     let mut seq = initial_seq;
     let username = session.claims().username;
 
+    metrics::gauge!("matehub_chat_active_ws_connections").increment(1.0);
+
     loop {
         let mut ctrl_send = noop_send;
         tokio::select! {
@@ -305,6 +307,7 @@ async fn run_session<R: AsyncRead + Unpin>(
     // ── Cleanup ──
     nats_task.abort();
     session.mark_disconnected();
+    metrics::gauge!("matehub_chat_active_ws_connections").decrement(1.0);
     drop(out_tx);
     let _ = writer.await;
     tracing::info!(%username, %session_id, "session disconnected (buffer retained for RESUME)");

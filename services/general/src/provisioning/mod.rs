@@ -1,5 +1,4 @@
 use anyhow::Result;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct K8sClient {
@@ -38,8 +37,20 @@ impl K8sClient {
     ///
     /// For the scaffold this is a stub; the real implementation will live in
     /// `k8s.rs` and use kube::Api + server-side apply of templated manifests.
-    pub async fn provision_hub(&self, slug: &str, hub_id: Uuid) -> Result<()> {
-        tracing::info!(%slug, %hub_id, "TODO: provision hub namespace + workloads");
+    /// `hub_secret` is passed through to the hub pod's K8s Secret resource
+    /// as the value of the `JWT_SECRET` env var. The secret never touches
+    /// disk outside of general's Postgres + the K8s Secret object.
+    pub async fn provision_hub(
+        &self,
+        slug: &str,
+        hub_id: i64,
+        hub_secret: &str,
+    ) -> Result<()> {
+        // Log only a fingerprint, not the secret itself. First 8 hex chars
+        // are enough to tell hubs apart in logs without leaking anything
+        // useful if the log store is compromised.
+        let fingerprint = &hub_secret[..hub_secret.len().min(8)];
+        tracing::info!(%slug, %hub_id, fingerprint, "TODO: provision hub namespace + workloads");
         // Simulate work so the status UI has something to observe during dev.
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         Ok(())

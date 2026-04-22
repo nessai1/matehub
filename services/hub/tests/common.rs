@@ -33,7 +33,14 @@ pub async fn spawn_app() -> String {
     // Empty events bus — tests don't depend on voice occupancy push.
     let (events_tx, _) = tokio::sync::broadcast::channel(16);
 
-    let app = matehub_hub::api::routes(pool, None, redis, events_tx, true)
+    // SSO disabled in tests (general_url=None → /v1/auth/sso returns 501).
+    let sso_state = matehub_hub::api::sso::SsoState {
+        pool: pool.clone(),
+        general_url: None,
+        hub_id: DEV_HUB_ID,
+    };
+
+    let app = matehub_hub::api::routes(pool, None, redis, events_tx, true, sso_state)
         .layer(tower_http::cors::CorsLayer::permissive());
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::api::extract::Authed;
 use crate::state::AppState;
@@ -13,7 +12,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 #[derive(Serialize)]
 struct HubSummary {
-    id: Uuid,
+    id: i64,
     slug: String,
     name: String,
     status: String,
@@ -24,7 +23,7 @@ async fn my_hubs(
     State(state): State<Arc<AppState>>,
     Authed(claims): Authed,
 ) -> Result<Json<Vec<HubSummary>>, (StatusCode, String)> {
-    let rows: Vec<(Uuid, String, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(i64, String, String, String, String)> = sqlx::query_as(
         r#"
         SELECT h.id, h.slug, h.name, h.status, hm.role
         FROM hubs h

@@ -29,6 +29,7 @@ dotenvy.workspace = true
 futures-util.workspace = true
 bcrypt = "0.17"
 matehub-common.workspace = true
+reqwest.workspace = true
 sha2 = "0.10"
 
 [dev-dependencies]

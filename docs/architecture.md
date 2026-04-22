@@ -74,9 +74,11 @@ Sonyflake использует `machine_id` — по умолчанию млад
 ## 2. SSO-флоу (SaaS режим)
 
 В SaaS-поставке юзер логинится один раз на `matehub.io` (general), оттуда
-«входит» в конкретный хаб без повторного ввода credentials. Реализуется
+«входит» в конкретный хаб без повторного ввода credentials. Реализован
 обрезанным OAuth **authorization code grant** — мы владеем обеими сторонами,
 полный OIDC с JWKS-discovery оверкилл.
+
+**Реализация:** `services/general/src/api/sso.rs` + `services/hub/src/api/sso.rs`.
 
 ### Ключевые решения
 

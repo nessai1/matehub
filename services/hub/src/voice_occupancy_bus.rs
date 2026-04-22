@@ -10,6 +10,8 @@ use async_nats::Subscriber;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
+use tracing::Instrument;
+use uuid::Uuid;
 
 use crate::api::presence_ws::PresenceEvent;
 use crate::presence::{self, RedisPool};
@@ -23,6 +25,10 @@ pub struct OccupancyEvent {
     pub user_id: i64,
     /// `None` when the user leaves.
     pub channel_id: Option<i64>,
+    /// Video-side SFU session id = our call_id correlation key. Kept optional
+    /// for back-compat with older video pods that haven't shipped the field.
+    #[serde(default)]
+    pub call_id: Option<Uuid>,
 }
 
 /// Wire format sent to WS subscribers.
@@ -74,28 +80,45 @@ async fn run(
             }
         };
 
-        if let Some(mut conn) = redis.clone() {
-            match ev.channel_id {
-                Some(cid) => {
-                    presence::voice_occupancy_set(&mut conn, ev.hub_id, ev.user_id, cid).await;
-                }
-                None => {
-                    presence::voice_occupancy_clear(&mut conn, ev.hub_id, ev.user_id).await;
+        // Wrap processing in a span carrying the correlation id so logs
+        // emitted by presence::voice_occupancy_set/clear attribute to the
+        // right call in Kibana.
+        let span = tracing::info_span!(
+            "voice_occupancy",
+            call_id = ev.call_id.map(|u| u.to_string()).unwrap_or_default(),
+            hub_id = ev.hub_id,
+            user_id = ev.user_id,
+            channel_id = ?ev.channel_id,
+        );
+
+        let redis_clone = redis.clone();
+        let events_clone = events.clone();
+        async move {
+            if let Some(mut conn) = redis_clone {
+                match ev.channel_id {
+                    Some(cid) => {
+                        presence::voice_occupancy_set(&mut conn, ev.hub_id, ev.user_id, cid).await;
+                    }
+                    None => {
+                        presence::voice_occupancy_clear(&mut conn, ev.hub_id, ev.user_id).await;
+                    }
                 }
             }
+
+            let payload = serde_json::to_string(&WireEvent {
+                r#type: "voice_occupancy",
+                user_id: ev.user_id,
+                channel_id: ev.channel_id,
+            })
+            .unwrap_or_default();
+
+            let _ = events_clone.send(PresenceEvent {
+                hub_id: ev.hub_id,
+                payload,
+            });
         }
-
-        let payload = serde_json::to_string(&WireEvent {
-            r#type: "voice_occupancy",
-            user_id: ev.user_id,
-            channel_id: ev.channel_id,
-        })
-        .unwrap_or_default();
-
-        let _ = events.send(PresenceEvent {
-            hub_id: ev.hub_id,
-            payload,
-        });
+        .instrument(span)
+        .await;
     }
 
     tracing::warn!("voice occupancy NATS stream ended");

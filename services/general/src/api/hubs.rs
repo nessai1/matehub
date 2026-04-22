@@ -6,8 +6,9 @@ use axum::{
     http::StatusCode,
     routing::{delete, post},
 };
+use matehub_common::snowflake;
+use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::api::extract::Authed;
 use crate::state::AppState;
@@ -16,7 +17,13 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/hubs", post(create_hub))
         .route("/api/hubs/{slug}", delete(delete_hub))
-        .route("/api/hubs/{slug}/token", post(exchange_for_hub_token))
+}
+
+/// 32 bytes of randomness, lowercase-hex. Doubles as the hub's JWT-signing
+/// secret and as Bearer for /internal/auth/exchange.
+fn generate_hub_secret() -> String {
+    let bytes: [u8; 32] = rng().random();
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[derive(Deserialize)]
@@ -27,7 +34,7 @@ struct CreateHubRequest {
 
 #[derive(Serialize)]
 struct CreateHubResponse {
-    id: Uuid,
+    id: i64,
     slug: String,
     name: String,
     status: String,
@@ -45,17 +52,21 @@ async fn create_hub(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let hub_id: Uuid = sqlx::query_scalar(
+    let hub_id = snowflake::next_id();
+    let hub_secret = generate_hub_secret();
+
+    sqlx::query(
         r#"
-        INSERT INTO hubs (slug, name, owner_account_id, status)
-        VALUES ($1, $2, $3, 'provisioning')
-        RETURNING id
+        INSERT INTO hubs (id, slug, name, owner_account_id, status, hub_secret)
+        VALUES ($1, $2, $3, $4, 'provisioning', $5)
         "#,
     )
+    .bind(hub_id)
     .bind(&req.slug)
     .bind(&req.name)
     .bind(claims.sub)
-    .fetch_one(&mut *tx)
+    .bind(&hub_secret)
+    .execute(&mut *tx)
     .await
     .map_err(|e| {
         if let Some(db_err) = e.as_database_error() {
@@ -88,8 +99,12 @@ async fn create_hub(
     if let Some(k8s) = state.k8s.clone() {
         let slug = req.slug.clone();
         let pool = state.pool.clone();
+        // K8s needs the secret as a Secret resource ENV-injected into the
+        // pod. Pass by value; the hub pod never calls back to general to
+        // fetch it — cluster creation writes it once and that's it.
+        let secret_for_pod = hub_secret.clone();
         tokio::spawn(async move {
-            match k8s.provision_hub(&slug, hub_id).await {
+            match k8s.provision_hub(&slug, hub_id, &secret_for_pod).await {
                 Ok(()) => {
                     let _ = sqlx::query("UPDATE hubs SET status = 'ready' WHERE id = $1")
                         .bind(hub_id)
@@ -106,7 +121,13 @@ async fn create_hub(
             }
         });
     } else {
-        tracing::warn!("k8s client not configured — hub stays in 'provisioning' forever");
+        tracing::warn!(
+            %hub_id,
+            hub_secret = %hub_secret,
+            "k8s client not configured — hub stays in 'provisioning'. \
+             For manual dev bring-up, start the hub pod with JWT_SECRET set \
+             to the hub_secret logged above."
+        );
     }
 
     Ok(Json(CreateHubResponse {
@@ -124,25 +145,4 @@ async fn delete_hub(
 ) -> Result<StatusCode, (StatusCode, String)> {
     // TODO: verify caller is owner, schedule k8s teardown, mark hubs.status='deleting'
     Ok(StatusCode::NOT_IMPLEMENTED)
-}
-
-#[derive(Serialize)]
-struct HubTokenResponse {
-    /// One-shot token the frontend puts into the redirect URL to the hub
-    /// subdomain. Hub service exchanges it for a hub-scoped session cookie.
-    handoff_token: String,
-    hub_url: String,
-}
-
-async fn exchange_for_hub_token(
-    State(_state): State<Arc<AppState>>,
-    Authed(_claims): Authed,
-    Path(_slug): Path<String>,
-) -> Result<Json<HubTokenResponse>, (StatusCode, String)> {
-    // TODO: sign a short-lived (60s) handoff token with hub_id + account_id,
-    // return https://<slug>.matehub.io/auth/handoff?token=...
-    Ok(Json(HubTokenResponse {
-        handoff_token: "TODO".into(),
-        hub_url: "TODO".into(),
-    }))
 }

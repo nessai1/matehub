@@ -1,21 +1,20 @@
 use anyhow::Result;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// Account-level JWT. Scoped to the *user's account* on matehub.io, not to any
-/// specific hub. Exchanged for a hub-scoped token at `/api/hubs/:slug/token`
-/// when the user hands off to a hub subdomain.
+/// specific hub. In the SSO flow it's exchanged for a hub-scoped token at
+/// `/api/hubs/:slug/token`, which hub signs with its own HUB_SECRET.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccountClaims {
-    pub sub: Uuid,
+    pub sub: i64,
     pub email: String,
     pub exp: i64,
     pub iat: i64,
 }
 
 pub fn create_account_token(
-    account_id: Uuid,
+    account_id: i64,
     email: &str,
     ttl_secs: i64,
     secret: &str,

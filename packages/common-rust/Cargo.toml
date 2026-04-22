@@ -23,6 +23,11 @@ thiserror.workspace = true
 
 # Logging
 tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Metrics (Prometheus /metrics endpoint + custom gauges/counters)
+axum-prometheus.workspace = true
+metrics.workspace = true
 
 # Snowflake IDs
 sonyflake.workspace = true

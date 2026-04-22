@@ -27,12 +27,7 @@ async fn main() -> Result<()> {
         .or_else(|_| dotenvy::from_path(".env"))
         .or_else(|_| dotenvy::dotenv().map(|_| ()));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,scylla=warn".into()),
-        )
-        .init();
+    matehub_common::observability::init_tracing("info,scylla=warn");
 
     let port: u16 = std::env::var("CHAT_PORT")
         .ok()
@@ -98,11 +93,23 @@ async fn main() -> Result<()> {
         sessions,
     };
 
+    // Prometheus /metrics + HTTP-request instrumentation layer.
+    let (metrics_layer, metrics_handle) =
+        matehub_common::observability::metrics_layer_and_handle();
+
     // HTTP + WS
     let app = api::routes(state.clone())
         .merge(gateway::routes(state))
+        .route(
+            "/metrics",
+            axum::routing::get({
+                let h = metrics_handle.clone();
+                move || async move { h.render() }
+            }),
+        )
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(metrics_layer);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     tracing::info!(%port, %scylla_url, %nats_url, "matehub-chat started");

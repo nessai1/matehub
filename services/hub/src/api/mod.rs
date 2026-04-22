@@ -8,6 +8,7 @@ pub mod members;
 pub mod permissions;
 pub mod presence_ws;
 pub mod profile;
+pub mod sso;
 pub mod temp_users;
 
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use crate::api::channels::ChannelsState;
 use crate::api::members::MembersState;
 use crate::api::presence_ws::{PresenceEvent, PresenceState};
 use crate::api::profile::ProfileState;
+use crate::api::sso::SsoState;
 use crate::presence::RedisPool;
 use crate::storage::S3Storage;
 
@@ -30,6 +32,7 @@ pub fn routes(
     redis: Option<RedisPool>,
     events: broadcast::Sender<PresenceEvent>,
     dev_mode: bool,
+    sso_state: SsoState,
 ) -> Router {
     let channels_state = ChannelsState {
         pool: pool.clone(),
@@ -58,6 +61,7 @@ pub fn routes(
         .nest("/v1", temp_users::routes(pool.clone()))
         .nest("/v1", profile::routes(profile_state))
         .nest("/v1", members::routes(members_state))
+        .merge(sso::routes(sso_state))
         .merge(presence_ws::routes(presence_state));
 
     if dev_mode {

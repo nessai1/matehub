@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::api::extract::Authed;
 use crate::state::AppState;
@@ -13,7 +12,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 #[derive(Serialize)]
 struct AccountResponse {
-    id: Uuid,
+    id: i64,
     email: String,
     email_verified: bool,
 }
@@ -22,7 +21,7 @@ async fn me(
     State(state): State<Arc<AppState>>,
     Authed(claims): Authed,
 ) -> Result<Json<AccountResponse>, (StatusCode, String)> {
-    let row: Option<(Uuid, String, bool)> =
+    let row: Option<(i64, String, bool)> =
         sqlx::query_as("SELECT id, email, email_verified FROM accounts WHERE id = $1")
             .bind(claims.sub)
             .fetch_optional(&state.pool)

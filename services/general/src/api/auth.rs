@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use matehub_common::snowflake;
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
-use uuid::Uuid;
 
 use crate::auth::{
     create_account_token, generate_verification_token, hash_password, hash_token, verify_password,
@@ -29,7 +29,7 @@ struct SignupRequest {
 #[derive(Serialize)]
 struct AuthResponse {
     access_token: String,
-    account_id: Uuid,
+    account_id: i64,
     email: String,
     email_verified: bool,
 }
@@ -42,27 +42,28 @@ async fn signup(
     let hash = hash_password(&req.password)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let account_id = snowflake::next_id();
+
     let mut tx = state
         .pool
         .begin()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let account_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO accounts (email, password_hash) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(&req.email)
-    .bind(&hash)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| {
-        if let Some(db_err) = e.as_database_error() {
-            if db_err.is_unique_violation() {
-                return (StatusCode::CONFLICT, "account already exists".into());
+    sqlx::query("INSERT INTO accounts (id, email, password_hash) VALUES ($1, $2, $3)")
+        .bind(account_id)
+        .bind(&req.email)
+        .bind(&hash)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            if let Some(db_err) = e.as_database_error() {
+                if db_err.is_unique_violation() {
+                    return (StatusCode::CONFLICT, "account already exists".into());
+                }
             }
-        }
-        (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-    })?;
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?;
 
     issue_verification_email(&mut tx, account_id, &req.email, &state.config)
         .await
@@ -98,7 +99,7 @@ async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, (StatusCode, String)> {
-    let row: Option<(Uuid, String, bool)> =
+    let row: Option<(i64, String, bool)> =
         sqlx::query_as("SELECT id, password_hash, email_verified FROM accounts WHERE email = $1")
             .bind(&req.email)
             .fetch_optional(&state.pool)
@@ -150,7 +151,7 @@ async fn verify_email(
     // Atomic claim: mark token consumed and flip account.email_verified in
     // one CTE. If the token is missing, expired, or already used, the UPDATE
     // affects zero rows and we get None back.
-    let row: Option<(Uuid, String, bool)> = sqlx::query_as(
+    let row: Option<(i64, String, bool)> = sqlx::query_as(
         r#"
         WITH consumed AS (
             UPDATE email_verification_tokens
@@ -227,7 +228,7 @@ async fn resend_verification(
 ) -> Result<StatusCode, (StatusCode, String)> {
     // Response is 202 regardless of whether the account exists — otherwise
     // this endpoint becomes a user-enumeration oracle.
-    let row: Option<(Uuid, bool)> =
+    let row: Option<(i64, bool)> =
         sqlx::query_as("SELECT id, email_verified FROM accounts WHERE email = $1")
             .bind(&req.email)
             .fetch_optional(&state.pool)
@@ -258,7 +259,7 @@ async fn resend_verification(
 /// outbox row land together with the business insert.
 async fn issue_verification_email(
     tx: &mut Transaction<'_, Postgres>,
-    account_id: Uuid,
+    account_id: i64,
     email: &str,
     config: &Config,
 ) -> anyhow::Result<()> {

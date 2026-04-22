@@ -18,12 +18,7 @@ async fn main() -> Result<()> {
         .or_else(|_| dotenvy::from_path(".env"))
         .or_else(|_| dotenvy::dotenv().map(|_| ()));
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,sqlx=warn".into()),
-        )
-        .init();
+    matehub_common::observability::init_tracing("info,sqlx=warn");
 
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub".into());
@@ -69,10 +64,35 @@ async fn main() -> Result<()> {
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     voice_occupancy_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
 
-    let app = api::routes(pool, s3, redis, events_tx, dev_mode)
+    // SSO state. HUB_ID comes from ENV in SaaS (set by general at
+    // provisioning) or falls back to the seed DEV_HUB_ID in dev.
+    // GENERAL_URL unset ⇒ on-prem mode — the SSO endpoint returns 501.
+    let hub_id = std::env::var("HUB_ID")
+        .ok()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(db::seed::DEV_HUB_ID);
+    let general_url = std::env::var("GENERAL_URL").ok();
+    let sso_state = api::sso::SsoState {
+        pool: pool.clone(),
+        general_url,
+        hub_id,
+    };
+
+    let (metrics_layer, metrics_handle) =
+        matehub_common::observability::metrics_layer_and_handle();
+
+    let app = api::routes(pool, s3, redis, events_tx, dev_mode, sso_state)
+        .route(
+            "/metrics",
+            axum::routing::get({
+                let h = metrics_handle.clone();
+                move || async move { h.render() }
+            }),
+        )
+        .route("/health", axum::routing::get(|| async { "ok" }))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .route("/health", axum::routing::get(|| async { "ok" }));
+        .layer(metrics_layer);
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     tracing::info!(%port, %dev_mode, "matehub-hub started");

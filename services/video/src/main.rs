@@ -22,12 +22,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,str0m=warn".into()),
-        )
-        .init();
+    matehub_common::observability::init_tracing("info,str0m=warn");
 
     let config = Config::from_env();
 
@@ -85,10 +80,21 @@ async fn main() -> Result<()> {
     // signalled so this is effectively "leak until process exit".
     std::mem::forget(media_thread);
 
+    let (metrics_layer, metrics_handle) =
+        matehub_common::observability::metrics_layer_and_handle();
+
     // HTTP + WebSocket server
     let app = api::routes(state)
+        .route(
+            "/metrics",
+            axum::routing::get({
+                let h = metrics_handle.clone();
+                move || async move { h.render() }
+            }),
+        )
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .layer(metrics_layer);
 
     let http_addr = format!("0.0.0.0:{}", config.http_port);
     let listener = tokio::net::TcpListener::bind(&http_addr).await?;

@@ -64,6 +64,7 @@ async fn create_session(
 
     inner.sessions.insert(session_id, session);
     inner.channel_to_session.insert(req.channel_id, session_id);
+    metrics::gauge!("matehub_video_active_sessions").set(inner.sessions.len() as f64);
 
     tracing::info!(%session_id, channel_id = %req.channel_id, "session created");
 

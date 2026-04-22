@@ -10,6 +10,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
+use tracing::{Instrument, Span, field::Empty};
 use uuid::Uuid;
 
 use str0m::media::MediaKind;
@@ -36,17 +37,21 @@ struct WsQuery {
 const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
 
 /// Publish a `voice.occupancy` event. `channel_id = None` signals "left".
+/// `call_id` is the SFU session id — carried so the hub can stitch this
+/// event into the correlated call-trace span without extra lookups.
 /// Failures are logged and swallowed — the call must not block on NATS.
 async fn publish_occupancy(
     nats: &async_nats::Client,
     hub_id: Uuid,
     user_uuid: Uuid,
     channel_id: Option<Uuid>,
+    call_id: Uuid,
 ) {
     let payload = serde_json::json!({
         "hub_id": hub_id,
         "user_id": user_uuid,
         "channel_id": channel_id,
+        "call_id": call_id,
     });
     let bytes = match serde_json::to_vec(&payload) {
         Ok(b) => b,
@@ -77,7 +82,23 @@ async fn ws_upgrade(
         .as_deref()
         .or(Some(user_id.as_str()))
         .and_then(|s| Uuid::parse_str(s).ok());
-    ws.on_upgrade(move |socket| handle_ws(socket, state, session_id, user_id, user_uuid))
+
+    // One span per WS connection. Every log emitted inside handle_ws inherits
+    // these fields — Kibana query `call_id:{session_id}` returns the entire
+    // call trace across all participants, signalling, and NATS publishes.
+    // `hub_id` / `participant_id` get recorded once we know them (lookup,
+    // then participant_id generation inside the handler).
+    let span = tracing::info_span!(
+        "call",
+        call_id = %session_id,
+        user_id = %user_id,
+        hub_id = Empty,
+        participant_id = Empty,
+    );
+
+    ws.on_upgrade(move |socket| {
+        handle_ws(socket, state, session_id, user_id, user_uuid).instrument(span)
+    })
 }
 
 async fn handle_ws(
@@ -88,26 +109,28 @@ async fn handle_ws(
     user_uuid: Option<Uuid>,
 ) {
     let participant_id = Uuid::new_v4();
+    Span::current().record("participant_id", tracing::field::display(&participant_id));
     let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<ServerMessage>();
 
-    tracing::info!(%session_id, %participant_id, %user_id, "participant connecting");
+    tracing::info!("participant connecting");
 
     // Snapshot these before we take the lock so the NATS publish below doesn't
     // need the AppStateInner guard.
     let (channel_id, hub_id) = {
         let inner = state.inner.lock();
         let Some(session) = inner.sessions.get(&session_id) else {
-            tracing::warn!(%session_id, "session not found for ws connection");
+            tracing::warn!("session not found for ws connection");
             return;
         };
         (session.channel_id, session.hub_id)
     };
+    Span::current().record("hub_id", tracing::field::display(&hub_id));
 
     // Register participant in session state (for REST API visibility)
     {
         let mut inner = state.inner.lock();
         let Some(session) = inner.sessions.get_mut(&session_id) else {
-            tracing::warn!(%session_id, "session not found for ws connection");
+            tracing::warn!("session not found for ws connection");
             return;
         };
 
@@ -154,11 +177,15 @@ async fn handle_ws(
                 audio_muted: true,
             },
         );
+        let total_participants: usize =
+            inner.sessions.values().map(|s| s.participants.len()).sum();
+        metrics::gauge!("matehub_video_active_participants")
+            .set(total_participants as f64);
     }
 
     // Tell the hub: this user is now in this voice channel.
     if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
-        publish_occupancy(nats, hub_id, uid, Some(channel_id)).await;
+        publish_occupancy(nats, hub_id, uid, Some(channel_id), session_id).await;
     }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -358,15 +385,21 @@ async fn handle_ws(
             if session.participants.is_empty() {
                 let session = inner.sessions.remove(&session_id).unwrap();
                 inner.channel_to_session.remove(&session.channel_id);
-                tracing::info!(%session_id, "session destroyed (last participant left)");
+                metrics::gauge!("matehub_video_active_sessions")
+                    .set(inner.sessions.len() as f64);
+                tracing::info!("session destroyed (last participant left)");
             }
+            let total_participants: usize =
+                inner.sessions.values().map(|s| s.participants.len()).sum();
+            metrics::gauge!("matehub_video_active_participants")
+                .set(total_participants as f64);
         }
     }
 
     // Tell the hub: this user left the voice channel.
     if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
-        publish_occupancy(nats, hub_id, uid, None).await;
+        publish_occupancy(nats, hub_id, uid, None, session_id).await;
     }
 
-    tracing::info!(%session_id, %participant_id, %user_id, "participant disconnected");
+    tracing::info!("participant disconnected");
 }

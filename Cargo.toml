@@ -43,6 +43,9 @@ parking_lot = "0.12"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.24"
+axum-prometheus = "0.8"
+metrics-exporter-prometheus = { version = "0.17", default-features = false }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

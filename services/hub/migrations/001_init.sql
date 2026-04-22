@@ -4,6 +4,10 @@
 -- in Rust so every service in the cluster agrees on the ID space.
 
 -- ── Users ────────────────────────────────────────
+-- account_id: link to the SaaS-side `general.accounts.id` for users that
+-- came through SSO. NULL for on-prem users and temp_users — those live
+-- entirely inside the hub. UNIQUE so one general account maps to exactly
+-- one hub user (multiple NULLs allowed by Postgres).
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
@@ -11,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url    TEXT,
     email         TEXT,
     password_hash TEXT,
+    account_id    BIGINT UNIQUE,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;

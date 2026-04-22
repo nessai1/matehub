@@ -1,10 +1,10 @@
 use anyhow::Result;
+use matehub_common::snowflake;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
 
 pub struct OutboxRow {
-    pub id: Uuid,
+    pub id: i64,
     pub template: String,
     pub to_email: String,
     pub payload: Value,
@@ -19,18 +19,19 @@ pub async fn enqueue_tx(
     template: &str,
     to_email: &str,
     payload: Value,
-) -> Result<Uuid> {
-    let id: Uuid = sqlx::query_scalar(
+) -> Result<i64> {
+    let id = snowflake::next_id();
+    sqlx::query(
         r#"
-        INSERT INTO mail_outbox (template, to_email, payload)
-        VALUES ($1, $2, $3)
-        RETURNING id
+        INSERT INTO mail_outbox (id, template, to_email, payload)
+        VALUES ($1, $2, $3, $4)
         "#,
     )
+    .bind(id)
     .bind(template)
     .bind(to_email)
     .bind(payload)
-    .fetch_one(&mut **tx)
+    .execute(&mut **tx)
     .await?;
     Ok(id)
 }
@@ -38,7 +39,7 @@ pub async fn enqueue_tx(
 /// Claim up to `limit` pending rows atomically. Rows are marked 'sending'
 /// so no other worker picks them up; returned for caller to send.
 pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<OutboxRow>> {
-    let rows: Vec<(Uuid, String, String, Value, i32)> = sqlx::query_as(
+    let rows: Vec<(i64, String, String, Value, i32)> = sqlx::query_as(
         r#"
         WITH claimed AS (
             SELECT id FROM mail_outbox
@@ -70,7 +71,7 @@ pub async fn claim_batch(pool: &PgPool, limit: i64) -> Result<Vec<OutboxRow>> {
         .collect())
 }
 
-pub async fn mark_sent(pool: &PgPool, id: Uuid, message_id: &str) -> Result<()> {
+pub async fn mark_sent(pool: &PgPool, id: i64, message_id: &str) -> Result<()> {
     sqlx::query(
         "UPDATE mail_outbox SET status = 'sent', sent_at = now(), message_id = $2 WHERE id = $1",
     )
@@ -81,7 +82,7 @@ pub async fn mark_sent(pool: &PgPool, id: Uuid, message_id: &str) -> Result<()> 
     Ok(())
 }
 
-pub async fn mark_failed(pool: &PgPool, id: Uuid, err: &str, attempts: i32) -> Result<()> {
+pub async fn mark_failed(pool: &PgPool, id: i64, err: &str, attempts: i32) -> Result<()> {
     // Retry schedule: 30s, 2m, 10m, 1h, 6h, then give up at attempt 6.
     let backoff_secs: i64 = match attempts {
         1 => 30,
