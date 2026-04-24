@@ -274,28 +274,28 @@ export class ChatClient {
       case "MESSAGE_UPDATE":
         this.emit({
           type: "message.updated",
-          data: data as { message_id: number; channel_id: number; content: string; edited: boolean },
+          data: data as { message_id: string; channel_id: string; content: string; edited: boolean },
         });
         break;
 
       case "MESSAGE_DELETE":
         this.emit({
           type: "message.deleted",
-          data: data as { message_id: number; channel_id: number },
+          data: data as { message_id: string; channel_id: string },
         });
         break;
 
       case "ATTACHMENT_UPDATED":
         this.emit({
           type: "attachment.updated",
-          data: data as { message_id: number; channel_id: number; attachment_id: string; attachments: Attachment[] },
+          data: data as { message_id: string; channel_id: string; attachment_id: string; attachments: Attachment[] },
         });
         break;
 
       case "TYPING_START":
         this.emit({
           type: "typing.start",
-          data: data as { user_id: string; channel_id: number },
+          data: data as { user_id: string; channel_id: string },
         });
         break;
 
@@ -388,7 +388,7 @@ export class ChatClient {
   }
 
   /** Send a message to a channel. */
-  async sendMessage(channelId: number, opts: SendMessageOptions): Promise<Message> {
+  async sendMessage(channelId: string, opts: SendMessageOptions): Promise<Message> {
     const res = await fetch(`${this.apiBase}/v1/channels/${channelId}/messages`, {
       method: "POST",
       headers: this.headers,
@@ -404,7 +404,7 @@ export class ChatClient {
   }
 
   /** Edit a message. */
-  async editMessage(channelId: number, messageId: number, content: string): Promise<void> {
+  async editMessage(channelId: string, messageId: string, content: string): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -417,7 +417,7 @@ export class ChatClient {
   }
 
   /** Delete a message. */
-  async deleteMessage(channelId: number, messageId: number): Promise<void> {
+  async deleteMessage(channelId: string, messageId: string): Promise<void> {
     const res = await fetch(
       `${this.apiBase}/v1/channels/${channelId}/messages/${messageId}`,
       {
@@ -429,7 +429,7 @@ export class ChatClient {
   }
 
   /** Fetch message history (newest first). */
-  async getHistory(channelId: number, opts?: HistoryOptions): Promise<Message[]> {
+  async getHistory(channelId: string, opts?: HistoryOptions): Promise<Message[]> {
     const params = new URLSearchParams();
     if (opts?.limit) params.set("limit", String(opts.limit));
     if (opts?.before) params.set("before", String(opts.before));
@@ -451,7 +451,7 @@ export class ChatClient {
    * `signal` (AbortSignal) allows cancellation.
    */
   uploadAttachment(
-    channelId: number,
+    channelId: string,
     file: File,
     opts?: {
       onProgress?: (percent: number) => void;
@@ -501,7 +501,7 @@ export class ChatClient {
   }
 
   /** Send typing indicator. */
-  async sendTyping(channelId: number): Promise<void> {
+  async sendTyping(channelId: string): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/typing`, {
       method: "POST",
       headers: this.headers,
@@ -509,7 +509,7 @@ export class ChatClient {
   }
 
   /** Mark a channel as read up to a message. */
-  async markRead(channelId: number, messageId: number): Promise<void> {
+  async markRead(channelId: string, messageId: string): Promise<void> {
     await fetch(`${this.apiBase}/v1/channels/${channelId}/ack`, {
       method: "POST",
       headers: this.headers,

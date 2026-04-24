@@ -176,8 +176,8 @@ async fn handle_result(
 
     // Broadcast WS event so clients refresh
     let payload = serde_json::json!({
-        "message_id": message_id,
-        "channel_id": channel_id,
+        "message_id": message_id.to_string(),
+        "channel_id": channel_id.to_string(),
         "attachment_id": attachment_id,
         "attachments": attachments,
     });

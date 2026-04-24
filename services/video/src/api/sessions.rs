@@ -20,9 +20,14 @@ pub fn routes() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct CreateSessionRequest {
+    /// Snowflake as string (JS `Number.MAX_SAFE_INTEGER` is smaller than the
+    /// current Sonyflake range, so we ship IDs as strings to avoid silent
+    /// precision loss in browser `JSON.parse`).
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     channel_id: ChannelId,
     /// Hub owning the channel. Kept on the session so we can tag voice-
     /// occupancy NATS events without a cross-service DB lookup.
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     hub_id: HubId,
 }
 

@@ -3,9 +3,10 @@ export interface VideoClientOptions {
   serverUrl: string;
   /** Session ID to connect to */
   sessionId: string;
-  /** User identifier. Snowflake i64 for authenticated users; the SFU treats
-   *  it as an opaque tag in participant messages. */
-  userId: number;
+  /** User identifier. Stringified Snowflake i64 — JS numbers lose precision
+   *  past 2⁵³, so we ship every entity id as a decimal string. The SFU
+   *  treats it as an opaque tag in participant messages. */
+  userId: string;
   /** Legacy canonical UUID of the user. Attached to voice-occupancy NATS
    *  events so the hub service can match it against member rows when the
    *  display-id is a display name. Now that userId is always a Snowflake,
@@ -74,7 +75,7 @@ export interface TrackInfo {
 
 export interface VideoDiagnostics {
   /** Local user identifier (so the dump says who this client is). */
-  userId: number;
+  userId: string;
   /** Session this client is connected to. */
   sessionId: string;
   participantId: string | null;

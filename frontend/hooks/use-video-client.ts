@@ -10,7 +10,7 @@ import { playCallSound } from "@/lib/call-sounds";
 interface UseVideoClientOptions {
   serverUrl: string;
   sessionId: string;
-  userId: number;
+  userId: string;
   userUuid?: string;
   token: string;
 }

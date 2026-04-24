@@ -46,7 +46,7 @@ import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
 import type { ChatMessage as ChatMessageT } from "@/contexts/chat-context";
 
 interface TextChannelViewProps {
-  channelId: number;
+  channelId: string;
   channelName: string;
   /** Skip the built-in h-10 header (used when a parent workspace provides its own). */
   hideHeader?: boolean;
@@ -55,11 +55,14 @@ interface TextChannelViewProps {
 // ── Sonyflake timestamp extraction ───────────────
 // Layout: time(39 bits, 10ms units) | sequence(8) | machine(16)
 // Epoch: 2014-09-01T00:00:00Z
+//
+// The id value exceeds JS MAX_SAFE_INTEGER — parse through BigInt, then
+// convert the small (time-only) result back to Number for the Date math.
 
 const SONYFLAKE_EPOCH_MS = 1409529600000;
 
-function snowflakeToDate(id: number): Date {
-  const time10ms = Math.floor(id / 16777216); // >> 24 bits
+function snowflakeToDate(id: string): Date {
+  const time10ms = Number(BigInt(id) >> 24n);
   return new Date(SONYFLAKE_EPOCH_MS + time10ms * 10);
 }
 
@@ -107,7 +110,7 @@ function UnreadDivider() {
   );
 }
 
-function formatTime(messageId: number): string {
+function formatTime(messageId: string): string {
   return snowflakeToDate(messageId).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -248,10 +251,8 @@ function TypingIndicator({
   if (users.length === 0) return null;
 
   const names = users.map((uid) => {
-    // `typingUsers` arrive from the server as stringified snowflakes (JSON);
-    // `Member.user_id` is numeric, so match both against a parsed form.
-    const uidNum = Number(uid);
-    const m = members.find((mm) => mm.user_id === uidNum);
+    // Both `typingUsers` and `Member.user_id` are stringified Snowflakes.
+    const m = members.find((mm) => mm.user_id === uid);
     return m?.display_name || m?.username || uid;
   });
 
@@ -311,17 +312,15 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
   const isAtBottom = useRef(true);
   const typingThrottle = useRef(0);
 
-  // Member lookup map (useMemo so re-render happens when members load).
-  // Keys stored as strings because Message.author_id arrives stringified
-  // (Scylla column is still `text` until the next schema bump).
+  // Member lookup map keyed by user_id (stringified Snowflake).
   const memberMap = useMemo(() => {
     const map = new Map<string, Member>();
-    for (const m of members) map.set(String(m.user_id), m);
+    for (const m of members) map.set(m.user_id, m);
     return map;
   }, [members]);
 
   const allGroups = useMemo(() => {
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     const groups: MemberGroup[] = [];
     for (const m of members) {
       for (const g of m.groups) {
@@ -547,12 +546,12 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
                 !prev ||
                 startOfDay(msgDate) !== startOfDay(snowflakeToDate(prev.message_id));
               // "New messages" divider: first message whose id exceeds the
-              // snapshot taken on channel entry. Only the first message across
-              // the boundary gets the separator, not every one after it.
+              // snapshot taken on channel entry. BigInt compare because
+              // Snowflakes don't fit into a JS number.
               const crossedUnread =
                 dividerPos != null &&
-                msg.message_id > dividerPos &&
-                (!prev || prev.message_id <= dividerPos);
+                BigInt(msg.message_id) > BigInt(dividerPos) &&
+                (!prev || BigInt(prev.message_id) <= BigInt(dividerPos));
               // On a day boundary we reset grouping so the first message of the
               // day always shows avatar + name, never the compact variant.
               // Same on an unread boundary.

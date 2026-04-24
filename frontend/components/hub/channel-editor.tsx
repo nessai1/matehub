@@ -66,7 +66,7 @@ export interface ChannelEditorData {
   iconId: string;
   iconColor: string | null;
   iconImage: string | null;
-  allowedGroups: number[];
+  allowedGroups: string[];
   /** File to upload as icon (S3). Present when user picked an image. */
   pendingIconFile: File | null;
 }
@@ -102,7 +102,7 @@ export function ChannelEditor({
   const [iconColor, setIconColor] = useState<string | null>(null);
   const [iconImage, setIconImage] = useState<string | null>(null);
   const [iconMode, setIconMode] = useState<IconMode>("icon");
-  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set());
+  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -134,7 +134,7 @@ export function ChannelEditor({
     reader.readAsDataURL(file);
   }, []);
 
-  const toggleGroup = useCallback((groupId: number, groupName: string) => {
+  const toggleGroup = useCallback((groupId: string, groupName: string) => {
     // Can't remove protected groups
     if (PROTECTED_GROUPS.includes(groupName.toLowerCase())) return;
     setSelectedGroups((prev) => {

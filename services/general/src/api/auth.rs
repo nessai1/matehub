@@ -29,6 +29,7 @@ struct SignupRequest {
 #[derive(Serialize)]
 struct AuthResponse {
     access_token: String,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     account_id: i64,
     email: String,
     email_verified: bool,

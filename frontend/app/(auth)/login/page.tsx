@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
-// TODO: get hub_id from subdomain or config
-const DEV_HUB_ID = 1;
+// TODO: get hub_id from subdomain or config. Wire-format is always a string
+// because Snowflake IDs blow past JS MAX_SAFE_INTEGER.
+const DEV_HUB_ID = "1";
 
 export default function LoginPage() {
   const navigate = useNavigate();

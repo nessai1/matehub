@@ -19,11 +19,18 @@ use crate::presence::{self, RedisPool};
 pub const SUBJECT: &str = "voice.occupancy";
 
 /// Payload published by the video service.
+///
+/// ID fields cross a JS boundary elsewhere in the system, so the video
+/// service ships them as decimal strings (Snowflakes exceed JS safe-int).
+/// Lenient deserialization accepts both strings and native numbers.
 #[derive(Debug, Clone, Deserialize)]
 pub struct OccupancyEvent {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub hub_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub user_id: i64,
     /// `None` when the user leaves.
+    #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     pub channel_id: Option<i64>,
     /// Video-side SFU session id = our call_id correlation key. Kept optional
     /// for back-compat with older video pods that haven't shipped the field.

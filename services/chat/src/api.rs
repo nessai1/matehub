@@ -194,10 +194,10 @@ async fn edit_message(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    // Fan out edit event
+    // Fan out edit event. IDs as strings — see `Message` docstring for why.
     state.fanout.publish_event(hub_id, channel_id, events::MESSAGE_UPDATE, &serde_json::json!({
-        "message_id": message_id,
-        "channel_id": channel_id,
+        "message_id": message_id.to_string(),
+        "channel_id": channel_id.to_string(),
         "content": body.content.trim(),
         "edited": true,
     })).await;
@@ -224,8 +224,8 @@ async fn delete_message(
         })?;
 
     state.fanout.publish_event(hub_id, channel_id, events::MESSAGE_DELETE, &serde_json::json!({
-        "message_id": message_id,
-        "channel_id": channel_id,
+        "message_id": message_id.to_string(),
+        "channel_id": channel_id.to_string(),
     })).await;
 
     Ok(StatusCode::NO_CONTENT)
@@ -248,6 +248,7 @@ async fn typing(
 
 #[derive(Deserialize)]
 struct AckRequest {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     message_id: i64,
 }
 
@@ -308,7 +309,9 @@ async fn get_history(
 
 #[derive(serde::Serialize)]
 struct ReadStateItem {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     channel_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     last_read_message_id: i64,
     mention_count: i32,
 }
@@ -351,7 +354,9 @@ struct SyncRequest {
 
 #[derive(Deserialize)]
 struct SyncChannelRequest {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     channel_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     after: i64, // last known message_id
 }
 
@@ -362,6 +367,7 @@ struct SyncResponse {
 
 #[derive(serde::Serialize)]
 struct SyncChannelResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     channel_id: i64,
     messages: Vec<Message>,
     limited: bool,

@@ -5,8 +5,11 @@ export interface ChatClientOptions {
   baseUrl: string;
   /** JWT access token */
   token: string;
-  /** Hub ID this client is scoped to (i64 Snowflake). */
-  hubId: number;
+  /**
+   * Hub ID this client is scoped to. Snowflakes exceed JS safe-integer
+   * range, so every entity id on the wire is a decimal string.
+   */
+  hubId: string;
 }
 
 // ── Connection state ─────────────────────────────
@@ -47,14 +50,20 @@ export function attachmentKind(a: Attachment): AttachmentKind {
 
 // ── Domain models ────────────────────────────────
 
+/**
+ * Snowflake ID fields are **strings** — the numbers exceed
+ * `Number.MAX_SAFE_INTEGER` and `JSON.parse` would silently round them.
+ * Comparisons with `===`, interpolation into URLs, and Map keys all work
+ * naturally on strings.
+ */
 export interface Message {
-  hub_id: number;
-  channel_id: number;
-  message_id: number;
+  hub_id: string;
+  channel_id: string;
+  message_id: string;
   author_id: string;
   author_type: string;
   content: string;
-  thread_root_id: number | null;
+  thread_root_id: string | null;
   mentions: string[];
   mention_groups: string[];
   mention_everyone: boolean;
@@ -67,7 +76,7 @@ export interface Message {
 
 export interface TypingEvent {
   user_id: string;
-  channel_id: number;
+  channel_id: string;
 }
 
 // ── Events (discriminated union, same pattern as VideoClient) ──
@@ -84,22 +93,22 @@ export type ChatClientEvent =
   | { type: "error"; message: string; code?: number };
 
 export interface AttachmentUpdatedData {
-  message_id: number;
-  channel_id: number;
+  message_id: string;
+  channel_id: string;
   attachment_id: string;
   attachments: Attachment[];
 }
 
 export interface MessageUpdateData {
-  message_id: number;
-  channel_id: number;
+  message_id: string;
+  channel_id: string;
   content: string;
   edited: boolean;
 }
 
 export interface MessageDeleteData {
-  message_id: number;
-  channel_id: number;
+  message_id: string;
+  channel_id: string;
 }
 
 // ── REST request/response types ──────────────────
@@ -107,22 +116,22 @@ export interface MessageDeleteData {
 export interface SendMessageOptions {
   content: string;
   clientId?: string;
-  threadRootId?: number;
+  threadRootId?: string;
   attachments?: Attachment[];
 }
 
 export interface HistoryOptions {
   limit?: number;
-  before?: number;
+  before?: string;
 }
 
 export interface SyncChannelRequest {
-  channel_id: number;
-  after: number;
+  channel_id: string;
+  after: string;
 }
 
 export interface SyncChannelResponse {
-  channel_id: number;
+  channel_id: string;
   messages: Message[];
   limited: boolean;
 }
@@ -134,7 +143,7 @@ export interface SyncResponse {
 // ── Read State ───────────────────────────────────
 
 export interface ChannelReadState {
-  channel_id: number;
-  last_read_message_id: number;
+  channel_id: string;
+  last_read_message_id: string;
   mention_count: number;
 }

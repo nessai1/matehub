@@ -2,15 +2,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::attachment::Attachment;
 
-/// Message as returned by API / sent via WebSocket
+/// Message as returned by API / sent via WebSocket.
+///
+/// Snowflake ID fields (`hub_id`, `channel_id`, `message_id`, `thread_root_id`)
+/// are wired as strings because they exceed `Number.MAX_SAFE_INTEGER`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub hub_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub channel_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub message_id: i64,
+    /// Already a string (stringified Snowflake of users.id or temp_users.id).
     pub author_id: String,
     pub author_type: String,
     pub content: String,
+    #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     pub thread_root_id: Option<i64>,
     pub mentions: Vec<String>,
     pub mention_groups: Vec<String>,
@@ -28,6 +36,7 @@ pub struct Message {
 pub struct SendMessageRequest {
     pub content: String,
     pub client_id: Option<String>, // UUIDv7 from client for idempotency
+    #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     pub thread_root_id: Option<i64>,
     /// Attachment IDs or full Attachment objects (both accepted).
     #[serde(default)]

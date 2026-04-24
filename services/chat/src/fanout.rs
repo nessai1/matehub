@@ -44,7 +44,9 @@ impl FanoutService {
         let subject = format!("hub.{hub_id}.channel.{channel_id}.typing");
         let payload = serde_json::json!({
             "user_id": user_id,
-            "channel_id": channel_id,
+            // Stringified so the JS consumer doesn't silently round
+            // Snowflake IDs on parse.
+            "channel_id": channel_id.to_string(),
         });
 
         let _ = self

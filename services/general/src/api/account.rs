@@ -12,6 +12,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 #[derive(Serialize)]
 struct AccountResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     id: i64,
     email: String,
     email_verified: bool,

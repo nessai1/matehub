@@ -35,7 +35,9 @@ pub mod bits {
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChannelPermission {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub channel_id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub group_id: i64,
     pub allow_bits: i32,
     pub deny_bits: i32,

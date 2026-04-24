@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Group {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub id: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub hub_id: i64,
     pub name: String,
     pub color: Option<String>,

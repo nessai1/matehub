@@ -35,6 +35,7 @@ struct UpdateProfileRequest {
 
 #[derive(serde::Serialize)]
 struct ProfileResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     display_name: String,
     avatar_url: Option<String>,

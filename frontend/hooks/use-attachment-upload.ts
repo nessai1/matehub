@@ -21,7 +21,7 @@ export interface PendingUpload {
  */
 export function useAttachmentUpload(
   client: ChatClient | null,
-  channelId: number,
+  channelId: string,
 ) {
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const nextId = useRef(0);

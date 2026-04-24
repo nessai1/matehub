@@ -12,10 +12,16 @@ use uuid::Uuid;
 use crate::sfu::SfuCommand;
 use crate::signaling::ServerMessage;
 
+// Internal-only identifiers (never leave the SFU pod) stay as Uuid — they're
+// safe to JSON-encode as 36-char strings and JS consumes them fine.
 pub type SessionId = Uuid;
-pub type ChannelId = Uuid;
 pub type ParticipantId = Uuid;
-pub type HubId = Uuid;
+
+// Cluster-level identifiers come from hub's Snowflake space and exceed
+// MAX_SAFE_INTEGER in JS. We keep them as i64 inside Rust but serialize as
+// strings on the wire (see api/sessions.rs for request/response typing).
+pub type ChannelId = i64;
+pub type HubId = i64;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -88,6 +94,7 @@ pub struct SessionResponse {
 #[derive(Serialize)]
 pub struct SessionInfoResponse {
     pub session_id: SessionId,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub channel_id: ChannelId,
     pub participants: Vec<ParticipantInfoResponse>,
     pub created_at: DateTime<Utc>,

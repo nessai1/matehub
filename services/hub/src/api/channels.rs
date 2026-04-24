@@ -292,13 +292,23 @@ async fn upload_icon(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    sqlx::query("UPDATE channels SET icon_image_url = $1 WHERE id = $2 AND hub_id = $3")
-        .bind(&url)
-        .bind(channel_id)
-        .bind(hub_id)
-        .execute(&mut *conn)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = sqlx::query(
+        "UPDATE channels SET icon_image_url = $1 WHERE id = $2 AND hub_id = $3",
+    )
+    .bind(&url)
+    .bind(channel_id)
+    .bind(hub_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Silent-success was the original bug: S3 write happens, DB update touches
+    // zero rows (e.g. channel_id mismatch), caller sees "uploaded" but icon
+    // disappears on next reload. Fail loud instead.
+    if result.rows_affected() == 0 {
+        tracing::warn!(%hub_id, %channel_id, %key, "icon uploaded to S3 but channel row missing");
+        return Err(StatusCode::NOT_FOUND);
+    }
 
     tracing::info!(%hub_id, %channel_id, %key, "channel icon uploaded");
 

@@ -12,6 +12,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 #[derive(Serialize)]
 struct HubSummary {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     id: i64,
     slug: String,
     name: String,

@@ -116,7 +116,8 @@ where
                 d: serde_json::json!({
                     "session_id": session_id,
                     "user": {
-                        "id": session.claims().sub,
+                        // Stringified — see Claims doc for why.
+                        "id": session.claims().sub.to_string(),
                         "username": session.claims().username,
                     },
                 }),

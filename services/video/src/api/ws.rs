@@ -27,11 +27,10 @@ pub fn routes() -> Router<AppState> {
 struct WsQuery {
     #[allow(dead_code)]
     token: Option<String>,
+    /// Snowflake i64 rendered as a decimal string (Sonyflakes exceed JS
+    /// MAX_SAFE_INTEGER). `"anonymous"` or a non-numeric value disables
+    /// occupancy reporting but the SFU session still works.
     user_id: Option<String>,
-    /// Optional UUID form of the user identity. The SFU itself doesn't care
-    /// about the representation, but voice-occupancy NATS events need a UUID
-    /// so the hub service can match it against member rows.
-    user_uuid: Option<String>,
 }
 
 const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
@@ -40,17 +39,20 @@ const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
 /// `call_id` is the SFU session id — carried so the hub can stitch this
 /// event into the correlated call-trace span without extra lookups.
 /// Failures are logged and swallowed — the call must not block on NATS.
+///
+/// ID fields are wired as strings (Snowflakes exceed JS safe-int). Hub's
+/// `OccupancyEvent` deserialises them via `serde_i64::as_string`.
 async fn publish_occupancy(
     nats: &async_nats::Client,
-    hub_id: Uuid,
-    user_uuid: Uuid,
-    channel_id: Option<Uuid>,
+    hub_id: i64,
+    user_id: i64,
+    channel_id: Option<i64>,
     call_id: Uuid,
 ) {
     let payload = serde_json::json!({
-        "hub_id": hub_id,
-        "user_id": user_uuid,
-        "channel_id": channel_id,
+        "hub_id": hub_id.to_string(),
+        "user_id": user_id.to_string(),
+        "channel_id": channel_id.map(|c| c.to_string()),
         "call_id": call_id,
     });
     let bytes = match serde_json::to_vec(&payload) {
@@ -75,19 +77,12 @@ async fn ws_upgrade(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let user_id = query.user_id.unwrap_or_else(|| "anonymous".into());
-    // Fall back: if the client didn't send user_uuid, try parsing user_id as
-    // UUID. Anonymous / non-UUID ids just skip occupancy reporting.
-    let user_uuid = query
-        .user_uuid
-        .as_deref()
-        .or(Some(user_id.as_str()))
-        .and_then(|s| Uuid::parse_str(s).ok());
+    // The canonical user id is a Snowflake; frontend sends it as the string
+    // representation of the i64. Anonymous / non-numeric fall back to
+    // skipping occupancy reporting — the video session still works, but the
+    // hub won't see the roster entry.
+    let user_snowflake = user_id.parse::<i64>().ok();
 
-    // One span per WS connection. Every log emitted inside handle_ws inherits
-    // these fields — Kibana query `call_id:{session_id}` returns the entire
-    // call trace across all participants, signalling, and NATS publishes.
-    // `hub_id` / `participant_id` get recorded once we know them (lookup,
-    // then participant_id generation inside the handler).
     let span = tracing::info_span!(
         "call",
         call_id = %session_id,
@@ -97,7 +92,7 @@ async fn ws_upgrade(
     );
 
     ws.on_upgrade(move |socket| {
-        handle_ws(socket, state, session_id, user_id, user_uuid).instrument(span)
+        handle_ws(socket, state, session_id, user_id, user_snowflake).instrument(span)
     })
 }
 
@@ -106,7 +101,7 @@ async fn handle_ws(
     state: AppState,
     session_id: SessionId,
     user_id: String,
-    user_uuid: Option<Uuid>,
+    user_snowflake: Option<i64>,
 ) {
     let participant_id = Uuid::new_v4();
     Span::current().record("participant_id", tracing::field::display(&participant_id));
@@ -184,7 +179,7 @@ async fn handle_ws(
     }
 
     // Tell the hub: this user is now in this voice channel.
-    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
+    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
         publish_occupancy(nats, hub_id, uid, Some(channel_id), session_id).await;
     }
 
@@ -397,7 +392,7 @@ async fn handle_ws(
     }
 
     // Tell the hub: this user left the voice channel.
-    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_uuid) {
+    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
         publish_occupancy(nats, hub_id, uid, None, session_id).await;
     }
 

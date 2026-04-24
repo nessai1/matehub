@@ -21,6 +21,7 @@ pub fn routes(state: MembersState) -> Router {
 
 #[derive(Serialize)]
 struct MemberResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     username: String,
     display_name: String,
@@ -33,11 +34,13 @@ struct MemberResponse {
     /// Voice channel the user is currently connected to (if any). Populated
     /// from Redis voice_occupancy:<hub_id>, which the video service keeps in
     /// sync via NATS.
+    #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     current_voice_channel_id: Option<i64>,
 }
 
 #[derive(Serialize)]
 struct GroupBadge {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     id: i64,
     name: String,
     color: Option<String>,

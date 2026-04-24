@@ -9,32 +9,29 @@ import {
 /**
  * Which text channel is shown in the chat workspace. Pure SPA state — the URL
  * never changes when the user navigates. Persisted to localStorage so the
- * selection survives reloads.
+ * selection survives reloads. Channel ids are stringified Snowflakes.
  */
 
 const STORAGE_KEY = "matehub:selected-text-channel";
 
-function readStored(): number | null {
+function readStored(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+    return window.localStorage.getItem(STORAGE_KEY);
   } catch {
     return null;
   }
 }
 
-let cache: number | null | undefined;
+let cache: string | null | undefined;
 const listeners = new Set<() => void>();
 
-function getSnapshot(): number | null {
+function getSnapshot(): string | null {
   if (cache === undefined) cache = readStored();
   return cache ?? null;
 }
 
-function getServerSnapshot(): number | null {
+function getServerSnapshot(): string | null {
   return null;
 }
 
@@ -42,8 +39,7 @@ function subscribe(fn: () => void) {
   listeners.add(fn);
   const onStorage = (e: StorageEvent) => {
     if (e.key === STORAGE_KEY) {
-      const n = e.newValue === null ? null : Number(e.newValue);
-      cache = n !== null && Number.isFinite(n) ? n : null;
+      cache = e.newValue;
       fn();
     }
   };
@@ -54,11 +50,11 @@ function subscribe(fn: () => void) {
   };
 }
 
-function write(id: number | null) {
+function write(id: string | null) {
   cache = id;
   if (typeof window !== "undefined") {
     try {
-      if (id !== null) window.localStorage.setItem(STORAGE_KEY, String(id));
+      if (id !== null) window.localStorage.setItem(STORAGE_KEY, id);
       else window.localStorage.removeItem(STORAGE_KEY);
     } catch {
       /* ignore */
@@ -70,8 +66,8 @@ function write(id: number | null) {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 interface HubSelectionValue {
-  selectedTextChannelId: number | null;
-  selectTextChannel: (id: number) => void;
+  selectedTextChannelId: string | null;
+  selectTextChannel: (id: string) => void;
 }
 
 const HubSelectionContext = createContext<HubSelectionValue | null>(null);
@@ -82,7 +78,7 @@ export function HubSelectionProvider({ children }: { children: ReactNode }) {
     getSnapshot,
     getServerSnapshot,
   );
-  const selectTextChannel = useCallback((id: number) => {
+  const selectTextChannel = useCallback((id: string) => {
     write(id);
   }, []);
 

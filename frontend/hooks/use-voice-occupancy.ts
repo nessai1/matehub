@@ -10,7 +10,7 @@ import {
  * simply absent from the map, so `occupancy.get(userId)` is `undefined` when
  * the user isn't in any voice channel.
  */
-export function useVoiceOccupancy(): ReadonlyMap<number, number> {
+export function useVoiceOccupancy(): ReadonlyMap<string, string> {
   return useSyncExternalStore(
     subscribeVoiceOccupancy,
     getVoiceOccupancy,

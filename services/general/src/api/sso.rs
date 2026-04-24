@@ -108,6 +108,7 @@ struct ExchangeRequest {
 
 #[derive(Serialize)]
 struct ExchangeResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     account_id: i64,
     email: String,
     display_name: Option<String>,

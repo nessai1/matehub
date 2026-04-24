@@ -4,8 +4,8 @@ import { useAuth } from "@/lib/auth";
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 export interface Channel {
-  id: number;
-  hub_id: number;
+  id: string;
+  hub_id: string;
   name: string;
   type: "text" | "voice" | "stage";
   position: number;
@@ -84,7 +84,7 @@ export function useChannels() {
   );
 
   const updateChannel = useCallback(
-    async (channelId: number, data: UpdateChannelRequest): Promise<Channel | null> => {
+    async (channelId: string, data: UpdateChannelRequest): Promise<Channel | null> => {
       if (!session?.hubId) return null;
       const res = await fetch(
         `${HUB_API}/v1/hubs/${session.hubId}/channels/${channelId}`,
@@ -103,7 +103,7 @@ export function useChannels() {
   );
 
   const deleteChannel = useCallback(
-    async (channelId: number): Promise<boolean> => {
+    async (channelId: string): Promise<boolean> => {
       if (!session?.hubId) return false;
       const res = await fetch(
         `${HUB_API}/v1/hubs/${session.hubId}/channels/${channelId}`,
@@ -122,7 +122,7 @@ export function useChannels() {
   );
 
   const uploadIcon = useCallback(
-    async (channelId: number, file: File): Promise<string | null> => {
+    async (channelId: string, file: File): Promise<string | null> => {
       if (!session?.hubId || !session?.token) return null;
       const formData = new FormData();
       formData.append("icon", file);

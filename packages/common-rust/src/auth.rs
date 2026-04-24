@@ -13,13 +13,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     /// User ID (permanent `users.id`) or temp user ID (`temp_users.id`).
+    #[serde(with = "crate::serde_i64::as_string")]
     pub sub: i64,
     pub username: String,
     /// "permanent" or "temp"
     pub user_type: String,
     /// Hub ID this token is scoped to (hub's own `hubs.id`).
+    #[serde(with = "crate::serde_i64::as_string")]
     pub hub_id: i64,
     /// Group IDs for permission checks.
+    #[serde(with = "crate::serde_i64::vec_as_string")]
     pub groups: Vec<i64>,
     pub iat: i64,
     pub exp: i64,

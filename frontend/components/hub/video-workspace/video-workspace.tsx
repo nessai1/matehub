@@ -24,6 +24,7 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
   const { session } = useAuth();
   const { members } = useMembers();
   const username = session?.username ?? "anonymous";
+  const localUserId = session?.userId ?? "local";
 
   const {
     activeVoiceChannelId,
@@ -48,19 +49,20 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
 
   // ── Member → displayName/avatar lookup ───────────────────────────────────
+  // Keyed by Snowflake user_id — SDK participants carry user_id, not username.
   const memberLookup = useMemo(() => {
     const map: Record<
       string,
       { displayName: string; avatarUrl: string | null }
     > = {};
     if (session) {
-      map[session.username] = {
+      map[session.userId] = {
         displayName: session.displayName,
         avatarUrl: session.avatarUrl ?? null,
       };
     }
     for (const m of members) {
-      map[m.username] = {
+      map[m.user_id] = {
         displayName: m.display_name,
         avatarUrl: m.avatar_url ?? null,
       };
@@ -79,7 +81,7 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
 
   const tiles: Tile[] = useMemo(() => {
     const out: Tile[] = [];
-    const localInfo = memberLookup[username];
+    const localInfo = memberLookup[localUserId];
     const localVideoTrack = isCamEnabled
       ? localStream?.getVideoTracks()[0] ?? null
       : null;
@@ -87,9 +89,9 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     const localCamTile: CameraTile = {
       kind: "camera",
       id: "local",
-      userId: username,
-      displayName: localInfo?.displayName ?? username,
-      avatarUrl: localInfo?.avatarUrl ?? null,
+      userId: localUserId,
+      displayName: localInfo?.displayName ?? session?.displayName ?? username,
+      avatarUrl: localInfo?.avatarUrl ?? session?.avatarUrl ?? null,
       audioTrack: null,
       videoTrack: localVideoTrack,
       isMicMuted: !isMicEnabled,
@@ -117,12 +119,12 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
 
     // Screen shares come after cameras — append at the tail.
     if (localScreenVideoTrack) {
-      const info = memberLookup[username];
+      const info = memberLookup[localUserId];
       const s: ScreenTile = {
         kind: "screen",
         id: "local-screen",
-        ownerUserId: username,
-        ownerDisplayName: info?.displayName ?? username,
+        ownerUserId: localUserId,
+        ownerDisplayName: info?.displayName ?? session?.displayName ?? username,
         videoTrack: localScreenVideoTrack,
         audioTrack: null,
         isLocal: true,
@@ -148,7 +150,9 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     return out;
   }, [
     memberLookup,
+    localUserId,
     username,
+    session,
     participants,
     localStream,
     localScreenVideoTrack,

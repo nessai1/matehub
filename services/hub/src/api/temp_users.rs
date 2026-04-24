@@ -134,9 +134,11 @@ async fn revoke_temp_user(
 /// Public endpoint: validate token, return hub info for redirect.
 #[derive(serde::Serialize)]
 struct JoinResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     hub_id: i64,
     hub_name: String,
     hub_slug: String,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     temp_user_id: i64,
     nickname: String,
     /// Session token for WS connections to video/chat services.

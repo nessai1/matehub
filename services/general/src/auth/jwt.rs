@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// `/api/hubs/:slug/token`, which hub signs with its own HUB_SECRET.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccountClaims {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     pub sub: i64,
     pub email: String,
     pub exp: i64,

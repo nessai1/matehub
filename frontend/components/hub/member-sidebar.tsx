@@ -19,7 +19,7 @@ export function MemberSidebar() {
   const offline = members.filter((m) => !m.is_online);
 
   const allGroups: MemberGroup[] = [];
-  const seen = new Set<number>();
+  const seen = new Set<string>();
   for (const m of members) {
     for (const g of m.groups) {
       if (!seen.has(g.id)) {

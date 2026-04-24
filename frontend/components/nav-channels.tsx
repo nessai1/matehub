@@ -34,7 +34,7 @@ import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-
 export type ChannelType = "text" | "voice" | "stage"
 
 export interface Channel {
-  id: number
+  id: string
   name: string
   type: ChannelType
   position: number
@@ -160,7 +160,7 @@ function VoiceParticipantsRow({
   isSpeaking,
   isMicMuted,
 }: {
-  userId: number
+  userId: string
   displayName: string
   avatarUrl?: string | null
   isSelf: boolean
@@ -256,8 +256,8 @@ export function NavChannels() {
 
   // Text and voice selections are independent — both get highlighted
   // concurrently when the user is in a call AND reading a text channel.
-  const isTextActive = (id: number) => selectedTextChannelId === id
-  const isVoiceActive = (id: number) => activeVoiceChannelId === id
+  const isTextActive = (id: string) => selectedTextChannelId === id
+  const isVoiceActive = (id: string) => activeVoiceChannelId === id
 
   const { channels: apiChannels, createChannel, updateChannel, deleteChannel, uploadIcon } = useChannels()
 
@@ -283,7 +283,7 @@ export function NavChannels() {
 
   // Collect groups for editor
   const allGroups: MemberGroup[] = []
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   for (const m of members) {
     for (const g of m.groups) {
       if (!seen.has(g.id)) {
@@ -308,7 +308,7 @@ export function NavChannels() {
   }
 
   const handleSave = useCallback(async (data: ChannelEditorData) => {
-    let targetId: number | null = null
+    let targetId: string | null = null
 
     if (editorMode === "create") {
       const ch = await createChannel({
@@ -384,7 +384,7 @@ export function NavChannels() {
                     // name / username). Try both keys to find mic-muted /
                     // speaking state when we're the one in this call.
                     const sdk = isActiveCall
-                      ? sdkByUserId.get(m.username) ?? sdkByUserId.get(String(m.user_id))
+                      ? sdkByUserId.get(m.username) ?? sdkByUserId.get(m.user_id)
                       : undefined
                     return (
                       <VoiceParticipantsRow

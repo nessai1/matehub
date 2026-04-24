@@ -31,6 +31,7 @@ async fn get_hub(
 
 #[derive(Serialize, sqlx::FromRow)]
 struct MemberRow {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     username: String,
     display_name: String,

@@ -37,7 +37,7 @@ import { usePermissions, P } from "@/hooks/use-permissions"
 import { useAuth } from "@/lib/auth"
 
 interface Hub {
-  id: number
+  id: string
   name: string
   slug: string
   plan: string

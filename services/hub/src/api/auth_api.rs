@@ -24,6 +24,7 @@ pub fn routes(pool: PgPool) -> Router {
 struct LoginRequest {
     login: String,
     password: String,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     hub_id: i64,
     #[serde(default)]
     remember_me: bool,
@@ -34,10 +35,12 @@ struct LoginResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: i64,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     hub_id: i64,
     hub_slug: String,
 }

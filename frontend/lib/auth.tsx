@@ -12,10 +12,14 @@ const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 export interface AuthSession {
   type: "permanent" | "temp";
-  userId: number;
+  /**
+   * Snowflake as decimal string. JS numbers lose precision past 2⁵³, so
+   * every entity id on the wire is a string.
+   */
+  userId: string;
   username: string;
   displayName: string;
-  hubId: number;
+  hubId: string;
   hubSlug: string;
   /** Access token (short-lived JWT, 30 min) */
   token: string;
@@ -24,7 +28,7 @@ export interface AuthSession {
   /** Access token TTL in seconds (for scheduling refresh) */
   expiresIn?: number;
   avatarUrl?: string;
-  groupId?: number;
+  groupId?: string;
   expiresAt?: string;
 }
 

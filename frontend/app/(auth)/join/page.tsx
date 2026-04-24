@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 
 interface JoinData {
-  hub_id: number;
+  hub_id: string;
   hub_name: string;
   hub_slug: string;
-  temp_user_id: number;
+  temp_user_id: string;
   nickname: string;
   session_token: string;
 }

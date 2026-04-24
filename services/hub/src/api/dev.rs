@@ -29,6 +29,7 @@ fn default_username() -> String {
 
 #[derive(Serialize, sqlx::FromRow)]
 struct DevMeRow {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     username: String,
     display_name: String,
@@ -37,9 +38,11 @@ struct DevMeRow {
 
 #[derive(Serialize)]
 struct DevMeResponse {
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
     username: String,
     display_name: String,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     hub_id: i64,
     role: String,
     token: String,

@@ -8,13 +8,13 @@ import {
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
 export interface MemberGroup {
-  id: number;
+  id: string;
   name: string;
   color: string | null;
 }
 
 export interface Member {
-  user_id: number;
+  user_id: string;
   username: string;
   display_name: string;
   avatar_url: string | null;
@@ -24,7 +24,7 @@ export interface Member {
   user_type: "permanent" | "temp";
   expires_at: string | null;
   /** Voice channel the member is currently in (null = not in voice). */
-  current_voice_channel_id: number | null;
+  current_voice_channel_id: string | null;
 }
 
 export function useMembers() {
@@ -53,7 +53,7 @@ export function useMembers() {
         // events take over from here.
         seedVoiceOccupancy(
           fetched.map(
-            (m) => [m.user_id, m.current_voice_channel_id] as [number, number | null],
+            (m) => [m.user_id, m.current_voice_channel_id] as [string, string | null],
           ),
         );
       }
@@ -112,12 +112,12 @@ export function usePresence() {
         try {
           const msg = JSON.parse(ev.data) as {
             type?: string;
-            user_id?: number;
-            channel_id?: number | null;
+            user_id?: string;
+            channel_id?: string | null;
           };
           if (
             msg.type === "voice_occupancy" &&
-            typeof msg.user_id === "number"
+            typeof msg.user_id === "string"
           ) {
             setVoiceOccupancy(msg.user_id, msg.channel_id ?? null);
           }
