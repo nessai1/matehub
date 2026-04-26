@@ -21,14 +21,21 @@ const MAX_FILE_SIZE: usize = 1024 * 1024 * 1024; // 1 GB
 /// Larger images still upload via streaming but skip dimension extraction.
 const MAX_IMAGE_BUFFER: usize = 32 * 1024 * 1024; // 32 MB
 
-const ALLOWED_MIMES: &[&str] = &[
-    "image/jpeg", "image/png", "image/gif", "image/webp",
-    // Native-play formats
-    "video/mp4", "video/webm",
-    // Transcoded on upload (iOS .mov, legacy .avi/.mkv/.wmv)
-    "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/3gpp", "video/x-ms-wmv",
-    "audio/mpeg", "audio/ogg", "audio/wav",
-    "application/pdf", "text/plain", "application/zip",
+// Denylist of clearly hostile mime types. Anything else flows through — chat
+// users expect to drop docx/xlsx/keynote/sketch/whatever and have it round-trip.
+// S3 stores opaquely, browser doesn't auto-execute downloads.
+const BLOCKED_MIMES: &[&str] = &[
+    "application/x-msdownload",     // .exe / .dll
+    "application/x-ms-installer",   // .msi
+    "application/x-msi",
+    "application/x-bat",            // .bat
+    "application/x-sh",             // .sh
+    "application/x-csh",
+    "application/x-msdos-program",
+    "application/vnd.microsoft.portable-executable",
+    "application/x-mach-binary",    // mach-o
+    "application/x-elf",
+    "application/x-executable",
 ];
 
 pub fn routes() -> Router<AppState> {
@@ -66,8 +73,8 @@ async fn upload_attachment(
         .unwrap_or("application/octet-stream")
         .to_string();
 
-    if !ALLOWED_MIMES.iter().any(|m| content_type.starts_with(m)) {
-        tracing::warn!(%content_type, "rejected file type");
+    if BLOCKED_MIMES.iter().any(|m| content_type.starts_with(m)) {
+        tracing::warn!(%content_type, "rejected blocked file type");
         return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 

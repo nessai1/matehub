@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog";
 import {
   HashIcon,
   MicIcon,
@@ -105,6 +106,7 @@ export function ChannelEditor({
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [cropSource, setCropSource] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const typeLabel = channelType === "text" ? "Text" : channelType === "voice" ? "Voice" : "Stage";
@@ -123,15 +125,23 @@ export function ChannelEditor({
 
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Allow re-picking the same file: clear input value
+    if (e.target) e.target.value = "";
     if (!file) return;
-    setPendingFile(file);
-    // Preview via data URL
+    // Pre-crop limit: 10MB. Cropped output is ~50KB webp, well under server's 2MB.
+    if (file.size > 10 * 1024 * 1024) return;
+    setCropSource(file);
+  }, []);
+
+  const handleCropConfirm = useCallback((cropped: File) => {
+    setPendingFile(cropped);
+    setCropSource(null);
     const reader = new FileReader();
     reader.onload = (ev) => {
       setIconImage(ev.target?.result as string);
       setIconMode("image");
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(cropped);
   }, []);
 
   const toggleGroup = useCallback((groupId: string, groupName: string) => {
@@ -181,6 +191,7 @@ export function ChannelEditor({
     }
     setIconPickerOpen(false);
     setPendingFile(null);
+    setCropSource(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -211,6 +222,7 @@ export function ChannelEditor({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
@@ -398,5 +410,13 @@ export function ChannelEditor({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <ImageCropDialog
+      open={cropSource !== null}
+      file={cropSource}
+      onCancel={() => setCropSource(null)}
+      onConfirm={handleCropConfirm}
+    />
+    </>
   );
 }

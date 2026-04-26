@@ -1,6 +1,8 @@
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
-use aws_sdk_s3::config::{BehaviorVersion, Region};
+use aws_sdk_s3::config::{
+    BehaviorVersion, Region, RequestChecksumCalculation, ResponseChecksumValidation,
+};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use bytes::{BufMut, Bytes, BytesMut};
@@ -34,12 +36,21 @@ impl S3Storage {
     pub async fn new(endpoint: &str, region: &str, access_key: &str, secret_key: &str, bucket: &str) -> Self {
         let creds = Credentials::new(access_key, secret_key, None, None, "env");
 
+        // aws-sdk-s3 1.40+ defaults to CRC32 flexible-checksums on every request,
+        // which sends `x-amz-sdk-checksum-algorithm: CRC32` plus a chunked-trailer
+        // body. MinIO (and quite a few S3-compatible stores) reject this on
+        // multipart `UploadPart` calls — the symptom is exactly what we hit:
+        // `PutObject` works (one shot, single-part), `UploadPart` 500s after the
+        // first ~part-size of bytes. `WhenRequired` falls back to "only when the
+        // operation needs it", which lines up with what MinIO accepts.
         let config = aws_sdk_s3::Config::builder()
             .behavior_version(BehaviorVersion::latest())
             .region(Region::new(region.to_string()))
             .endpoint_url(endpoint)
             .credentials_provider(creds)
             .force_path_style(true)
+            .request_checksum_calculation(RequestChecksumCalculation::WhenRequired)
+            .response_checksum_validation(ResponseChecksumValidation::WhenRequired)
             .build();
 
         let client = Client::from_conf(config);

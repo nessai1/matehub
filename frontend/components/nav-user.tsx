@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { ImageCropDialog } from "@/components/ui/image-crop-dialog"
 import {
   SidebarMenu,
   SidebarMenuButton,
@@ -57,6 +58,7 @@ export function NavUser({
   const [avatarUrl, setAvatarUrl] = useState<string | null>(session?.avatarUrl ?? null)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const [cropSource, setCropSource] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -64,24 +66,32 @@ export function NavUser({
   const handleAvatarChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]
+      // Allow re-picking the same file: clear input value
+      if (e.target) e.target.value = ""
       if (!file) return
 
-      // 2MB client-side check
-      if (file.size > 2 * 1024 * 1024) {
-        setError("Image must be under 2MB")
+      // Pre-crop limit: 10MB, generous enough for phone photos.
+      // The cropped output is ~50KB webp, well under the 2MB server limit.
+      if (file.size > 10 * 1024 * 1024) {
+        setError("Image must be under 10MB")
         return
       }
 
-      setAvatarFile(file)
       setError("")
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        setAvatarPreview(ev.target?.result as string)
-      }
-      reader.readAsDataURL(file)
+      setCropSource(file)
     },
     [],
   )
+
+  const handleCropConfirm = useCallback((cropped: File) => {
+    setAvatarFile(cropped)
+    setCropSource(null)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setAvatarPreview(ev.target?.result as string)
+    }
+    reader.readAsDataURL(cropped)
+  }, [])
 
   const handleSave = useCallback(async () => {
     if (!session) return
@@ -242,6 +252,7 @@ export function NavUser({
           setDraftName(savedName)
           setAvatarPreview(null)
           setAvatarFile(null)
+          setCropSource(null)
           setError("")
         }}
       >
@@ -276,7 +287,7 @@ export function NavUser({
             </button>
 
             <p className="text-xs text-muted-foreground">
-              Click to upload avatar (max 2MB)
+              Click to upload avatar (max 10MB)
             </p>
 
             {/* Display name */}
@@ -321,6 +332,13 @@ export function NavUser({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImageCropDialog
+        open={cropSource !== null}
+        file={cropSource}
+        onCancel={() => setCropSource(null)}
+        onConfirm={handleCropConfirm}
+      />
     </>
   )
 }

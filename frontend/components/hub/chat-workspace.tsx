@@ -44,6 +44,7 @@ export function ChatWorkspace({ channel, standalone }: ChatWorkspaceProps) {
           key={channel.id}
           channelId={channel.id}
           channelName={channel.name}
+          channel={channel}
         />
       </div>
     );

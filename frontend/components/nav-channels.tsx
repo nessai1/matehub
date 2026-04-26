@@ -309,6 +309,7 @@ export function NavChannels() {
 
   const handleSave = useCallback(async (data: ChannelEditorData) => {
     let targetId: string | null = null
+    let createdType: ChannelType | null = null
 
     if (editorMode === "create") {
       const ch = await createChannel({
@@ -318,6 +319,7 @@ export function NavChannels() {
         icon_color: data.iconColor,
       })
       targetId = ch?.id ?? null
+      createdType = ch?.type ?? null
     } else if (editingChannel) {
       await updateChannel(editingChannel.id, {
         name: data.name,
@@ -332,7 +334,13 @@ export function NavChannels() {
     if (data.pendingIconFile && targetId) {
       await uploadIcon(targetId, data.pendingIconFile)
     }
-  }, [editorMode, editingChannel, createChannel, updateChannel, uploadIcon])
+
+    // Switch to the just-created text channel. Voice/stage need an explicit
+    // join action, not automatic selection.
+    if (editorMode === "create" && createdType === "text" && targetId) {
+      selectTextChannel(targetId)
+    }
+  }, [editorMode, editingChannel, createChannel, updateChannel, uploadIcon, selectTextChannel])
 
   return (
     <>

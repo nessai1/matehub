@@ -16,6 +16,7 @@ import {
   ListOrderedIcon,
   CodeIcon,
   EllipsisVerticalIcon,
+  UploadCloudIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -35,6 +36,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemberCard } from "@/components/hub/member-card";
+import { ChannelIcon, type Channel } from "@/components/nav-channels";
 import { useChatClient } from "@/hooks/use-chat-client";
 import { useAttachmentUpload } from "@/hooks/use-attachment-upload";
 import { useMembers, type Member, type MemberGroup } from "@/hooks/use-members";
@@ -48,6 +50,8 @@ import type { ChatMessage as ChatMessageT } from "@/contexts/chat-context";
 interface TextChannelViewProps {
   channelId: string;
   channelName: string;
+  /** Optional channel for richer header rendering (custom icon image / color). */
+  channel?: Channel;
   /** Skip the built-in h-10 header (used when a parent workspace provides its own). */
   hideHeader?: boolean;
 }
@@ -279,7 +283,7 @@ function TypingIndicator({
 
 // ── Main component ───────────────────────────────
 
-export function TextChannelView({ channelId, channelName, hideHeader }: TextChannelViewProps) {
+export function TextChannelView({ channelId, channelName, channel, hideHeader }: TextChannelViewProps) {
   const { session } = useAuth();
   const {
     client,
@@ -347,6 +351,78 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
   }, []);
 
   // ── Send ──
+
+  // ── Drag & drop into the input container ──
+  // Drag counter trick: dragenter fires for every nested child, so a plain
+  // boolean would flicker. Keep a counter, only hide when it hits zero.
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  const dragHasFiles = (e: React.DragEvent): boolean => {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    return Array.from(types).includes("Files");
+  };
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragCounter.current += 1;
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return;
+    e.preventDefault();
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!dragHasFiles(e)) return;
+      e.preventDefault();
+      dragCounter.current = 0;
+      setIsDragOver(false);
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    },
+    [addFiles],
+  );
+
+  // ── Clipboard paste (Ctrl+V) ──
+  // Image-from-screenshot lands as a single file with empty `name` field.
+  // Synthesize one so the server has a sensible filename to round-trip.
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      const files: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.kind !== "file") continue;
+        const f = item.getAsFile();
+        if (!f) continue;
+        if (!f.name || f.name === "image.png") {
+          // Most browsers name pasted images "image.png" — give each a unique
+          // timestamp so they don't collide in the previews list.
+          const ext = (f.type.split("/")[1] || "bin").replace("+xml", "");
+          files.push(new File([f], `pasted-${Date.now()}.${ext}`, { type: f.type }));
+        } else {
+          files.push(f);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault(); // don't also paste binary garbage as text
+        addFiles(files);
+      }
+    },
+    [addFiles],
+  );
 
   const handleSend = useCallback(async () => {
     const text = input;
@@ -477,10 +553,20 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
   const isConnecting = connectionState === "connecting" || connectionState === "identifying" || connectionState === "resuming";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       {!hideHeader && (
         <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-          <Hash className="h-4 w-4 text-muted-foreground" />
+          {channel ? (
+            <ChannelIcon channel={channel} />
+          ) : (
+            <Hash className="h-4 w-4 text-muted-foreground" />
+          )}
           <span className="text-sm font-medium">{channelName}</span>
           {!isConnected && (
             <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -581,7 +667,10 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
 
       {/* ── Input ── */}
       <div className="px-4 pb-4">
-        <div data-input-container className="flex flex-col rounded-xl border border-border/50 bg-muted/20 transition-colors focus-within:border-border">
+        <div
+          data-input-container
+          className="flex flex-col rounded-xl border border-border/50 bg-muted/20 transition-colors focus-within:border-border"
+        >
           {/* Drag handle to resize */}
           <div
             className="group flex cursor-row-resize items-center justify-center pt-1"
@@ -646,6 +735,7 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
                 autoGrow(e.currentTarget);
               }}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder={`Type something... # ${channelName}`}
               disabled={!isConnected}
               rows={1}
@@ -672,7 +762,6 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
                 type="file"
                 multiple
                 className="hidden"
-                accept="image/*,video/*,audio/*,.pdf,.txt,.zip"
                 onChange={(e) => {
                   if (e.target.files) addFiles(e.target.files);
                   e.target.value = ""; // allow re-selecting same file
@@ -742,6 +831,22 @@ export function TextChannelView({ channelId, channelName, hideHeader }: TextChan
           </div>
         </div>
       </div>
+
+      {/* Workspace-wide drag overlay: covers the whole channel area. Pointer
+          events disabled so dragenter/over/leave/drop keep flowing to the
+          parent — otherwise the overlay would intercept the leave/drop and
+          the counter would never settle. */}
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-primary/70 bg-background/80 backdrop-blur-sm">
+          <UploadCloudIcon className="h-12 w-12 text-primary" />
+          <span className="text-base font-medium text-primary">
+            Drop to attach
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Files upload to #{channelName}
+          </span>
+        </div>
+      )}
 
       {/* External link confirmation */}
       <Dialog open={!!externalLink} onOpenChange={(open: boolean) => !open && setExternalLink(null)}>
