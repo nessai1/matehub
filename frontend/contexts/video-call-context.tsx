@@ -38,6 +38,15 @@ interface VideoCallContextValue {
   unpublishScreen: () => Promise<void>;
   error: string | null;
 
+  // ── Device picker ──
+  audioInputs: MediaDeviceInfo[];
+  videoInputs: MediaDeviceInfo[];
+  currentMicDeviceId: string | null;
+  currentCameraDeviceId: string | null;
+  setMicDevice: (deviceId: string) => Promise<void>;
+  setCameraDevice: (deviceId: string) => Promise<void>;
+  refreshDevices: () => Promise<void>;
+
   /** Join a voice channel by its ID. Leaves the current call first if any. */
   joinVoice: (channelId: string) => Promise<void>;
   /** Leave the current call (noop if not in one). */
@@ -149,6 +158,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       publishScreen: vc.publishScreen,
       unpublishScreen: vc.unpublishScreen,
       error: vc.error,
+      audioInputs: vc.audioInputs,
+      videoInputs: vc.videoInputs,
+      currentMicDeviceId: vc.currentMicDeviceId,
+      currentCameraDeviceId: vc.currentCameraDeviceId,
+      setMicDevice: vc.setMicDevice,
+      setCameraDevice: vc.setCameraDevice,
+      refreshDevices: vc.refreshDevices,
       joinVoice,
       leaveVoice,
     }),

@@ -1,0 +1,48 @@
+# MateHub Prometheus scrape config.
+#
+# Dev assumption: matehub services run on the host via `cargo run`, each on
+# its default port. From inside the prometheus container they're reachable
+# at host.docker.internal (set up via extra_hosts in compose).
+#
+# Prod (k8s) overrides this file with service-discovery via kubernetes_sd —
+# see deploy/observability/k8s/prometheus.yaml for the cluster-mode variant.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    cluster: matehub-dev
+
+scrape_configs:
+  # Prometheus scrapes itself so we can graph Prometheus's own load.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: matehub-general
+    static_configs:
+      - targets: ["host.docker.internal:3001"]
+        labels:
+          service: general
+
+  - job_name: matehub-hub
+    static_configs:
+      - targets: ["host.docker.internal:3002"]
+        labels:
+          service: hub
+
+  - job_name: matehub-chat
+    static_configs:
+      - targets: ["host.docker.internal:3003"]
+        labels:
+          service: chat
+
+  - job_name: matehub-video
+    static_configs:
+      - targets: ["host.docker.internal:4000"]
+        labels:
+          service: video
+
+  # Transcoder doesn't expose /metrics yet (no axum server). Left as TODO —
+  # add a standalone metrics-exporter-prometheus on a dedicated port when
+  # the transcoder needs observability beyond logs.

@@ -6,6 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMembers, usePresence } from "@/hooks/use-members";
 import { usePermissions, P } from "@/hooks/use-permissions";
+import { useAddTeammates } from "@/contexts/add-teammates-context";
 import { MemberCard } from "./member-card";
 import type { Member, MemberGroup } from "@/hooks/use-members";
 
@@ -13,6 +14,7 @@ export function MemberSidebar() {
   usePresence();
   const { members, loading, refetch } = useMembers();
   const { has } = usePermissions();
+  const { open: openAddTeammates } = useAddTeammates();
   const canInvite = has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS);
 
   const online = members.filter((m) => m.is_online);
@@ -86,6 +88,7 @@ export function MemberSidebar() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={openAddTeammates}
             className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-foreground"
           >
             <UserPlusIcon className="h-3.5 w-3.5" />

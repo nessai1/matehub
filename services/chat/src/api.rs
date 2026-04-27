@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 
+use crate::access::{self, Action};
 use crate::auth::AuthUser;
 use crate::data_service::DataService;
 use crate::fanout::FanoutService;
@@ -22,6 +23,10 @@ pub struct AppState {
     pub redis: Option<RedisPool>,
     pub s3: Option<Arc<matehub_common::storage::S3Storage>>,
     pub sessions: crate::session::SessionStore,
+    /// Hub-service Postgres pool, shared read-only by access::check. Optional
+    /// because in test/integration contexts the URL may not be configured;
+    /// when None, access::check fails closed (denies everything).
+    pub pg: Option<sqlx::PgPool>,
 }
 
 pub fn routes(state: AppState) -> Router {
@@ -33,6 +38,7 @@ pub fn routes(state: AppState) -> Router {
         .route("/v1/read-states", get(get_read_states))
         .route("/v1/sync", post(sync))
         .merge(crate::attachments::routes())
+        .merge(crate::dm_calls::routes())
         .route("/health", get(|| async { "ok" }))
         .with_state(state)
 }
@@ -48,6 +54,10 @@ async fn send_message(
     let hub_id = auth.0.hub_id;
     // Scylla/Redis keys still store user_id as text — stringify once at the boundary.
     let user_id = auth.0.sub.to_string();
+
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     if body.content.trim().is_empty() && body.attachments.as_ref().is_none_or(|a| a.is_empty()) {
         return Err(StatusCode::BAD_REQUEST);
@@ -172,6 +182,10 @@ async fn edit_message(
 ) -> Result<StatusCode, StatusCode> {
     let hub_id = auth.0.hub_id;
 
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let content = sanitize_content(body.content.trim());
 
     if content.is_empty() {
@@ -213,6 +227,11 @@ async fn delete_message(
     auth: AuthUser,
 ) -> Result<StatusCode, StatusCode> {
     let hub_id = auth.0.hub_id;
+
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let bucket = snowflake::bucket_from_id(message_id);
 
     state.data
@@ -239,6 +258,11 @@ async fn typing(
     auth: AuthUser,
 ) -> StatusCode {
     let hub_id = auth.0.hub_id;
+
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
+        return StatusCode::FORBIDDEN;
+    }
+
     let user_id = auth.0.sub.to_string();
     state.fanout.publish_typing(hub_id, channel_id, &user_id).await;
     StatusCode::NO_CONTENT
@@ -259,6 +283,11 @@ async fn mark_read(
     Json(body): Json<AckRequest>,
 ) -> StatusCode {
     let hub_id = auth.0.hub_id;
+
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Read).await {
+        return StatusCode::FORBIDDEN;
+    }
+
     let user_id = auth.0.sub.to_string();
     if let Some(mut redis) = state.redis.clone() {
         read_state::mark_read(
@@ -292,6 +321,11 @@ async fn get_history(
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<Message>>, StatusCode> {
     let hub_id = auth.0.hub_id;
+
+    if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Read).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let limit = query.limit.clamp(1, 100);
 
     let messages = state.data
@@ -386,6 +420,14 @@ async fn sync(
 
     let mut channels = Vec::with_capacity(body.channels.len());
     for ch in body.channels {
+        // Per-channel ACL check. A user syncing across many channels at once
+        // can include some they no longer have access to (e.g., kicked from a
+        // text channel after their tab went idle) — silently skip those
+        // rather than 403-ing the whole batch.
+        if !access::check(&state, hub_id, ch.channel_id, auth.0.sub, Action::Read).await {
+            continue;
+        }
+
         let (messages, limited) = state
             .data
             .read_since(hub_id, ch.channel_id, ch.after)

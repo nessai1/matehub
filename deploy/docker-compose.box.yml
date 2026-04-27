@@ -1,0 +1,295 @@
+# MateHub -- boxed deployment for a single VPS.
+#
+# One-host setup: nothing here is meant for horizontal scale. For prod
+# we run on k8s (deploy/helm/). This file is what a friend with a 4 GB
+# VPS uses to bring up an MVP under a single domain.
+#
+# Usage:
+#   1. cp .env.example .env  &&  fill in DOMAIN/PUBLIC_IP/ACME_EMAIL
+#   2. ./scripts/box-deploy.sh   (generates secrets if blank, then up -d)
+#
+# Topology:
+#   Caddy (80/443) ── HTTPS terminates, reverse-proxies /api/* → services,
+#                     serves the Vite SPA from a shared volume
+#   video :4001/udp ── exposed directly on the host for SFU media
+#   coturn ── network_mode: host (UDP relay needs a wide port range)
+
+name: matehub-box
+
+networks:
+  matehub:
+    driver: bridge
+
+volumes:
+  pg-data:
+  scylla-data:
+  redis-data:
+  nats-data:
+  minio-data:
+  caddy-data:
+  caddy-config:
+  frontend-dist:
+
+services:
+  # ── Infrastructure ────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: matehub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: matehub
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matehub"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [matehub]
+
+  scylla:
+    image: scylladb/scylla:6.2
+    restart: unless-stopped
+    # Tuned for a 4 GB host: a single shard, 768 MB heap, dev mode disables
+    # the production-grade IO scheduler so we don't fight Postgres for IOPS.
+    command: >
+      --smp 1
+      --memory 768M
+      --overprovisioned 1
+      --developer-mode 1
+    volumes:
+      - scylla-data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'select now() from system.local' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    networks: [matehub]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [matehub]
+
+  nats:
+    image: nats:2-alpine
+    restart: unless-stopped
+    command: ["--jetstream", "--store_dir=/data"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [matehub]
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [matehub]
+
+  # One-shot: create buckets and make them publicly readable so the SPA can
+  # fetch avatars / inline attachments by direct URL (current frontend
+  # behaviour — the authed `/stream` proxy is implemented but not yet used).
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY} ${S3_SECRET_KEY} &&
+      mc mb --ignore-existing local/hub-assets &&
+      mc mb --ignore-existing local/chat-media &&
+      mc anonymous set download local/hub-assets &&
+      mc anonymous set download local/chat-media &&
+      echo 'minio buckets ready'
+      "
+    restart: "no"
+    networks: [matehub]
+
+  # ── Application services ──────────────────────────────────────────
+  hub:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.rust
+      target: hub
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      PORT: "3002"
+      DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      DEV_MODE: "false"  # first browser hits /setup wizard instead of seed
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_HUB_ASSETS: hub-assets
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    networks: [matehub]
+
+  chat:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.rust
+      target: chat
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      CHAT_PORT: "3003"
+      SCYLLA_URL: scylla:9042
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      HUB_DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
+      JWT_SECRET: ${JWT_SECRET}
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_CHAT_MEDIA: chat-media
+    depends_on:
+      scylla:   { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+      nats:     { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    networks: [matehub]
+
+  video:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.rust
+      target: video
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      HTTP_PORT: "4000"
+      UDP_PORT: "4001"
+      NATS_URL: nats://nats:4222
+      JWT_SECRET: ${JWT_SECRET}
+      # Comma-separated list of public IPs str0m advertises as ICE host
+      # candidates. Without this the SFU offers docker-internal addresses
+      # and clients can never connect.
+      PUBLIC_IP: ${PUBLIC_IP}
+    ports:
+      # SFU media. Must be reachable from the open internet — Caddy can't
+      # proxy UDP, so this port is mapped straight to the host.
+      - "4001:4001/udp"
+    depends_on:
+      nats: { condition: service_healthy }
+    networks: [matehub]
+
+  transcoder:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.rust
+      target: transcoder
+    restart: unless-stopped
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      NATS_URL: nats://nats:4222
+      S3_ENDPOINT: http://minio:9000
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      S3_BUCKET_CHAT_MEDIA: chat-media
+    depends_on:
+      nats: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    networks: [matehub]
+
+  # ── TURN ──────────────────────────────────────────────────────────
+  # network_mode: host because TURN relay needs a wide UDP port range
+  # (49152-65535 by default). Mapping that through docker-proxy is slow
+  # and memory-hungry — host networking is the standard workaround.
+  # The friend's firewall must allow:
+  #   3478/udp, 3478/tcp     — STUN + TURN signalling
+  #   49152-65535/udp        — relay (configurable, see --max-port)
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      -n
+      --realm=${DOMAIN}
+      --listening-port=3478
+      --min-port=49152
+      --max-port=65535
+      --external-ip=${PUBLIC_IP}
+      --fingerprint
+      --lt-cred-mech
+      --user=${TURN_USERNAME}:${TURN_PASSWORD}
+      --no-tls
+      --no-dtls
+      --no-cli
+      --log-file=stdout
+
+  # ── Frontend bundle ───────────────────────────────────────────────
+  # One-shot: builds the SPA with the right VITE_* baked in, copies the
+  # dist into a shared volume, exits. Caddy serves the volume.
+  frontend-build:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.frontend
+      args:
+        VITE_HUB_API_URL: https://${DOMAIN}/api/hub
+        VITE_CHAT_API_URL: https://${DOMAIN}/api/chat
+        VITE_VIDEO_SERVER_URL: https://${DOMAIN}/api/video
+        VITE_TURN_URL: turn:${DOMAIN}:3478?transport=udp
+        VITE_TURN_USERNAME: ${TURN_USERNAME}
+        VITE_TURN_CREDENTIAL: ${TURN_PASSWORD}
+        VITE_DEV_MODE: "false"
+    volumes:
+      - frontend-dist:/srv
+    restart: "no"
+
+  # ── Edge ──────────────────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - frontend-dist:/srv:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      frontend-build: { condition: service_completed_successfully }
+      hub:   { condition: service_started }
+      chat:  { condition: service_started }
+      video: { condition: service_started }
+    networks: [matehub]

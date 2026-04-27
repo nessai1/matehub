@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-admin
+  namespace: observability
+type: Opaque
+stringData:
+  # Change before first deploy. Or swap to external-secrets pulling from YC
+  # Lockbox / Vault. The `admin` default is a footgun in prod.
+  admin-user: admin
+  admin-password: CHANGE_ME_BEFORE_DEPLOY
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: observability
+data:
+  matehub.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.observability.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+        jsonData:
+          timeInterval: 15s
+
+      - name: Elasticsearch
+        type: elasticsearch
+        access: proxy
+        url: http://elasticsearch.observability.svc.cluster.local:9200
+        database: "matehub-*"
+        editable: true
+        jsonData:
+          esVersion: "8.15.3"
+          timeField: "@timestamp"
+          logMessageField: "message"
+          logLevelField: "level"
+          maxConcurrentShardRequests: 5
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: observability
+data:
+  matehub.yaml: |
+    apiVersion: 1
+    providers:
+      - name: matehub
+        orgId: 1
+        folder: MateHub
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        allowUiUpdates: true
+        options:
+          path: /var/lib/grafana/dashboards
+          foldersFromFilesStructure: true
+---
+# Dashboard JSONs ride in a separate ConfigMap, populated from the local
+# `grafana/dashboards/*.json` via `kubectl create configmap --from-file`.
+# This one starts empty; task #20 fills it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: observability
+data: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.3.0
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          ports:
+            - containerPort: 3000
+              name: http
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: observability
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: yc-network-ssd
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: observability
+spec:
+  type: ClusterIP
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: http
+      name: http

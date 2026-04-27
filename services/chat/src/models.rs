@@ -83,4 +83,12 @@ pub mod events {
     pub const ATTACHMENT_UPDATED: &str = "ATTACHMENT_UPDATED";
     pub const TYPING_START: &str = "TYPING_START";
     pub const PRESENCE_UPDATE: &str = "PRESENCE_UPDATE";
+    /// Caller is ringing the recipient(s) of a DM channel.
+    pub const DM_CALL_INVITE: &str = "DM_CALL_INVITE";
+    /// Recipient explicitly rejected the call. Sent back to the inviter.
+    pub const DM_CALL_DECLINE: &str = "DM_CALL_DECLINE";
+    /// Inviter cancelled before recipient picked up. Closes ringing UI.
+    pub const DM_CALL_CANCEL: &str = "DM_CALL_CANCEL";
+    /// Either side hung up after the call connected. Carries duration_secs.
+    pub const DM_CALL_ENDED: &str = "DM_CALL_ENDED";
 }

@@ -118,7 +118,63 @@ function formatTime(messageId: string): string {
   return snowflakeToDate(messageId).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   });
+}
+
+// ── System message row ───────────────────────────
+//
+// Used for chat-service system events like DM call lifecycle. Backend writes
+// the content as a template (e.g. "$1 didn't answer the call") with the
+// referenced user_ids in `mentions`; we splice display names in here so we
+// don't need a hub-side lookup at write time.
+
+function renderSystemContent(
+  content: string,
+  mentions: string[],
+  memberMap: Map<string, Member>,
+): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  const re = /\$(\d+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+    const idx = parseInt(match[1], 10) - 1;
+    const userId = mentions[idx];
+    const member = userId ? memberMap.get(userId) : undefined;
+    parts.push(
+      <span key={`m-${match.index}`} className="font-medium text-foreground">
+        {member?.display_name ?? member?.username ?? userId ?? "Unknown"}
+      </span>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+  return parts;
+}
+
+function SystemMessageRow({
+  message,
+  memberMap,
+}: {
+  message: ChatMessageT;
+  memberMap: Map<string, Member>;
+}) {
+  return (
+    <div
+      role="status"
+      className="my-2 flex items-center gap-3 px-1 text-[11px] italic text-muted-foreground"
+    >
+      <div className="h-px flex-1 bg-border/40" />
+      <span className="text-center">
+        {renderSystemContent(message.content, message.mentions ?? [], memberMap)}
+      </span>
+      <div className="h-px flex-1 bg-border/40" />
+    </div>
+  );
 }
 
 // ── Message bubble ───────────────────────────────
@@ -640,20 +696,29 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                 (!prev || BigInt(prev.message_id) <= BigInt(dividerPos));
               // On a day boundary we reset grouping so the first message of the
               // day always shows avatar + name, never the compact variant.
-              // Same on an unread boundary.
-              const grouped = !newDay && !crossedUnread && isGroupedWith(prev, msg);
+              // Same on an unread boundary, and on a system-message boundary
+              // (otherwise an Alice-Alice pair with a "Call ended" line in
+              // between would still group, which reads weird).
+              const prevIsSystem = prev?.author_id === "system";
+              const grouped =
+                !newDay && !crossedUnread && !prevIsSystem && isGroupedWith(prev, msg);
+              const isSystem = msg.author_id === "system";
               return (
                 <Fragment key={msg.client_id ?? msg.message_id}>
                   {newDay && <DateSeparator label={formatDateSeparator(msgDate)} />}
                   {crossedUnread && !newDay && <UnreadDivider />}
-                  <ChatMessage
-                    message={msg}
-                    member={memberMap.get(msg.author_id)}
-                    isGrouped={grouped}
-                    allGroups={allGroups}
-                    onGroupsChanged={refetch}
-                    onRetry={retryMessage}
-                  />
+                  {isSystem ? (
+                    <SystemMessageRow message={msg} memberMap={memberMap} />
+                  ) : (
+                    <ChatMessage
+                      message={msg}
+                      member={memberMap.get(msg.author_id)}
+                      isGrouped={grouped}
+                      allGroups={allGroups}
+                      onGroupsChanged={refetch}
+                      onRetry={retryMessage}
+                    />
+                  )}
                 </Fragment>
               );
             })}

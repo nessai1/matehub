@@ -9,11 +9,10 @@ use matehub_common::snowflake;
 use sqlx::PgPool;
 
 use crate::auth::AuthUser;
-use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::TempUser;
 use crate::models::temp_user::{CreateTempUser, TempUserLink};
-use crate::models::permission::bits;
+use matehub_common::perms::{bits, resolve_user_perms};
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()

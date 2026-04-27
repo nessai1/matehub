@@ -1,0 +1,32 @@
+# Grafana datasource provisioning — loaded on startup so every restart boots
+# with the same datasources configured. Marked `editable: true` so operators
+# can tweak URLs / credentials at runtime without editing files.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: Elasticsearch
+    type: elasticsearch
+    access: proxy
+    # Wildcard index pattern matches every per-service per-day index created
+    # by Filebeat (matehub-chat-2026.04.22, matehub-video-2026.04.22, ...).
+    # Grafana's "Explore" + Discover-like dashboards drill into them.
+    url: http://elasticsearch:9200
+    database: "matehub-*"
+    editable: true
+    jsonData:
+      esVersion: "8.15.3"
+      # The JSON log formatter emits ISO-8601 timestamps at top level.
+      timeField: "@timestamp"
+      logMessageField: "message"
+      logLevelField: "level"
+      maxConcurrentShardRequests: 5

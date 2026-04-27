@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
 import { useVideoCall } from "@/contexts/video-call-context";
+import { useIncomingCall } from "@/contexts/incoming-call-context";
+import { useChannels } from "@/hooks/use-channels";
 import { useMembers } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
@@ -42,6 +44,8 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     leaveVoice,
     client,
   } = useVideoCall();
+  const { outgoingCallChannelId } = useIncomingCall();
+  const { channels } = useChannels();
 
   const [layout, setLayout] = useState<LayoutMode>("grid");
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -117,6 +121,36 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
       out.push(t);
     }
 
+    // Outgoing-DM-call placeholder. Inviter only — until the peer's real
+    // participant lands, fake a tile in their slot so the workspace doesn't
+    // look empty + we can pulse it as the "we're ringing" affordance.
+    if (
+      outgoingCallChannelId &&
+      outgoingCallChannelId === channelId &&
+      activeVoiceChannelId === channelId
+    ) {
+      const dmCh = channels.find((c) => c.id === channelId);
+      const peerId = dmCh?.participants?.find((id) => id !== localUserId);
+      const peerAlreadyJoined =
+        peerId && participants.some((p) => p.userId === peerId);
+      if (peerId && !peerAlreadyJoined) {
+        const info = memberLookup[peerId];
+        out.push({
+          kind: "camera",
+          id: `ringing-${peerId}`,
+          userId: peerId,
+          displayName: info?.displayName ?? peerId,
+          avatarUrl: info?.avatarUrl ?? null,
+          audioTrack: null,
+          videoTrack: null,
+          isMicMuted: true,
+          isSpeaking: false,
+          isLocal: false,
+          ringing: true,
+        });
+      }
+    }
+
     // Screen shares come after cameras — append at the tail.
     if (localScreenVideoTrack) {
       const info = memberLookup[localUserId];
@@ -158,6 +192,10 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     localScreenVideoTrack,
     isCamEnabled,
     isMicEnabled,
+    outgoingCallChannelId,
+    channelId,
+    activeVoiceChannelId,
+    channels,
   ]);
 
   // Speaker-priority: active speakers hoist to the front so the first page

@@ -15,6 +15,10 @@ pub struct Channel {
     pub icon_id: Option<String>,
     pub icon_color: Option<String>,
     pub icon_image_url: Option<String>,
+    /// Stable hash "min_uid:max_uid" — only set for type='dm'. Hidden from JSON
+    /// when null so non-DM channel responses look the same as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dm_pair_key: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

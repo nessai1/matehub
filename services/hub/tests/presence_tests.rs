@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use tokio_tungstenite::connect_async;
 
-const HUB_ID: &str = "def00000-0000-0000-0000-000000000001";
+const HUB_ID: &str = "1";
 
 #[tokio::test]
 async fn presence_ws_connects_with_jwt() {

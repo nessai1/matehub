@@ -61,6 +61,10 @@ async fn upload_attachment(
 ) -> Result<Json<Attachment>, StatusCode> {
     let hub_id = auth.0.hub_id;
 
+    if !crate::access::check(&state, hub_id, channel_id, auth.0.sub, crate::access::Action::Write).await {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let field = multipart
         .next_field()
         .await
@@ -227,6 +231,12 @@ async fn stream_attachment(
             row_hub = row.hub_id,
             "cross-hub attachment access denied"
         );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Plus per-channel ACL: an attachment in someone else's DM is not yours
+    // to fetch even if you happen to know the snowflake id.
+    if !crate::access::check(&state, row.hub_id, row.channel_id, auth.0.sub, crate::access::Action::Read).await {
         return Err(StatusCode::FORBIDDEN);
     }
 

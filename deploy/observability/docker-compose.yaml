@@ -1,0 +1,114 @@
+## MateHub — observability stack (ELK + Prometheus + Grafana)
+##
+## Usage (from repo root):
+##   docker compose -f deploy/docker-compose.dev.yml \
+##                  -f deploy/observability/docker-compose.yaml up -d
+##
+## Access after startup:
+##   - Kibana:     http://localhost:5601
+##   - Grafana:    http://localhost:3000  (admin / admin, prompted to change)
+##   - Prometheus: http://localhost:9090
+##   - Elasticsearch (direct API): http://localhost:9200
+##
+## Log flow: service stdout (LOG_FORMAT=json) → Docker json-file driver →
+##   Filebeat tails /var/lib/docker/containers/*.log → ships to Elasticsearch →
+##   Kibana queries. All matehub services attach to the `matehub_observability`
+##   network so Prometheus can scrape them by container name.
+
+name: matehub-observability
+
+networks:
+  default:
+    name: matehub_observability
+    driver: bridge
+
+volumes:
+  es-data:
+  grafana-data:
+  prometheus-data:
+
+services:
+  # ── Elasticsearch ─────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      # Dev: single node with 1GB heap is enough for tens of millions of logs.
+      # Prod will use the k8s/ StatefulSet with 3 nodes + proper resource limits.
+    ports:
+      - "9200:9200"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -E 'yellow|green'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Kibana ────────────────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_REPORTING_ROLES_ENABLED=false
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── Filebeat ──────────────────────────────────────
+  # Tails every container's docker-log file and ships to ES. Our Rust services
+  # emit JSON with LOG_FORMAT=json; the filebeat config decodes it so span
+  # fields (call_id, hub_id, request_id) become first-class ES fields.
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── Prometheus ────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle          # allows `curl -X POST /-/reload` to hot-reload config
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # extra_hosts: lets containerised Prometheus reach services running on the
+    # host (via `host.docker.internal:PORT` in scrape_configs). Needed when
+    # the matehub services run via `cargo run` on the host, not in docker.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Grafana ───────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Provisioning auto-loads datasources + dashboards on startup.
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - elasticsearch

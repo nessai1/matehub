@@ -299,6 +299,38 @@ export class ChatClient {
         });
         break;
 
+      case "DM_CALL_INVITE":
+        this.emit({
+          type: "dm.call.invite",
+          data: data as { from_user_id: string; channel_id: string },
+        });
+        break;
+
+      case "DM_CALL_DECLINE":
+        this.emit({
+          type: "dm.call.decline",
+          data: data as { from_user_id: string; channel_id: string },
+        });
+        break;
+
+      case "DM_CALL_CANCEL":
+        this.emit({
+          type: "dm.call.cancel",
+          data: data as { from_user_id: string; channel_id: string },
+        });
+        break;
+
+      case "DM_CALL_ENDED":
+        this.emit({
+          type: "dm.call.ended",
+          data: data as {
+            from_user_id: string;
+            channel_id: string;
+            duration_secs: number;
+          },
+        });
+        break;
+
       default:
         this.log("unhandled dispatch", eventType);
     }

@@ -1,0 +1,120 @@
+# MateHub Rust services -- single multi-target Dockerfile.
+#
+# One builder stage compiles every service binary in a single `cargo build`
+# (lets BuildKit share the heaviest layer across runtime images). Each
+# service maps to its own final stage that copies just the binary it needs.
+#
+# Usage from docker-compose:
+#   build:
+#     context: ../..
+#     dockerfile: deploy/docker/Dockerfile.rust
+#     target: hub      # or: chat, video, transcoder
+#
+# str0m needs OpenSSL at runtime, so we stay on debian-slim, not alpine.
+
+# ── Builder ───────────────────────────────────────────────────────────
+FROM rust:1.87-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends pkg-config libssl-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Workspace manifests + shared crate first so the dep layer caches.
+COPY Cargo.toml Cargo.lock ./
+COPY packages/common-rust packages/common-rust
+COPY services/hub/Cargo.toml services/hub/Cargo.toml
+COPY services/chat/Cargo.toml services/chat/Cargo.toml
+COPY services/video/Cargo.toml services/video/Cargo.toml
+COPY services/general/Cargo.toml services/general/Cargo.toml
+COPY services/transcoder/Cargo.toml services/transcoder/Cargo.toml
+
+# Stub mains so dep-only build succeeds.
+RUN mkdir -p services/hub/src services/chat/src services/video/src \
+             services/general/src services/transcoder/src && \
+    for s in hub chat video general transcoder; do \
+        echo "fn main() {}" > services/$s/src/main.rs; \
+    done
+
+RUN cargo build --release \
+    -p matehub-hub \
+    -p matehub-chat \
+    -p matehub-video \
+    -p matehub-transcoder \
+    || true
+
+# Real sources.
+COPY services/hub/src services/hub/src
+COPY services/hub/migrations services/hub/migrations
+COPY services/chat/src services/chat/src
+COPY services/video/src services/video/src
+COPY services/transcoder/src services/transcoder/src
+
+# Touch mains so cargo rebuilds the leaves, not the cached deps.
+RUN for s in hub chat video transcoder; do \
+        touch services/$s/src/main.rs; \
+    done && \
+    cargo build --release \
+        -p matehub-hub \
+        -p matehub-chat \
+        -p matehub-video \
+        -p matehub-transcoder
+
+# ── Common runtime base (debian-slim + libssl) ───────────────────────
+FROM debian:bookworm-slim AS runtime-base
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV RUST_LOG=info
+
+# ── hub ──────────────────────────────────────────────────────────────
+FROM runtime-base AS hub
+
+COPY --from=builder /app/target/release/matehub-hub /usr/local/bin/matehub-hub
+
+EXPOSE 3002
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:3002/health || exit 1
+
+ENTRYPOINT ["matehub-hub"]
+
+# ── chat ─────────────────────────────────────────────────────────────
+FROM runtime-base AS chat
+
+COPY --from=builder /app/target/release/matehub-chat /usr/local/bin/matehub-chat
+
+EXPOSE 3003
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:3003/health || exit 1
+
+ENTRYPOINT ["matehub-chat"]
+
+# ── video ────────────────────────────────────────────────────────────
+FROM runtime-base AS video
+
+COPY --from=builder /app/target/release/matehub-video /usr/local/bin/matehub-video
+
+# 4000 = HTTP/WS signaling, 4001/udp = SFU media (str0m).
+EXPOSE 4000/tcp
+EXPOSE 4001/udp
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:4000/health || exit 1
+
+ENTRYPOINT ["matehub-video"]
+
+# ── transcoder (NATS worker, ffmpeg in PATH) ─────────────────────────
+FROM runtime-base AS transcoder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/matehub-transcoder /usr/local/bin/matehub-transcoder
+
+ENTRYPOINT ["matehub-transcoder"]

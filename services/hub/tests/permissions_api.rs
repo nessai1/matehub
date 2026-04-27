@@ -3,8 +3,8 @@ mod common;
 use reqwest::Client;
 use serde_json::{json, Value};
 
-const HUB_ID: &str = "def00000-0000-0000-0000-000000000001";
-const ALICE_ID: &str = "def00000-0000-0000-0000-000000000101";
+const HUB_ID: &str = "1";
+const ALICE_ID: &str = "1001";
 
 async fn setup() -> (String, Client, String, String) {
     let base = common::spawn_app().await;
@@ -304,7 +304,7 @@ async fn cannot_create_group_with_bits_you_dont_have() {
 async fn non_admin_cannot_kick() {
     let (base, client, _, bob) = setup().await;
 
-    let charlie_id = "def00000-0000-0000-0000-000000000103";
+    let charlie_id = "1003";
     let res = client
         .delete(format!("{base}/v1/hubs/{HUB_ID}/members/{charlie_id}"))
         .header("Authorization", auth(&bob))

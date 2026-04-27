@@ -1,0 +1,65 @@
+# Filebeat autodiscover — attaches to every running Docker container. We
+# narrow to matehub-labelled ones (see services' docker-compose for the label
+# scheme) so we don't ingest noise from the infra containers (redis, scylla,
+# etc). For those the tracing is already sufficient; we only care about the
+# 5 matehub services emitting JSON logs.
+#
+# JSON decoding: matehub services run with LOG_FORMAT=json, so each line of
+# container stdout is already a JSON object with timestamp/level/message plus
+# span fields (call_id, hub_id, request_id, ...). We ask filebeat to parse
+# the `message` field (which docker wraps the app's stdout in) and hoist the
+# decoded object to the top level — that way Kibana sees `call_id` as a
+# first-class field without a runtime pipeline.
+
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      # Only pick up containers explicitly labelled as matehub services.
+      # Keeps the index clean and easy to reason about.
+      templates:
+        - condition:
+            contains:
+              docker.container.labels.matehub.service: ""
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: true
+                # Pull labels into top-level fields for easy aggregation.
+                - add_fields:
+                    target: ""
+                    fields:
+                      service: ${data.docker.container.labels.matehub.service}
+
+# Fallback for locally-run (host) services shipping to filebeat via UDP/TCP:
+# uncomment if needed. Default path is docker-only.
+# filebeat.inputs:
+#   - type: tcp
+#     host: "0.0.0.0:5044"
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  # One index per service per day. `service` comes from the add_fields
+  # processor above. Keeps retention policies simple (delete by index name).
+  index: "matehub-%{[service]:unknown}-%{+yyyy.MM.dd}"
+
+# Disable Elasticsearch's template that filebeat ships by default — it
+# targets index names like `filebeat-*` which we don't use.
+setup.template.enabled: false
+setup.ilm.enabled: false
+
+# Less noisy logs from filebeat itself.
+logging.level: info
+logging.to_files: false
+
+processors:
+  # Drop the big `agent.*` / `ecs.*` boilerplate Elastic adds. The parts we
+  # care about (timestamp, level, message, call_id, hub_id) are preserved.
+  - drop_fields:
+      fields: ["agent", "ecs", "input", "host.hostname", "log.offset", "log.file.path"]
+      ignore_missing: true

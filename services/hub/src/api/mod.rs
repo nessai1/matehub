@@ -1,24 +1,27 @@
 pub mod auth_api;
-pub mod auth_check;
 pub mod channels;
 pub mod dev;
+pub mod dms;
 pub mod groups;
 pub mod hubs;
+pub mod invitations;
 pub mod members;
 pub mod permissions;
 pub mod presence_ws;
 pub mod profile;
+pub mod setup;
 pub mod sso;
 pub mod temp_users;
 
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{Router, routing::get};
 use sqlx::PgPool;
 
 use tokio::sync::broadcast;
 
 use crate::api::channels::ChannelsState;
+use crate::api::hubs::HubsState;
 use crate::api::members::MembersState;
 use crate::api::presence_ws::{PresenceEvent, PresenceState};
 use crate::api::profile::ProfileState;
@@ -38,6 +41,10 @@ pub fn routes(
         pool: pool.clone(),
         storage: s3.clone(),
     };
+    let hubs_state = HubsState {
+        pool: pool.clone(),
+        storage: s3.clone(),
+    };
     let profile_state = ProfileState {
         storage: s3,
         pool: pool.clone(),
@@ -53,14 +60,18 @@ pub fn routes(
     };
 
     let mut app = Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .merge(setup::routes(pool.clone()))
+        .merge(invitations::routes(pool.clone()))
         .nest("/v1", auth_api::routes(pool.clone()))
-        .nest("/v1", hubs::routes(pool.clone()))
+        .nest("/v1", hubs::routes(hubs_state))
         .nest("/v1", channels::routes(channels_state))
         .nest("/v1", groups::routes(pool.clone()))
         .nest("/v1", permissions::routes(pool.clone()))
         .nest("/v1", temp_users::routes(pool.clone()))
         .nest("/v1", profile::routes(profile_state))
         .nest("/v1", members::routes(members_state))
+        .nest("/v1", dms::routes(pool.clone()))
         .merge(sso::routes(sso_state))
         .merge(presence_ws::routes(presence_state));
 

@@ -1,237 +1,224 @@
-import { FormEvent, useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+// Public landing for permanent invite links: /invite/{token}.
+//
+// On mount we hit the preview endpoint to validate the token and show
+// the inviter's preset username. The visitor fills in display name,
+// avatar and password; on submit the account is created and they're
+// dropped straight into the hub. Single-use — refreshing this page
+// after acceptance returns 410 Gone.
+
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 
-interface InviteData {
-  email: string;
+const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+
+interface InvitationPreview {
   hub_name: string;
-  hub_id: string;
-  hub_slug: string;
+  username: string;
+  email: string | null;
 }
 
-export default function RegisterPage() {
-  const params = useParams<{ invite: string }>();
+export default function InvitePage() {
+  const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
   const { login } = useAuth();
 
-  const [invite, setInvite] = useState<InviteData | null>(null);
+  const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const [username, setUsername] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
 
-  // Resolve invite
   useEffect(() => {
-    const resolve = async () => {
-      try {
-        const hubApi =
-          import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
-        const res = await fetch(`${hubApi}/v1/invite/${params.invite}`);
-        if (!res.ok) {
-          setError("Invite link is invalid or expired");
-          setLoading(false);
-          return;
-        }
-        const data: InviteData = await res.json();
-        setInvite(data);
-      } catch {
-        setError("Cannot reach server");
-      }
-      setLoading(false);
-    };
-    resolve();
-  }, [params.invite]);
+    if (!token) return;
+    fetch(`${HUB_API}/v1/invitations/${token}`)
+      .then(async (r) => {
+        if (r.status === 404) throw new Error("Ссылка не существует");
+        if (r.status === 410) throw new Error("Эта ссылка уже использована");
+        if (!r.ok) throw new Error(`Ошибка: ${r.status}`);
+        return r.json();
+      })
+      .then((data: InvitationPreview) => setPreview(data))
+      .catch((e: Error) => setLoadError(e.message))
+      .finally(() => setLoading(false));
+  }, [token]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setAvatarFile(file);
+    setAvatarPreview(file ? URL.createObjectURL(file) : "");
+  };
+
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!invite) return;
+    if (!token || !preview) return;
     setError("");
+    if (!displayName.trim()) {
+      setError("Введите имя");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Пароль слишком короткий (минимум 6 символов)");
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setError("Пароли не совпадают");
+      return;
+    }
     setSubmitting(true);
 
     try {
-      const hubApi =
-        import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
-      const res = await fetch(`${hubApi}/v1/auth/register`, {
+      const res = await fetch(`${HUB_API}/v1/invitations/${token}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          invite_code: params.invite,
-          email: invite.email,
-          username,
-          display_name: displayName,
+          display_name: displayName.trim(),
           password,
         }),
       });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        setError(body?.message || "Registration failed");
+      if (res.status === 410) {
+        setError("Эта ссылка уже использована");
         setSubmitting(false);
         return;
       }
-
+      if (res.status === 409) {
+        setError("Логин занят");
+        setSubmitting(false);
+        return;
+      }
+      if (!res.ok) {
+        setError(`Ошибка: ${res.status}`);
+        setSubmitting(false);
+        return;
+      }
       const data = await res.json();
+
+      if (avatarFile) {
+        const fd = new FormData();
+        fd.append("file", avatarFile);
+        await fetch(`${HUB_API}/v1/hubs/${data.hub_id}/profile/avatar`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${data.access_token}` },
+          body: fd,
+        }).catch(() => {});
+      }
+
       login({
         type: "permanent",
         userId: data.user_id,
         username: data.username,
         displayName: data.display_name,
-        hubId: invite.hub_id,
-        hubSlug: invite.hub_slug,
-        token: data.token,
+        hubId: data.hub_id,
+        hubSlug: data.hub_slug,
+        token: data.access_token,
+        refreshToken: data.refresh_token,
+        expiresIn: data.expires_in,
       });
-      navigate("/hub");
+      navigate("/hub", { replace: true });
     } catch {
-      setError("Cannot reach server");
+      setError("Не получилось связаться с сервером");
       setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center gap-4">
+      <div className="flex flex-col items-center gap-3 p-8">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-        <p className="font-mono text-xs text-zinc-500">
-          Verifying invite...
-        </p>
+        <p className="font-mono text-xs text-zinc-500">Проверяем ссылку...</p>
       </div>
     );
   }
 
-  if (!invite) {
+  if (loadError || !preview) {
     return (
-      <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/80 p-8 backdrop-blur-sm">
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-red-900/50 bg-red-950/30">
-            <svg
-              className="h-5 w-5 text-red-400"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </div>
-          <p className="text-sm text-zinc-300">{error}</p>
-        </div>
+      <div className="space-y-3 p-8 text-center">
+        <h1 className="text-lg font-semibold">{loadError || "Ссылка недействительна"}</h1>
+        <p className="text-sm text-muted-foreground">Попросите администратора создать новую.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center">
-      <div className="mb-8 text-center">
-        <p className="font-mono text-[10px] tracking-widest text-indigo-400/80 uppercase">
-          You have been invited to
+    <form onSubmit={submit} className="space-y-4 p-2">
+      <div className="space-y-1">
+        <h1 className="text-xl font-semibold">Присоединиться к {preview.hub_name}</h1>
+        <p className="text-sm text-muted-foreground">
+          Логин: <span className="font-mono">{preview.username}</span>
         </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-100">
-          {invite.hub_name}
-        </h1>
       </div>
 
-      <div className="w-full rounded-lg border border-zinc-800 bg-zinc-900/80 p-8 backdrop-blur-sm">
-        <p className="mb-6 text-center font-mono text-xs text-zinc-500">
-          Create your account to join
-        </p>
-
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-          {/* Email (from invite, read-only) */}
-          <div className="flex flex-col gap-2">
-            <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Email
-            </label>
-            <Input
-              type="email"
-              value={invite.email}
-              disabled
-              className="border-zinc-800 bg-zinc-950/30 font-mono text-sm text-zinc-500"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Username
-            </label>
-            <Input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="how others see you"
-              required
-              autoFocus
-              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-indigo-500/30"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Display name
-            </label>
-            <Input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="your real name (optional)"
-              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-indigo-500/30"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Password
-            </label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="--------"
-              required
-              minLength={8}
-              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-indigo-500/30"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded border border-red-900/30 bg-red-950/20 px-3 py-2 font-mono text-xs text-red-400">
-              {error}
-            </p>
+      <div className="flex items-center gap-4">
+        <Avatar className="h-16 w-16">
+          {avatarPreview ? (
+            <AvatarImage src={avatarPreview} />
+          ) : (
+            <AvatarFallback>{(displayName || preview.username).slice(0, 1).toUpperCase()}</AvatarFallback>
           )}
-
-          <Button
-            type="submit"
-            disabled={submitting}
-            className="mt-1 w-full bg-indigo-600 font-mono text-sm tracking-wide text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-            size="lg"
-          >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Creating account
-              </span>
-            ) : (
-              "Create account & join"
-            )}
-          </Button>
-        </form>
-
-        <div className="mt-6 border-t border-zinc-800 pt-4 text-center">
-          <p className="font-mono text-[10px] text-zinc-600">
-            Already have an account?{" "}
-            <a
-              href="/login"
-              className="text-zinc-400 underline underline-offset-2 hover:text-zinc-200 transition-colors"
-            >
-              Sign in
-            </a>
-          </p>
+        </Avatar>
+        <div>
+          <Label htmlFor="invite-avatar" className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+            Загрузить аватар
+          </Label>
+          <Input
+            id="invite-avatar"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarChange}
+          />
         </div>
       </div>
-    </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="display-name">Ваше имя</Label>
+        <Input
+          id="display-name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          required
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="invite-password">Пароль</Label>
+        <Input
+          id="invite-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete="new-password"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="invite-password-confirm">Повторите пароль</Label>
+        <Input
+          id="invite-password-confirm"
+          type="password"
+          value={passwordConfirm}
+          onChange={(e) => setPasswordConfirm(e.target.value)}
+          required
+          autoComplete="new-password"
+        />
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <Button type="submit" className="w-full" disabled={submitting}>
+        {submitting ? "Создаём..." : "Принять приглашение"}
+      </Button>
+    </form>
   );
 }

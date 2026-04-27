@@ -21,6 +21,11 @@ async-nats.workspace = true
 # Redis (presence, read state, rate limiting)
 redis.workspace = true
 
+# Postgres: chat reads channels.type + dm_participants + group permissions
+# straight from the hub-service database for the access::check enforcement
+# layer. Source of truth lives in hub; chat is a read-only consumer.
+sqlx.workspace = true
+
 # Auth
 jsonwebtoken.workspace = true
 
@@ -57,3 +62,6 @@ bytes.workspace = true
 pretty_assertions.workspace = true
 reqwest.workspace = true
 tokio-tungstenite.workspace = true
+# Tests need real ACL data (channels, dm_participants, group perms) — easiest
+# is to bring up the hub schema + dev seed via the hub crate itself.
+matehub-hub = { path = "../hub" }

@@ -10,7 +10,7 @@ async fn login_with_username() {
 
     let resp = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "alice", "password": "123123", "hub_id": "def00000-0000-0000-0000-000000000001"}))
+        .json(&json!({"login": "alice", "password": "123123", "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -18,7 +18,7 @@ async fn login_with_username() {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["username"], "alice");
-    assert!(body["token"].as_str().unwrap().len() > 20);
+    assert!(body["access_token"].as_str().unwrap().len() > 20);
     assert!(body["user_id"].is_string());
     assert_eq!(body["hub_slug"], "dev-hub");
 }
@@ -30,7 +30,7 @@ async fn login_with_email() {
 
     let resp = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "alice@matehub.dev", "password": "123123", "hub_id": "def00000-0000-0000-0000-000000000001"}))
+        .json(&json!({"login": "alice@matehub.dev", "password": "123123", "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -47,7 +47,7 @@ async fn login_wrong_password() {
 
     let resp = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "alice", "password": "wrong", "hub_id": "def00000-0000-0000-0000-000000000001"}))
+        .json(&json!({"login": "alice", "password": "wrong", "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -62,7 +62,7 @@ async fn login_nonexistent_user() {
 
     let resp = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "nobody", "password": "123123", "hub_id": "def00000-0000-0000-0000-000000000001"}))
+        .json(&json!({"login": "nobody", "password": "123123", "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -77,7 +77,7 @@ async fn login_wrong_hub() {
 
     let resp = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "alice", "password": "123123", "hub_id": "00000000-0000-0000-0000-000000000099"}))
+        .json(&json!({"login": "alice", "password": "123123", "hub_id": "999999"}))
         .send()
         .await
         .unwrap();
@@ -93,7 +93,7 @@ async fn login_returns_avatar_url() {
 
     let resp: Value = client
         .post(format!("{base}/v1/auth/login"))
-        .json(&json!({"login": "bob", "password": "123123", "hub_id": "def00000-0000-0000-0000-000000000001"}))
+        .json(&json!({"login": "bob", "password": "123123", "hub_id": "1"}))
         .send()
         .await
         .unwrap()

@@ -1,5 +1,6 @@
-use matehub_hub::api::auth_check::UserPerms;
-use matehub_hub::models::permission::{bits, effective_permissions, has_permission, ChannelPermission};
+use matehub_common::perms::{
+    ChannelPermission, UserPerms, bits, effective_permissions, has_permission,
+};
 
 // ── Bit constants ──────────────────────────────────
 

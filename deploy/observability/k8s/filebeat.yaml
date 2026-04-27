@@ -1,0 +1,136 @@
+# Filebeat as a DaemonSet — one pod per node, reads every container's log
+# file from the node's filesystem. Ships to Elasticsearch in-cluster.
+#
+# RBAC gives filebeat read access to pods/nodes/namespaces for enrichment
+# (kubernetes processor adds pod.name, labels, annotations to each log
+# record so queries like `kubernetes.labels.matehub_service:chat` work).
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filebeat
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: filebeat
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: filebeat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: filebeat
+subjects:
+  - kind: ServiceAccount
+    name: filebeat
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: observability
+data:
+  filebeat.yml: |
+    filebeat.autodiscover:
+      providers:
+        - type: kubernetes
+          node: ${NODE_NAME}
+          # Only ingest pods carrying this label (set on matehub service pods).
+          # Everything else on the cluster is ignored.
+          templates:
+            - condition:
+                contains:
+                  kubernetes.labels.matehub_service: ""
+              config:
+                - type: container
+                  paths:
+                    - /var/log/containers/*-${data.kubernetes.container.id}.log
+                  processors:
+                    - decode_json_fields:
+                        fields: ["message"]
+                        target: ""
+                        overwrite_keys: true
+                        add_error_key: true
+
+    processors:
+      - add_kubernetes_metadata:
+          host: ${NODE_NAME}
+      - drop_fields:
+          fields: ["agent", "ecs", "input", "log.offset", "log.file.path"]
+          ignore_missing: true
+
+    output.elasticsearch:
+      hosts: ["http://elasticsearch.observability.svc.cluster.local:9200"]
+      index: "matehub-%{[kubernetes.labels.matehub_service]:unknown}-%{+yyyy.MM.dd}"
+
+    setup.template.enabled: false
+    setup.ilm.enabled: false
+    logging.level: info
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: observability
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      serviceAccountName: filebeat
+      hostNetwork: true
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: filebeat
+          image: docker.elastic.co/beats/filebeat:8.15.3
+          args: ["-c", "/etc/filebeat.yml", "-e"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/filebeat.yml
+              subPath: filebeat.yml
+              readOnly: true
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: filebeat-config
+            defaultMode: 0640
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers

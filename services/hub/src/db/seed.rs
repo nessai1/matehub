@@ -14,7 +14,7 @@ const DEV_GROUP_EVERYONE: i64 = 2001;
 const DEV_GROUP_ADMIN: i64 = 2002;
 const DEV_GROUP_GUESTS: i64 = 2003;
 
-use crate::models::permission::bits;
+use matehub_common::perms::bits;
 
 const ALL_PERMS: i32 = bits::ALL;
 const MEMBER_PERMS: i32 = bits::MEMBER_CHANNEL;

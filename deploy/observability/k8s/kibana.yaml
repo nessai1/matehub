@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.15.3
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: "http://elasticsearch:9200"
+            - name: SERVER_PUBLICBASEURL
+              # Adjust to match the Ingress hostname you deploy Kibana behind.
+              # Leaving this unset makes Kibana complain in logs; harmless.
+              value: "https://kibana.matehub.io"
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          ports:
+            - containerPort: 5601
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: observability
+spec:
+  type: ClusterIP
+  selector:
+    app: kibana
+  ports:
+    - port: 5601
+      targetPort: http
+      name: http
+# An Ingress for kibana.matehub.io is left out of this file — it depends on
+# your ingress-controller choice (nginx, traefik, alb-ingress). Add one when
+# deploying; auth should be restricted (Basic auth, mTLS, or VPN-only).

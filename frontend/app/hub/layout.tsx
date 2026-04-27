@@ -9,6 +9,9 @@ import { VideoCallProvider } from "@/contexts/video-call-context";
 import { HubSelectionProvider } from "@/contexts/hub-selection-context";
 import { ChannelsProvider } from "@/contexts/channels-context";
 import { ChatProvider } from "@/contexts/chat-context";
+import { IncomingCallProvider } from "@/contexts/incoming-call-context";
+import { AddTeammatesProvider } from "@/contexts/add-teammates-context";
+import { IncomingCallDialog } from "@/components/hub/incoming-call-dialog";
 
 export function HubLayout() {
   return (
@@ -29,21 +32,29 @@ export function HubLayout() {
                     session. Moving it above SidebarProvider means opening the
                     channel sidebar never unmounts the client. */}
                 <ChatProvider>
-                  <SidebarProvider>
-                    <AppSidebar />
-                    <SidebarInset>
-                      <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
-                        <div className="flex flex-1 gap-2 overflow-hidden">
-                          <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-background">
-                            <Outlet />
-                          </main>
-                          <Suspense>
-                            <MemberSidebar />
-                          </Suspense>
-                        </div>
-                      </div>
-                    </SidebarInset>
-                  </SidebarProvider>
+                  {/* IncomingCallProvider sits below ChatProvider — it
+                      subscribes to chat-WS events for DM ringing and lives
+                      hub-wide so the modal pops up regardless of route. */}
+                  <IncomingCallProvider>
+                    <AddTeammatesProvider>
+                      <SidebarProvider>
+                        <AppSidebar />
+                        <SidebarInset>
+                          <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
+                            <div className="flex flex-1 gap-2 overflow-hidden">
+                              <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-background">
+                                <Outlet />
+                              </main>
+                              <Suspense>
+                                <MemberSidebar />
+                              </Suspense>
+                            </div>
+                          </div>
+                        </SidebarInset>
+                      </SidebarProvider>
+                      <IncomingCallDialog />
+                    </AddTeammatesProvider>
+                  </IncomingCallProvider>
                 </ChatProvider>
               </ChannelsProvider>
             </HubSelectionProvider>

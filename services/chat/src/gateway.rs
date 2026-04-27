@@ -231,19 +231,52 @@ async fn run_session<R: AsyncRead + Unpin>(
         }
     };
 
-    // NATS -> dispatch channel
+    // NATS -> dispatch channel.
+    //
+    // The NATS subscription is hub-wide ("hub.{hub_id}.channel.>"), which means
+    // we receive every channel's events, including ones the connected user has
+    // no business reading (private text channels, other users' DMs). Filter
+    // server-side via access::check before forwarding. Cache hits in Redis
+    // make this dirt cheap on the hot path.
+    let hub_id_for_filter = session.claims().hub_id;
+    let user_id_for_filter = session.claims().sub;
+    let state_for_filter = state.clone();
     let (dispatch_tx, mut dispatch_rx) = mpsc::channel::<GatewayEvent>(256);
     let nats_dispatch = dispatch_tx.clone();
     let nats_task = tokio::spawn(async move {
         while let Some(msg) = nats_rx.next().await {
-            let event_type = match msg.subject.as_str().rsplit('.').next() {
+            // Subject layout: "hub.{hub_id}.channel.{channel_id}.{event}".
+            // Pull channel_id out for the ACL check.
+            let parts: Vec<&str> = msg.subject.as_str().split('.').collect();
+            let event_type = match parts.last().copied() {
                 Some("message") => events::MESSAGE_CREATE,
                 Some("typing") => events::TYPING_START,
                 Some("message_update") => events::MESSAGE_UPDATE,
                 Some("message_delete") => events::MESSAGE_DELETE,
                 Some("attachment_updated") => events::ATTACHMENT_UPDATED,
+                Some("dm_call_invite") => events::DM_CALL_INVITE,
+                Some("dm_call_decline") => events::DM_CALL_DECLINE,
+                Some("dm_call_cancel") => events::DM_CALL_CANCEL,
+                Some("dm_call_ended") => events::DM_CALL_ENDED,
                 _ => continue,
             };
+            let Some(channel_id) = parts.get(3).and_then(|s| s.parse::<i64>().ok()) else {
+                tracing::warn!(subject = %msg.subject, "fanout: cannot parse channel_id, dropping");
+                continue;
+            };
+
+            if !crate::access::check(
+                &state_for_filter,
+                hub_id_for_filter,
+                channel_id,
+                user_id_for_filter,
+                crate::access::Action::Read,
+            )
+            .await
+            {
+                continue;
+            }
+
             if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&msg.payload) {
                 let event = GatewayEvent {
                     op: Opcode::Dispatch as u8,

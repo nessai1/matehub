@@ -33,6 +33,9 @@ import {
 import { useAuth } from "@/lib/auth";
 import { usePermissions, P } from "@/hooks/use-permissions";
 import type { Member, MemberGroup } from "@/hooks/use-members";
+import { useChannels } from "@/hooks/use-channels";
+import { useIncomingCall } from "@/contexts/incoming-call-context";
+import { useHubSelection } from "@/contexts/hub-selection-context";
 
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
@@ -58,14 +61,34 @@ export function MemberCard({
 }: MemberCardProps) {
   const { session } = useAuth();
   const { perms, has } = usePermissions();
+  const { openDm } = useChannels();
+  const { startCall } = useIncomingCall();
+  const { selectTextChannel } = useHubSelection();
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [kickDialogOpen, setKickDialogOpen] = useState(false);
   const [kicking, setKicking] = useState(false);
   const [apiGroups, setApiGroups] = useState<AllGroup[]>([]);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   const canManageRoles = has(P.MANAGE_ROLES);
   const canManageMembers = has(P.MANAGE_MEMBERS);
   const isSelf = session?.userId === member.user_id;
+
+  const handleMessage = useCallback(async () => {
+    const channel = await openDm(member.user_id);
+    if (channel) {
+      selectTextChannel(channel.id);
+      setPopoverOpen(false);
+    }
+  }, [openDm, selectTextChannel, member.user_id]);
+
+  const handleCall = useCallback(async () => {
+    const channel = await openDm(member.user_id);
+    if (channel) {
+      void startCall(channel.id);
+      setPopoverOpen(false);
+    }
+  }, [openDm, startCall, member.user_id]);
 
   // Fetch all groups from API when picker opens (includes groups with 0 members)
   const fetchApiGroups = useCallback(async () => {
@@ -130,7 +153,7 @@ export function MemberCard({
 
   return (
     <>
-      <Popover>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
           side="right"
@@ -256,6 +279,7 @@ export function MemberCard({
                   size="sm"
                   variant="outline"
                   className="h-9 w-9 rounded-full p-0"
+                  onClick={handleCall}
                 >
                   <PhoneIcon className="h-4 w-4" />
                 </Button>
@@ -263,6 +287,7 @@ export function MemberCard({
                 <Button
                   size="sm"
                   className="h-9 gap-1.5 rounded-full bg-blue-600 px-5 text-xs text-white hover:bg-blue-500"
+                  onClick={handleMessage}
                 >
                   <SendHorizontalIcon className="h-3.5 w-3.5" />
                   Message

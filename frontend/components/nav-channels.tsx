@@ -31,7 +31,7 @@ import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
 import { useUnreadCounts } from "@/contexts/chat-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
-export type ChannelType = "text" | "voice" | "stage"
+export type ChannelType = "text" | "voice" | "stage" | "dm"
 
 export interface Channel {
   id: string
@@ -41,12 +41,18 @@ export interface Channel {
   iconColor?: string | null
   iconImage?: string | null
   iconId?: string
+  /** Stringified user ids — present only for type === "dm". */
+  participants?: string[]
 }
 
 const defaultIcons: Record<ChannelType, React.ElementType> = {
   text: HashIcon,
   voice: MicIcon,
   stage: RadioIcon,
+  // DM channels render as the peer's avatar in their own components
+  // (chat-workspace, member-card popover); this fallback is for the
+  // generic ChannelIcon path and should rarely be hit.
+  dm: MessageSquareIcon,
 }
 
 const iconMap: Record<string, React.ElementType> = {
@@ -270,16 +276,20 @@ export function NavChannels() {
     iconId: ch.icon_id ?? undefined,
     iconColor: ch.icon_color,
     iconImage: ch.icon_image_url,
+    participants: ch.participants,
   }))
 
+  // ChannelEditor only handles user-creatable kinds — DMs are minted via the
+  // member-card flow, not the editor — so use a narrower type here.
+  type EditableChannelType = Exclude<ChannelType, "dm">
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create")
-  const [editorType, setEditorType] = useState<ChannelType>("text")
+  const [editorType, setEditorType] = useState<EditableChannelType>("text")
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null)
 
   const textChannels = channels.filter((c) => c.type === "text")
   const voiceChannels = channels.filter((c) => c.type === "voice" || c.type === "stage")
-  const dmMembers = members.filter((m) => m.user_id !== session?.userId)
+  const dmChannels = channels.filter((c) => c.type === "dm")
 
   // Collect groups for editor
   const allGroups: MemberGroup[] = []
@@ -293,7 +303,7 @@ export function NavChannels() {
     }
   }
 
-  const openCreate = (type: ChannelType) => {
+  const openCreate = (type: EditableChannelType) => {
     setEditorMode("create")
     setEditorType(type)
     setEditingChannel(null)
@@ -301,6 +311,7 @@ export function NavChannels() {
   }
 
   const openEdit = (channel: Channel) => {
+    if (channel.type === "dm") return // DMs aren't editable via this dialog
     setEditorMode("edit")
     setEditorType(channel.type)
     setEditingChannel(channel)
@@ -420,55 +431,75 @@ export function NavChannels() {
         )}
       </ChannelSection>
 
-      {/* ── Direct Messages ── */}
-      <ChannelSection label="Direct Messages">
-        {dmMembers.map((member) => (
-          <li key={member.user_id}>
-            <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground">
-              <div className="relative">
-                <Avatar size="sm">
-                  {member.avatar_url && <AvatarImage src={member.avatar_url} />}
-                  <AvatarFallback className="text-[10px]">
-                    {member.display_name.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span
+      {/* ── Direct Messages ──
+          Only show DMs the user has actually opened. The list renders
+          channel-by-channel — a member with no DM history doesn't appear
+          here, by design (start one via the right-side member card). */}
+      {dmChannels.length > 0 && (
+        <ChannelSection label="Direct Messages">
+          {dmChannels.map((dm) => {
+            const peerId = dm.participants?.find((id) => id !== session?.userId)
+            const peer = peerId ? members.find((m) => m.user_id === peerId) : undefined
+            const displayName = peer?.display_name ?? peerId ?? "Unknown"
+            const active = isTextActive(dm.id)
+            const unread = unreadCounts.get(dm.id)?.unread
+            const showBadge = !active && unread != null && unread > 0
+            return (
+              <li key={dm.id}>
+                <button
+                  type="button"
+                  onClick={() => selectTextChannel(dm.id)}
                   className={cn(
-                    "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar",
-                    member.is_online ? "bg-emerald-500" : "bg-zinc-500",
+                    "group/dm flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors",
+                    active
+                      ? "bg-sidebar-accent font-semibold text-sidebar-foreground"
+                      : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                   )}
-                />
-              </div>
-              <span className="truncate">{member.display_name}</span>
-            </button>
-          </li>
-        ))}
-        {session && (
-          <li>
-            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/40">
-              <div className="relative">
-                <Avatar size="sm">
-                  {session.avatarUrl && <AvatarImage src={session.avatarUrl} />}
-                  <AvatarFallback className="text-[10px]">
-                    {session.displayName.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar bg-emerald-500" />
-              </div>
-              <span className="truncate">{session.displayName}</span>
-              <span className="ml-auto text-[10px] text-sidebar-foreground/30">(You)</span>
-            </div>
-          </li>
-        )}
-        {(hasPerm(P.INVITE_PERMANENT) || hasPerm(P.CREATE_TEMP_LINKS)) && (
-          <li>
-            <button className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70">
-              <UserPlusIcon className="h-3 w-3" />
-              <span>Add Teammates</span>
-            </button>
-          </li>
-        )}
-      </ChannelSection>
+                >
+                  <div className="relative shrink-0">
+                    <Avatar size="sm">
+                      {peer?.avatar_url && <AvatarImage src={peer.avatar_url} />}
+                      <AvatarFallback
+                        className={cn(
+                          "text-[10px] font-medium",
+                          peer?.is_online
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span
+                      className={cn(
+                        "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar",
+                        peer?.is_online ? "bg-emerald-500" : "bg-zinc-500",
+                      )}
+                    />
+                  </div>
+                  <span className="flex-1 truncate text-left">{displayName}</span>
+                  {showBadge && (
+                    <span
+                      className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sidebar-primary px-1 font-mono text-[10px] font-bold leading-none text-sidebar-primary-foreground"
+                      aria-label={`${unread} unread`}
+                    >
+                      {unread! > 99 ? "99+" : unread}
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+          {(hasPerm(P.INVITE_PERMANENT) || hasPerm(P.CREATE_TEMP_LINKS)) && (
+            <li>
+              <button className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70">
+                <UserPlusIcon className="h-3 w-3" />
+                <span>Add Teammates</span>
+              </button>
+            </li>
+          )}
+        </ChannelSection>
+      )}
 
       {/* ── Channel editor dialog ── */}
       <ChannelEditor

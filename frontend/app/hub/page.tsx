@@ -20,6 +20,7 @@ function toChannel(ch: ApiChannel): Channel {
     iconId: ch.icon_id ?? undefined,
     iconColor: ch.icon_color,
     iconImage: ch.icon_image_url,
+    participants: ch.participants,
   };
 }
 
@@ -39,9 +40,13 @@ export default function HubPage() {
   }, [channels, activeVoiceChannelId]);
 
   const textChannel = useMemo(() => {
+    // Selection slot is shared between text channels and DMs — both render
+    // through ChatWorkspace, just with different headers.
     if (selectedTextChannelId) {
       const hit = channels.find(
-        (ch) => ch.id === selectedTextChannelId && ch.type === "text",
+        (ch) =>
+          ch.id === selectedTextChannelId &&
+          (ch.type === "text" || ch.type === "dm"),
       );
       if (hit) return hit;
     }

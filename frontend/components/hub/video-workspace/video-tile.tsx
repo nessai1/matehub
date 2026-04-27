@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import { MicOffIcon, MonitorIcon, Maximize2Icon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { MicOffIcon, MonitorIcon, Maximize2Icon, XIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,9 @@ export interface CameraTile {
   pinned?: boolean;
   /** If true, shows a HOST badge (top-right). */
   host?: boolean;
+  /** Outgoing-DM-call placeholder for the peer who hasn't picked up yet.
+   * Renders grayscale + pulsing with a "Ringing…" caption. */
+  ringing?: boolean;
 }
 
 export interface ScreenTile {
@@ -152,6 +156,9 @@ export function CameraVideoTile({
       className={cn(
         "group/tile relative flex h-full w-full min-h-0 cursor-pointer select-none items-center justify-center overflow-hidden transition-[box-shadow,border-color] duration-150",
         radius,
+        // Outgoing-call placeholder: greyscale + soft pulse on the whole tile
+        // so the inviter has a visible "we're ringing them" affordance.
+        tile.ringing && "grayscale animate-pulse",
       )}
       style={{
         background: hasVideo
@@ -172,6 +179,10 @@ export function CameraVideoTile({
           autoPlay
           playsInline
           muted={tile.isLocal}
+          // disablePictureInPicture suppresses Chrome's auto-injected PiP
+          // button that hovers over the corner. We don't expose PiP — users
+          // pin / spotlight tiles via our own UI instead.
+          disablePictureInPicture
           className={cn(
             "absolute inset-0 h-full w-full object-cover",
             tile.isLocal && "-scale-x-100",
@@ -235,10 +246,14 @@ export function CameraVideoTile({
           style={{ background: "rgba(20,22,30,0.55)" }}
         >
           <span className="truncate">
-            {tile.isLocal ? `${tile.displayName} (you)` : tile.displayName}
+            {tile.ringing
+              ? `${tile.displayName} · Ringing…`
+              : tile.isLocal
+                ? `${tile.displayName} (you)`
+                : tile.displayName}
           </span>
-          {tile.isSpeaking && <SpeakingBars />}
-          {tile.isMicMuted && (
+          {!tile.ringing && tile.isSpeaking && <SpeakingBars />}
+          {!tile.ringing && tile.isMicMuted && (
             <MicOffIcon className="h-3 w-3 text-[oklch(0.72_0.18_25)]" />
           )}
         </div>
@@ -260,6 +275,8 @@ export function ScreenShareVideoTile({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const expandedVideoRef = useRef<HTMLVideoElement>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -267,6 +284,27 @@ export function ScreenShareVideoTile({
     el.srcObject = new MediaStream([tile.videoTrack]);
     el.play().catch(() => {});
   }, [tile.videoTrack]);
+
+  // Mirror the same track into the overlay <video> while expanded. Two video
+  // elements consuming one MediaStreamTrack is fine — the browser pulls each
+  // their own decoded frame.
+  useEffect(() => {
+    if (!expanded) return;
+    const el = expandedVideoRef.current;
+    if (!el) return;
+    el.srcObject = new MediaStream([tile.videoTrack]);
+    el.play().catch(() => {});
+  }, [expanded, tile.videoTrack]);
+
+  // Esc closes the overlay — keeps the muscle-memory of native fullscreen.
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   useEffect(() => {
     const el = audioRef.current;
@@ -278,12 +316,6 @@ export function ScreenShareVideoTile({
       el.srcObject = null;
     }
   }, [tile.audioTrack, tile.isLocal]);
-
-  const fullscreen = () => {
-    const el = videoRef.current;
-    if (!el) return;
-    el.requestFullscreen().catch(() => {});
-  };
 
   const radius = size === "xs" ? "rounded-[10px]" : "rounded-[14px]";
 
@@ -303,24 +335,72 @@ export function ScreenShareVideoTile({
         ref={videoRef}
         autoPlay
         playsInline
+        disablePictureInPicture
         className="h-full w-full object-contain"
       />
       {tile.audioTrack && !tile.isLocal && (
         <audio ref={audioRef} autoPlay playsInline hidden />
       )}
 
-      {/* Fullscreen button */}
+      {/* Fullscreen button — opens our own overlay (not the native fullscreen
+          API) so we control the chrome and don't get the browser PiP/exit
+          banner sitting on top. */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          fullscreen();
+          setExpanded(true);
         }}
         className="absolute right-2 top-2 rounded-md bg-black/60 p-1.5 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover/screen:opacity-100"
-        aria-label="Fullscreen"
+        aria-label="Expand"
       >
         <Maximize2Icon className="h-3.5 w-3.5" />
       </button>
+
+      {expanded &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex flex-col bg-black"
+            onClick={(e) => {
+              // Click on the backdrop (not on controls) closes too.
+              if (e.target === e.currentTarget) setExpanded(false);
+            }}
+          >
+            <video
+              ref={expandedVideoRef}
+              autoPlay
+              playsInline
+              disablePictureInPicture
+              className="h-full w-full object-contain"
+            />
+            <div
+              className="pointer-events-none absolute left-4 top-4 inline-flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-xs font-medium text-white backdrop-blur"
+            >
+              <MonitorIcon className="h-3.5 w-3.5" />
+              <span className="truncate">
+                {tile.isLocal
+                  ? `${tile.ownerDisplayName} (you)`
+                  : tile.ownerDisplayName}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(false);
+              }}
+              className="absolute right-4 top-4 rounded-full bg-black/55 p-2 text-white transition-colors hover:bg-black/80"
+              aria-label="Close"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+            <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1.5 text-[11px] text-white/80 backdrop-blur">
+              Esc to exit
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Owner glass pill */}
       <div

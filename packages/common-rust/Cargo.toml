@@ -31,3 +31,6 @@ metrics.workspace = true
 
 # Snowflake IDs
 sonyflake.workspace = true
+
+# Permissions module: PG-backed perm resolution shared by hub + chat.
+sqlx.workspace = true

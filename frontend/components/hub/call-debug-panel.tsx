@@ -1,8 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bug, Check, Copy, Eraser, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVideoDebug } from "@/hooks/use-video-debug";
+import { useMembers } from "@/hooks/use-members";
+import { useAuth } from "@/lib/auth";
 import type { VideoClient } from "../../../packages/sdk-video/src";
+
+/** userId (Snowflake) → human-friendly label. Falls back to the raw id when
+ *  no member row is available — better a long number than "undefined". */
+type NameLookup = (userId: string | null | undefined) => string;
 
 interface CallDebugPanelProps {
   client: VideoClient | null;
@@ -64,6 +70,20 @@ const PANEL_H = 520;
 
 export function CallDebugPanel({ client }: CallDebugPanelProps) {
   const { logs, diagnostics, copyToClipboard, clear } = useVideoDebug(client);
+  const { members } = useMembers();
+  const { session } = useAuth();
+
+  // userId → displayName lookup. Same shape as the one in video-workspace,
+  // duplicated here so the debug panel doesn't need props piped through.
+  const lookupName: NameLookup = useMemo(() => {
+    const byId: Record<string, string> = {};
+    if (session) byId[session.userId] = session.displayName;
+    for (const m of members) byId[m.user_id] = m.display_name;
+    return (uid) => {
+      if (!uid) return "—";
+      return byId[uid] ?? uid;
+    };
+  }, [members, session]);
 
   const [pos, setPos] = useState<PanelPos>({ x: -1, y: -1, open: false });
   const [copied, setCopied] = useState(false);
@@ -211,13 +231,14 @@ export function CallDebugPanel({ client }: CallDebugPanelProps) {
         >
           <PanelHeader
             diagnostics={diagnostics}
+            lookupName={lookupName}
             onDragHeader={beginDrag}
             onCopy={handleCopy}
             copied={copied}
             onClear={clear}
             onClose={() => setPos((p) => ({ ...p, open: false }))}
           />
-          <DebugSummary diagnostics={diagnostics} />
+          <DebugSummary diagnostics={diagnostics} lookupName={lookupName} />
           <DebugLogFeed logs={logs} />
         </div>
       )}
@@ -229,6 +250,7 @@ export function CallDebugPanel({ client }: CallDebugPanelProps) {
 
 function PanelHeader({
   diagnostics,
+  lookupName,
   onDragHeader,
   onCopy,
   copied,
@@ -236,6 +258,7 @@ function PanelHeader({
   onClose,
 }: {
   diagnostics: ReturnType<typeof useVideoDebug>["diagnostics"];
+  lookupName: NameLookup;
   onDragHeader: (e: React.MouseEvent) => void;
   onCopy: () => void;
   copied: boolean;
@@ -257,12 +280,13 @@ function PanelHeader({
       {diagnostics?.userId && (
         <span
           className="rounded px-1.5 py-0.5 font-mono text-[10px]"
+          title={diagnostics.userId}
           style={{
             background: "rgba(99, 102, 241, 0.18)",
             color: "rgb(165, 180, 252)",
           }}
         >
-          {diagnostics.userId}
+          {lookupName(diagnostics.userId)}
         </span>
       )}
       <StatePills diagnostics={diagnostics} />
@@ -345,9 +369,14 @@ function StatePill({ label, value }: { label: string; value: string }) {
 
 function DebugSummary({
   diagnostics,
+  lookupName,
 }: {
   diagnostics: ReturnType<typeof useVideoDebug>["diagnostics"];
+  lookupName: NameLookup;
 }) {
+  // Pure UA-string parse — synchronous, stable for the lifetime of the tab.
+  const env = useMemo(() => parseEnv(), []);
+
   if (!diagnostics) {
     return (
       <div
@@ -363,6 +392,8 @@ function DebugSummary({
       className="grid shrink-0 grid-cols-2 gap-x-3 gap-y-1 p-2 text-xs"
       style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
     >
+      <Row label="browser" value={env.browser} title={env.ua} />
+      <Row label="os" value={env.os} title={env.ua} />
       <Row label="participant" value={shortId(diagnostics.participantId)} />
       <Row label="joined" value={diagnostics.joined ? "yes" : "no"} />
       <Row label="mic" value={diagnostics.micEnabled ? "on" : "off"} />
@@ -400,12 +431,13 @@ function DebugSummary({
           <span
             key={p.participantId}
             className="inline-flex h-5 items-center gap-1 rounded px-1.5 font-mono text-[10px]"
+            title={`${p.userId} (participant ${p.participantId})`}
             style={{
               border: "1px solid rgba(255,255,255,0.12)",
               color: "rgb(226, 232, 240)",
             }}
           >
-            {p.userId}
+            {lookupName(p.userId)}
             <span
               className="inline-block h-1.5 w-1.5 rounded-full"
               style={{
@@ -457,9 +489,17 @@ function TrackPill({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  title,
+}: {
+  label: string;
+  value: string;
+  title?: string;
+}) {
   return (
-    <div className="flex items-baseline gap-2 font-mono">
+    <div className="flex items-baseline gap-2 font-mono" title={title}>
       <span className="text-[10px] uppercase text-slate-400">{label}</span>
       <span className="truncate text-slate-100">{value}</span>
     </div>
@@ -522,4 +562,66 @@ function fmtTime(ms: number): string {
 function shortId(id: string | null): string {
   if (!id) return "—";
   return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+}
+
+// ── Browser / OS sniffer ────────────────────────────────────────────────────
+// Quick UA parse for the debug pill — not for feature detection. We treat
+// the result as a label, not a contract. Order of regex tests matters:
+// Edge ships "Chrome" in its UA so it has to match first; same trick for
+// Opera. Safari has to match LAST since every WebKit derivative claims it.
+
+interface EnvInfo {
+  browser: string;
+  os: string;
+  ua: string;
+}
+
+function parseEnv(): EnvInfo {
+  if (typeof navigator === "undefined") {
+    return { browser: "—", os: "—", ua: "" };
+  }
+  const ua = navigator.userAgent;
+
+  // ── Browser ──
+  let browser = "unknown";
+  const browserPatterns: Array<[string, RegExp]> = [
+    ["Edge", /Edg\/(\d+)/],
+    ["Opera", /OPR\/(\d+)/],
+    ["Chrome", /Chrome\/(\d+)/],
+    ["Firefox", /Firefox\/(\d+)/],
+    ["Safari", /Version\/(\d+).*Safari/],
+  ];
+  for (const [name, re] of browserPatterns) {
+    const m = ua.match(re);
+    if (m) {
+      browser = `${name} ${m[1]}`;
+      break;
+    }
+  }
+
+  // ── OS ──
+  let os = "unknown";
+  if (/Windows NT 10\.0.*Win64/.test(ua) || /Windows NT 11/.test(ua)) {
+    // Microsoft never bumped the NT version for Win11; user-agent reduction
+    // freezes it at 10.0. We can't reliably distinguish 10 vs 11 here.
+    os = "Windows 10/11";
+  } else if (/Windows NT (\d+\.\d+)/.test(ua)) {
+    os = `Windows NT ${ua.match(/Windows NT (\d+\.\d+)/)![1]}`;
+  } else if (/Mac OS X (\d+[._]\d+(?:[._]\d+)?)/.test(ua)) {
+    os = `macOS ${ua
+      .match(/Mac OS X (\d+[._]\d+(?:[._]\d+)?)/)![1]
+      .replace(/_/g, ".")}`;
+  } else if (/Android (\d+(?:\.\d+)?)/.test(ua)) {
+    os = `Android ${ua.match(/Android (\d+(?:\.\d+)?)/)![1]}`;
+  } else if (/iPhone OS (\d+[._]\d+)/.test(ua)) {
+    os = `iOS ${ua.match(/iPhone OS (\d+[._]\d+)/)![1].replace(/_/g, ".")}`;
+  } else if (/CrOS/.test(ua)) {
+    os = "ChromeOS";
+  } else if (/Linux/.test(ua)) {
+    // Linux UA carries no distro; arch is the only useful detail we can pull.
+    const arch = ua.match(/Linux (x86_64|i\d86|aarch64|armv\d+l)/)?.[1];
+    os = arch ? `Linux ${arch}` : "Linux";
+  }
+
+  return { browser, os, ua };
 }

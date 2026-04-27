@@ -8,11 +8,10 @@ use matehub_common::snowflake;
 use sqlx::PgPool;
 
 use crate::auth::AuthUser;
-use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::Group;
 use crate::models::group::{CreateGroup, UpdateGroup};
-use crate::models::permission::bits;
+use matehub_common::perms::{bits, resolve_user_perms};
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
@@ -258,6 +257,8 @@ async fn add_member_to_group(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    crate::acl_publish::invalidate_user(hub_id, user_id).await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -315,6 +316,8 @@ async fn remove_member_from_group(
         .execute(&mut *conn)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    crate::acl_publish::invalidate_user(hub_id, user_id).await;
 
     Ok(StatusCode::NO_CONTENT)
 }

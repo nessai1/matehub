@@ -11,12 +11,11 @@ use matehub_common::snowflake;
 use sqlx::PgPool;
 
 use crate::auth::AuthUser;
-use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
 use crate::models::Channel;
 use crate::models::channel::{CreateChannel, UpdateChannel};
-use crate::models::permission::bits;
 use crate::storage::S3Storage;
+use matehub_common::perms::{bits, resolve_user_perms};
 
 #[derive(Clone)]
 pub struct ChannelsState {
@@ -53,8 +52,11 @@ async fn list_channels(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Generic listing: text/voice/stage only. DM channels live behind
+    // /v1/hubs/{id}/dms and are scoped to their participants — leaking their
+    // ids here would let any hub member POST messages straight to them.
     let channels = sqlx::query_as::<_, Channel>(
-        "SELECT * FROM channels WHERE hub_id = $1 ORDER BY position",
+        "SELECT * FROM channels WHERE hub_id = $1 AND type != 'dm' ORDER BY position",
     )
     .bind(hub_id)
     .fetch_all(&mut *conn)
@@ -95,6 +97,10 @@ async fn create_channel(
     auth: AuthUser,
     Json(body): Json<CreateChannel>,
 ) -> Result<(StatusCode, Json<Channel>), StatusCode> {
+    // 'dm' is intentionally absent — DMs go through POST /v1/hubs/{id}/dms,
+    // which enforces the get-or-create + dm_participants invariants. Letting
+    // the generic create path mint type='dm' would allow malformed DMs with
+    // no participants and no dm_pair_key.
     let valid_types = ["text", "voice", "stage"];
     if !valid_types.contains(&body.channel_type.as_str()) {
         return Err(StatusCode::BAD_REQUEST);
@@ -141,6 +147,37 @@ async fn create_channel(
     .fetch_one(&mut *conn)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Grant the hub's default group (everyone) the standard member bits on
+    // this channel. Without it new channels are invisible to non-admins —
+    // chat::access::check finds no channel_permissions row and denies READ.
+    // The seed does this for the bootstrap channels (db/seed.rs:170); the
+    // runtime path was missing the same step.
+    let default_group_id: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1",
+    )
+    .bind(hub_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if let Some(group_id) = default_group_id {
+        sqlx::query(
+            "INSERT INTO channel_permissions (channel_id, group_id, allow_bits, deny_bits)
+             VALUES ($1, $2, $3, 0)
+             ON CONFLICT (channel_id, group_id) DO NOTHING",
+        )
+        .bind(channel.id)
+        .bind(group_id)
+        .bind(bits::MEMBER_CHANNEL)
+        .execute(&mut *conn)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    } else {
+        tracing::warn!(%hub_id, channel_id = %channel.id, "no default group for hub — non-admins will be denied access");
+    }
+
+    crate::acl_publish::invalidate_channel(hub_id, channel.id).await;
 
     Ok((StatusCode::CREATED, Json(channel)))
 }

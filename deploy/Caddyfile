@@ -1,0 +1,40 @@
+# MateHub edge -- TLS termination, API routing, SPA serving.
+#
+# `handle_path` strips the matched prefix before forwarding, so each
+# upstream sees its own native path layout (`/v1/...`, `/ws/...`, etc.)
+# even though everything is bolted onto a single domain.
+
+{
+    email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+    encode zstd gzip
+
+    # ── hub: REST + presence WebSocket ─────────────────────────────
+    # Strips /api/hub → upstream sees /v1/..., /ws/presence/...
+    handle_path /api/hub/* {
+        reverse_proxy hub:3002
+    }
+
+    # ── chat: REST + gateway WebSocket ─────────────────────────────
+    # Caddy v2 forwards `Upgrade: websocket` automatically.
+    handle_path /api/chat/* {
+        reverse_proxy chat:3003
+    }
+
+    # ── video: SFU signalling (REST + /ws/{session_id}) ────────────
+    # Media itself is UDP straight to host:4001, not through Caddy.
+    handle_path /api/video/* {
+        reverse_proxy video:4000
+    }
+
+    # ── SPA root ───────────────────────────────────────────────────
+    # `try_files` falls through to index.html so client-side react-router
+    # can handle deep links (refresh on /hub/123/channel/456 etc.).
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

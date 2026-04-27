@@ -1,0 +1,17 @@
+# Dashboard provider — Grafana watches the mounted dashboards directory and
+# auto-imports any JSON files it finds. Files go in grafana/dashboards/ and
+# are shipped in #20.
+
+apiVersion: 1
+
+providers:
+  - name: matehub
+    orgId: 1
+    folder: MateHub
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

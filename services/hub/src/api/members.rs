@@ -161,7 +161,7 @@ async fn my_permissions(
     Path(hub_id): Path<i64>,
     auth: crate::auth::AuthUser,
 ) -> Result<Json<MyPermissionsResponse>, StatusCode> {
-    use crate::api::auth_check::resolve_user_perms;
+    use matehub_common::perms::resolve_user_perms;
 
     let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
         .await
@@ -182,8 +182,7 @@ async fn kick_member(
     Path((hub_id, user_id)): Path<(i64, i64)>,
     auth: crate::auth::AuthUser,
 ) -> Result<StatusCode, StatusCode> {
-    use crate::api::auth_check::{resolve_user_perms, resolve_target_position};
-    use crate::models::permission::bits;
+    use matehub_common::perms::{bits, resolve_target_position, resolve_user_perms};
 
     let caller = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
         .await
@@ -229,6 +228,8 @@ async fn kick_member(
         .execute(&state.pool)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    crate::acl_publish::invalidate_user(hub_id, user_id).await;
 
     tracing::info!(%hub_id, %user_id, caller = auth.0.sub, "member kicked");
 

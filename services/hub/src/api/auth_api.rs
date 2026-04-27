@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::auth::{Claims, create_token};
 
-const ACCESS_TOKEN_TTL_SECS: i64 = 30 * 60; // 30 minutes
+pub(super) const ACCESS_TOKEN_TTL_SECS: i64 = 30 * 60; // 30 minutes
 const REFRESH_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600; // 30 days
 
 pub fn routes(pool: PgPool) -> Router {
@@ -229,7 +229,7 @@ async fn logout(
 
 // ── Helpers ─────────────────────────────────────
 
-fn issue_access_token(
+pub(super) fn issue_access_token(
     user_id: i64,
     username: &str,
     hub_id: i64,
@@ -248,7 +248,7 @@ fn issue_access_token(
     create_token(&claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-async fn issue_refresh_token(
+pub(super) async fn issue_refresh_token(
     pool: &PgPool,
     user_id: i64,
     hub_id: i64,

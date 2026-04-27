@@ -42,18 +42,39 @@ CREATE TABLE IF NOT EXISTS hub_members (
 );
 
 -- ── Channels ─────────────────────────────────────
+-- type: text, voice, stage, dm.
+-- dm_pair_key: only set for type='dm'. Stable hash of the two participant ids
+-- ("min:max" of stringified Snowflakes) — paired with the partial UNIQUE index
+-- below it makes "open DM with X" idempotent: INSERT … ON CONFLICT DO NOTHING
+-- + SELECT returns the pre-existing channel without race conditions.
 CREATE TABLE IF NOT EXISTS channels (
     id              BIGINT PRIMARY KEY,
     hub_id          BIGINT NOT NULL REFERENCES hubs(id) ON DELETE CASCADE,
     name            TEXT NOT NULL,
-    type            TEXT NOT NULL DEFAULT 'text',   -- text, voice, stage
+    type            TEXT NOT NULL DEFAULT 'text',   -- text, voice, stage, dm
     position        INT NOT NULL DEFAULT 0,
     icon_id         TEXT,
     icon_color      TEXT,
     icon_image_url  TEXT,
+    dm_pair_key     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_channels_hub ON channels(hub_id);
+-- Partial UNIQUE so non-DM channels (dm_pair_key IS NULL) are unconstrained.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_dm_pair
+    ON channels(hub_id, dm_pair_key) WHERE dm_pair_key IS NOT NULL;
+
+-- ── DM participants ──────────────────────────────
+-- Membership for type='dm' channels. Decoupled from member_groups because DMs
+-- don't use the permission-bits model — participation alone grants R/W. Two
+-- rows per DM (one per side); shape leaves room for group-DMs later (3+ rows).
+CREATE TABLE IF NOT EXISTS dm_participants (
+    channel_id  BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (channel_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dm_participants_user ON dm_participants(user_id);
 
 -- ── Groups ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS groups (
@@ -141,6 +162,16 @@ CREATE POLICY channel_perms_hub_isolation ON channel_permissions
         EXISTS (
             SELECT 1 FROM channels c
             WHERE c.id = channel_permissions.channel_id
+              AND c.hub_id = current_setting('app.current_hub_id', true)::bigint
+        )
+    );
+
+ALTER TABLE dm_participants ENABLE ROW LEVEL SECURITY;
+CREATE POLICY dm_participants_hub_isolation ON dm_participants
+    USING (
+        EXISTS (
+            SELECT 1 FROM channels c
+            WHERE c.id = dm_participants.channel_id
               AND c.hub_id = current_setting('app.current_hub_id', true)::bigint
         )
     );

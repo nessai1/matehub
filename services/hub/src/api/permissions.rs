@@ -7,10 +7,11 @@ use axum::{
 use sqlx::PgPool;
 
 use crate::auth::AuthUser;
-use crate::api::auth_check::resolve_user_perms;
 use crate::db::rls::hub_connection;
-use crate::models::ChannelPermission;
-use crate::models::permission::{bits, SetPermission, effective_permissions, has_permission};
+use matehub_common::perms::{
+    ChannelPermission, SetPermission, bits, effective_permissions, has_permission,
+    resolve_user_perms,
+};
 
 pub fn routes(pool: PgPool) -> Router {
     Router::new()
@@ -79,6 +80,8 @@ async fn set_channel_permission(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    crate::acl_publish::invalidate_channel(hub_id, channel_id).await;
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -104,6 +107,8 @@ async fn delete_channel_permission(
         .execute(&mut *conn)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    crate::acl_publish::invalidate_channel(hub_id, channel_id).await;
 
     Ok(StatusCode::NO_CONTENT)
 }

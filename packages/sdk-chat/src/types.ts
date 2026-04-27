@@ -90,7 +90,26 @@ export type ChatClientEvent =
   | { type: "message.deleted"; data: MessageDeleteData }
   | { type: "attachment.updated"; data: AttachmentUpdatedData }
   | { type: "typing.start"; data: TypingEvent }
+  | { type: "dm.call.invite"; data: DmCallEvent }
+  | { type: "dm.call.decline"; data: DmCallEvent }
+  | { type: "dm.call.cancel"; data: DmCallEvent }
+  | { type: "dm.call.ended"; data: DmCallEndedEvent }
   | { type: "error"; message: string; code?: number };
+
+export interface DmCallEvent {
+  /** Stringified user id of whoever produced the event. */
+  from_user_id: string;
+  /** Stringified channel id of the DM the call is for. */
+  channel_id: string;
+  /** Set on decline events: `"declined"` (manual) or `"timeout"` (no answer). */
+  reason?: string;
+}
+
+export interface DmCallEndedEvent {
+  from_user_id: string;
+  channel_id: string;
+  duration_secs: number;
+}
 
 export interface AttachmentUpdatedData {
   message_id: string;

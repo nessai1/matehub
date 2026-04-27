@@ -9,6 +9,7 @@ import {
 import { type Attachment, attachmentKind } from "@matehub/sdk-chat";
 import { ImageLightbox } from "./image-lightbox";
 import { VideoPlayer } from "./video-player";
+import { AudioPlayer } from "./audio-player";
 
 interface Props {
   attachments: Attachment[];
@@ -120,12 +121,12 @@ export function MessageAttachments({ attachments }: Props) {
 
           if (kind === "audio") {
             return (
-              <audio
+              <AudioPlayer
                 key={key}
-                src={a.url}
-                controls
-                preload="metadata"
-                className="max-w-md"
+                url={a.url}
+                name={a.name}
+                size={a.size}
+                duration={a.duration}
               />
             );
           }

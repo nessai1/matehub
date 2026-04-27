@@ -1,44 +1,59 @@
-## matehub-frontend -- Next.js standalone build
+# MateHub frontend (Vite SPA) -- one-shot builder.
+#
+# Build args bake into the bundle (Vite reads VITE_* at build time only).
+# Final image is alpine + the built `dist/` plus a tiny entrypoint that
+# copies the bundle into a shared volume and exits. Caddy then serves the
+# volume as a static root.
+#
+# Usage from docker-compose:
+#   build:
+#     context: ../..
+#     dockerfile: deploy/docker/Dockerfile.frontend
+#     args:
+#       VITE_HUB_API_URL: https://example.com/api/hub
+#       ...
+#   volumes:
+#     - frontend-dist:/srv
+#   restart: "no"
 
+# ── Builder ───────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Root workspace files
 COPY package.json package-lock.json ./
-
-# SDK packages (frontend depends on them via workspace)
 COPY packages/sdk-video/package.json packages/sdk-video/package.json
 COPY packages/sdk-chat/package.json packages/sdk-chat/package.json
-
-# Frontend
 COPY frontend/package.json frontend/package.json
 
 RUN npm ci
 
-# Copy SDK source
-COPY packages/ packages/
+COPY packages packages
+COPY frontend frontend
 
-# Copy frontend source
-COPY frontend/ frontend/
+ARG VITE_HUB_API_URL
+ARG VITE_CHAT_API_URL
+ARG VITE_VIDEO_SERVER_URL
+ARG VITE_TURN_URL
+ARG VITE_TURN_USERNAME
+ARG VITE_TURN_CREDENTIAL
+ARG VITE_DEV_MODE=false
 
-# Build
 WORKDIR /app/frontend
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+RUN VITE_HUB_API_URL=$VITE_HUB_API_URL \
+    VITE_CHAT_API_URL=$VITE_CHAT_API_URL \
+    VITE_VIDEO_SERVER_URL=$VITE_VIDEO_SERVER_URL \
+    VITE_TURN_URL=$VITE_TURN_URL \
+    VITE_TURN_USERNAME=$VITE_TURN_USERNAME \
+    VITE_TURN_CREDENTIAL=$VITE_TURN_CREDENTIAL \
+    VITE_DEV_MODE=$VITE_DEV_MODE \
+    npm run build
 
-# Runtime
-FROM node:22-alpine
+# ── One-shot copier ──────────────────────────────────────────────────
+# Container runs once, copies the bundle into the mounted volume, exits 0.
+# Caddy depends on us via `service_completed_successfully` and serves /srv.
+FROM alpine:3.19
 
-WORKDIR /app
+COPY --from=builder /app/frontend/dist /dist
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-
-COPY --from=builder /app/frontend/.next/standalone ./
-COPY --from=builder /app/frontend/.next/static ./.next/static
-COPY --from=builder /app/frontend/public ./public
-
-EXPOSE 3000
-
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "rm -rf /srv/* && cp -a /dist/. /srv/ && echo 'frontend bundle published to /srv'"]

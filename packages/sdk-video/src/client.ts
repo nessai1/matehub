@@ -70,6 +70,15 @@ export class VideoClient {
   private joined = false;
   private pendingCandidates: Array<{ candidate: string; sdpMid: string | null; sdpMLineIndex: number | null }> = [];
   private videoSender: RTCRtpSender | null = null;
+  // Microphone-side companion of videoSender. Held so setMicDevice() can
+  // hot-swap the audio track via replaceTrack() without renegotiating SDP.
+  private audioSender: RTCRtpSender | null = null;
+  // Currently-selected device IDs. Populated lazily — first getUserMedia
+  // returns whatever the browser chose, and we read it off the resulting
+  // track via getSettings().deviceId. setMicDevice / setCameraDevice update
+  // these explicitly.
+  private currentMicDeviceId: string | null = null;
+  private currentCameraDeviceId: string | null = null;
   // Screen share state. Tracks are kept as object refs even after renegotiation
   // so reconnect flow (see screen-share doc §7.4) can silently restore them.
   private screenVideoTrack: MediaStreamTrack | null = null;
@@ -370,12 +379,17 @@ export class VideoClient {
       for (const track of stream.getTracks()) {
         track.enabled = false; // muted by default
         const sender = pc.addTrack(track, stream);
+        const settingsDeviceId = track.getSettings().deviceId ?? null;
         if (track.kind === "video") {
           this.videoSender = sender;
+          this.currentCameraDeviceId = settingsDeviceId;
           // track.enabled=false still sends black-frame RTP, which triggers
           // onunmute on the receiver -> grey tile instead of avatar.
           // replaceTrack(null) stops RTP entirely -> receiver track stays muted.
           sender.replaceTrack(null);
+        } else if (track.kind === "audio") {
+          this.audioSender = sender;
+          this.currentMicDeviceId = settingsDeviceId;
         }
         this.log("added local track to PC (muted)", { kind: track.kind, id: track.id });
       }
@@ -539,6 +553,15 @@ export class VideoClient {
         const kind = msg.kind as string;
         const muted = msg.muted as boolean;
         this.log("participant_muted (signaling)", { pid, kind, muted });
+        // Update our local Participant view too. Without this the SDK fan-outs
+        // the event but the next time anything reads `participant.isMicMuted`
+        // (diagnostics, the "mic muted" badge in the UI) it sees the stale
+        // initial `true`. Audio plays fine over WebRTC regardless of this
+        // flag — but the badge stays stuck and that's how users get confused.
+        const participant = this.participants.get(pid);
+        if (participant && kind === "audio") {
+          participant.isMicMuted = muted;
+        }
         this.emit({
           type: "track_muted",
           participantId: pid,
@@ -571,6 +594,8 @@ export class VideoClient {
     const existingTrack = this.localStream?.getAudioTracks()[0];
     this.log("enableMic existingTrack", { exists: !!existingTrack, enabled: existingTrack?.enabled, readyState: existingTrack?.readyState });
 
+    let needsRenegotiation = false;
+
     if (existingTrack && existingTrack.readyState === "live") {
       existingTrack.enabled = true;
       this.log("enableMic re-enabled existing track");
@@ -581,12 +606,25 @@ export class VideoClient {
       if (track && this.pc) {
         if (!this.localStream) this.localStream = new MediaStream();
         this.localStream.addTrack(track);
-        this.pc.addTrack(track, this.localStream);
+        if (this.audioSender) {
+          // Existing sender → just swap the track. No SDP touch needed.
+          await this.audioSender.replaceTrack(track);
+        } else {
+          // First-time send: addTrack creates a new m-line. Without an offer/
+          // answer round-trip the SFU will never see this track and the peer
+          // hears silence even though the local sender shows the track as live.
+          this.audioSender = this.pc.addTrack(track, this.localStream);
+          needsRenegotiation = true;
+        }
+        this.currentMicDeviceId = track.getSettings().deviceId ?? null;
         this.log("enableMic added track to PC, senders:", this.pc.getSenders().length);
       }
     }
     this.micEnabled = true;
     this.send({ type: "mute_changed", kind: "audio", muted: false });
+    if (needsRenegotiation) {
+      await this.renegotiate("enableMic");
+    }
   }
 
   /** Disable microphone (mutes track, keeps it in PeerConnection) */
@@ -606,6 +644,8 @@ export class VideoClient {
     const existingTrack = this.localStream?.getVideoTracks()[0];
     this.log("enableCamera existingTrack", { exists: !!existingTrack, enabled: existingTrack?.enabled, readyState: existingTrack?.readyState });
 
+    let needsRenegotiation = false;
+
     if (existingTrack && existingTrack.readyState === "live") {
       existingTrack.enabled = true;
       await this.videoSender?.replaceTrack(existingTrack);
@@ -622,13 +662,20 @@ export class VideoClient {
         if (this.videoSender) {
           await this.videoSender.replaceTrack(track);
         } else {
+          // Same SDP-renegotiation rationale as enableMic — first-time send
+          // needs an offer/answer round-trip or the SFU never wires it up.
           this.videoSender = this.pc.addTrack(track, this.localStream);
+          needsRenegotiation = true;
         }
+        this.currentCameraDeviceId = track.getSettings().deviceId ?? null;
         this.log("enableCamera track on PC, senders:", this.pc.getSenders().length);
       }
     }
     this.camEnabled = true;
     this.send({ type: "mute_changed", kind: "video", muted: false });
+    if (needsRenegotiation) {
+      await this.renegotiate("enableCamera");
+    }
   }
 
   /** Disable camera (mutes track, keeps it in PeerConnection) */
@@ -640,6 +687,129 @@ export class VideoClient {
     this.videoSender?.replaceTrack(null);
     this.camEnabled = false;
     this.send({ type: "mute_changed", kind: "video", muted: true });
+  }
+
+  // ── Device selection ───────────────────────────
+  //
+  // The microphone and camera sit behind a single RTCRtpSender each
+  // (this.audioSender / this.videoSender). Switching device == swapping the
+  // MediaStreamTrack via sender.replaceTrack(); SSRC, m-line and SDP all
+  // stay the same, so the SFU sees an uninterrupted stream and no
+  // renegotiation is required. Same trick the screen-share path leans on
+  // for resolution swaps.
+  //
+  // Caller responsibility: catch the AbortError / NotFoundError / etc. that
+  // getUserMedia throws when the requested device is gone or permission was
+  // revoked, and re-prompt the user.
+
+  /** Enumerate available media input devices. Labels are populated only
+   *  once permission has been granted at least once for that kind. */
+  async listDevices(): Promise<{
+    audioInputs: MediaDeviceInfo[];
+    videoInputs: MediaDeviceInfo[];
+  }> {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    return {
+      audioInputs: all.filter((d) => d.kind === "audioinput"),
+      videoInputs: all.filter((d) => d.kind === "videoinput"),
+    };
+  }
+
+  /** Currently active microphone deviceId, or null if not yet acquired. */
+  getCurrentMicDeviceId(): string | null {
+    return this.currentMicDeviceId;
+  }
+
+  /** Currently active camera deviceId, or null if not yet acquired. */
+  getCurrentCameraDeviceId(): string | null {
+    return this.currentCameraDeviceId;
+  }
+
+  /** Switch the microphone to a different input device. The new track
+   *  inherits the current mute state (so silently muted callers stay
+   *  silent). No SDP renegotiation. */
+  async setMicDevice(deviceId: string) {
+    if (!this.pc) {
+      this.debug("warn", "setMicDevice: not connected");
+      return;
+    }
+    if (this.currentMicDeviceId === deviceId) {
+      this.log("setMicDevice: already on this device", { deviceId });
+      return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId: { exact: deviceId } },
+    });
+    const newTrack = stream.getAudioTracks()[0];
+    if (!newTrack) {
+      throw new Error("setMicDevice: getUserMedia returned no audio track");
+    }
+    // Inherit mute state — caller didn't ask to unmute, only to switch source.
+    newTrack.enabled = this.micEnabled;
+
+    // Drop the old track from localStream, stop it (releases the device),
+    // splice in the new one.
+    if (!this.localStream) this.localStream = new MediaStream();
+    for (const t of this.localStream.getAudioTracks()) {
+      this.localStream.removeTrack(t);
+      t.stop();
+    }
+    this.localStream.addTrack(newTrack);
+
+    if (this.audioSender) {
+      await this.audioSender.replaceTrack(newTrack);
+    } else {
+      this.audioSender = this.pc.addTrack(newTrack, this.localStream);
+    }
+    this.currentMicDeviceId = newTrack.getSettings().deviceId ?? deviceId;
+    this.log("setMicDevice done", { deviceId: this.currentMicDeviceId });
+  }
+
+  /** Switch the camera to a different input device. Honors current camera
+   *  on/off — if the camera is off, the new track is parked in localStream
+   *  and the sender stays at null until the user re-enables the camera. */
+  async setCameraDevice(deviceId: string) {
+    if (!this.pc) {
+      this.debug("warn", "setCameraDevice: not connected");
+      return;
+    }
+    if (this.currentCameraDeviceId === deviceId) {
+      this.log("setCameraDevice: already on this device", { deviceId });
+      return;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId }, width: 640, height: 480 },
+    });
+    const newTrack = stream.getVideoTracks()[0];
+    if (!newTrack) {
+      throw new Error("setCameraDevice: getUserMedia returned no video track");
+    }
+    // If camera was disabled, keep the new track muted-and-parked too. Black
+    // RTP would otherwise wake the receiver up to a grey tile.
+    newTrack.enabled = this.camEnabled;
+
+    if (!this.localStream) this.localStream = new MediaStream();
+    for (const t of this.localStream.getVideoTracks()) {
+      this.localStream.removeTrack(t);
+      t.stop();
+    }
+    this.localStream.addTrack(newTrack);
+
+    if (this.videoSender) {
+      // Sender exists from the initial offer. If cam is on, stream new
+      // frames; if off, keep RTP closed but hold the track for re-enable.
+      await this.videoSender.replaceTrack(this.camEnabled ? newTrack : null);
+    } else {
+      this.videoSender = this.pc.addTrack(newTrack, this.localStream);
+      if (!this.camEnabled) await this.videoSender.replaceTrack(null);
+    }
+    this.currentCameraDeviceId = newTrack.getSettings().deviceId ?? deviceId;
+    this.log("setCameraDevice done", {
+      deviceId: this.currentCameraDeviceId,
+      camEnabled: this.camEnabled,
+    });
   }
 
   /** Toggle mic on/off */
@@ -855,11 +1025,23 @@ export class VideoClient {
     return this.localStream;
   }
 
-  private async renegotiate() {
+  /**
+   * Client-initiated SDP renegotiation. Used after addTrack() creates a new
+   * sender (first enableMic / enableCamera) — until offer/answer completes,
+   * the SFU has no m-line for that track and the peer hears/sees nothing.
+   * Screen-share path open-codes the same three calls; one day they could
+   * collapse into this helper too.
+   */
+  private async renegotiate(reason: string) {
     if (!this.pc || !this.ws) return;
-    // SFU-initiated renegotiation handles this via offer from server
-    // For client-initiated changes, we'd need to send a new offer
-    // For now, the SFU will detect new tracks and renegotiate
+    try {
+      const offer = await this.pc.createOffer();
+      await this.pc.setLocalDescription(offer);
+      this.send({ type: "offer", sdp_offer: offer.sdp });
+      this.log("renegotiate sent offer", { reason });
+    } catch (e) {
+      this.debug("warn", "renegotiate failed", { reason, error: String(e) });
+    }
   }
 
   // ── Speaking detection ─────────────────────────
@@ -1069,6 +1251,9 @@ export class VideoClient {
     this.pc?.close();
     this.pc = null;
     this.videoSender = null;
+    this.audioSender = null;
+    this.currentMicDeviceId = null;
+    this.currentCameraDeviceId = null;
     this.screenVideoTrack?.stop();
     this.screenAudioTrack?.stop();
     this.screenVideoTrack = null;

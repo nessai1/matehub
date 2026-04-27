@@ -1,3 +1,4 @@
+mod acl_publish;
 mod api;
 mod auth;
 mod db;
@@ -63,6 +64,20 @@ async fn main() -> Result<()> {
     // the hub still comes up when NATS is down in a dev box.
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     voice_occupancy_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
+
+    // Single NATS client for outbound ACL invalidations. None means publishes
+    // become no-ops; the hub still works, just without cache-busting.
+    let nats_for_acl = match async_nats::connect(&nats_url).await {
+        Ok(c) => {
+            tracing::info!(%nats_url, "NATS connected (acl_publish)");
+            Some(c)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "acl_publish NATS connect failed, invalidations disabled");
+            None
+        }
+    };
+    acl_publish::init(nats_for_acl);
 
     // SSO state. HUB_ID comes from ENV in SaaS (set by general at
     // provisioning) or falls back to the seed DEV_HUB_ID in dev.

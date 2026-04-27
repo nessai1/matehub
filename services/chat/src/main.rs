@@ -1,5 +1,7 @@
 #![allow(dead_code, clippy::collapsible_if)]
 
+mod access;
+mod acl_consumer;
 mod api;
 mod attachment;
 mod attachments;
@@ -7,6 +9,7 @@ mod transcode;
 mod auth;
 mod data_service;
 mod db;
+mod dm_calls;
 mod fanout;
 mod gateway;
 mod models;
@@ -53,6 +56,31 @@ async fn main() -> Result<()> {
     // Connect to Redis
     let redis = read_state::connect_redis().await;
 
+    // ACL invalidation: when hub mutates membership/permissions it publishes
+    // to acl.invalidate; this background task drops the matching cache keys.
+    acl_consumer::spawn(nats.clone(), redis.clone());
+
+    // Connect to hub Postgres (for access::check). Without it access::check
+    // refuses everything, which is the safe default but unhelpful for dev.
+    // Mirror hub's behavior: HUB_DATABASE_URL > DATABASE_URL > local-dev URL.
+    let pg_url = std::env::var("HUB_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub".into());
+    let pg = match sqlx::PgPool::connect(&pg_url).await {
+        Ok(pool) => {
+            tracing::info!(%pg_url, "connected to hub Postgres for ACL checks");
+            Some(pool)
+        }
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                %pg_url,
+                "failed to connect to hub Postgres — ACL closed (every send/read denied)",
+            );
+            None
+        }
+    };
+
     // S3 for attachments (optional)
     let s3 = if std::env::var("S3_ACCESS_KEY_ID").is_ok() {
         Some(Arc::new(
@@ -91,6 +119,7 @@ async fn main() -> Result<()> {
         redis,
         s3,
         sessions,
+        pg,
     };
 
     // Prometheus /metrics + HTTP-request instrumentation layer.

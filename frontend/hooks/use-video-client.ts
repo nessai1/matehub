@@ -33,6 +33,14 @@ interface UseVideoClientReturn {
   error: string | null;
   /** Underlying SDK client — exposed for debug tooling. Null when not connected. */
   client: VideoClient | null;
+  // ── Device selection ──
+  audioInputs: MediaDeviceInfo[];
+  videoInputs: MediaDeviceInfo[];
+  currentMicDeviceId: string | null;
+  currentCameraDeviceId: string | null;
+  setMicDevice: (deviceId: string) => Promise<void>;
+  setCameraDevice: (deviceId: string) => Promise<void>;
+  refreshDevices: () => Promise<void>;
 }
 
 export function useVideoClient(
@@ -50,6 +58,14 @@ export function useVideoClient(
   const [localScreenVideoTrack, setLocalScreenVideoTrack] =
     useState<MediaStreamTrack | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [videoInputs, setVideoInputs] = useState<MediaDeviceInfo[]>([]);
+  const [currentMicDeviceId, setCurrentMicDeviceId] = useState<string | null>(
+    null,
+  );
+  const [currentCameraDeviceId, setCurrentCameraDeviceId] = useState<
+    string | null
+  >(null);
 
   // Two refs that together solve the race between mute signaling (fast, WS)
   // and track establishment (slow, ICE+SDP). Either can arrive first.
@@ -68,13 +84,25 @@ export function useVideoClient(
   const connect = useCallback(async () => {
     if (!opts || clientRef.current) return;
 
+    const iceServers: RTCIceServer[] = [
+      { urls: "stun:stun.l.google.com:19302" },
+    ];
+    const turnUrl = import.meta.env.VITE_TURN_URL;
+    if (turnUrl) {
+      iceServers.push({
+        urls: turnUrl,
+        username: import.meta.env.VITE_TURN_USERNAME,
+        credential: import.meta.env.VITE_TURN_CREDENTIAL,
+      });
+    }
+
     const client = new VideoClient({
       serverUrl: opts.serverUrl,
       sessionId: opts.sessionId,
       userId: opts.userId,
       userUuid: opts.userUuid,
       token: opts.token,
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers,
     });
 
     client.on((event: VideoClientEvent) => {
@@ -86,6 +114,8 @@ export function useVideoClient(
           setIsMicEnabled(client.isMicEnabled);
           setIsCamEnabled(client.isCamEnabled);
           setLocalStream(client.getLocalStream());
+          setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+          setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
           break;
         case "participant_joined":
           updateParticipants((prev) => [...prev, event.participant]);
@@ -260,6 +290,53 @@ export function useVideoClient(
     setLocalScreenVideoTrack(null);
   }, []);
 
+  // ── Device enumeration / switching ────────────────────────────────────
+  // Labels are empty until permission is granted. We populate the lists
+  // both right after connect (when getUserMedia has run) and on every
+  // `devicechange` event the browser fires (USB plug, BT pairing, etc).
+
+  const refreshDevices = useCallback(async () => {
+    const client = clientRef.current;
+    if (!client) return;
+    try {
+      const { audioInputs, videoInputs } = await client.listDevices();
+      setAudioInputs(audioInputs);
+      setVideoInputs(videoInputs);
+    } catch (e) {
+      console.warn("listDevices failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    void refreshDevices();
+    const onChange = () => void refreshDevices();
+    navigator.mediaDevices.addEventListener("devicechange", onChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", onChange);
+    };
+  }, [isConnected, refreshDevices]);
+
+  const setMicDevice = useCallback(async (deviceId: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    await client.setMicDevice(deviceId);
+    setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+    // Force a new MediaStream reference so consumers' useMemo rebuilds —
+    // mutating the existing one in-place doesn't trip referential equality.
+    const s = client.getLocalStream();
+    setLocalStream(s ? new MediaStream(s.getTracks()) : null);
+  }, []);
+
+  const setCameraDevice = useCallback(async (deviceId: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    await client.setCameraDevice(deviceId);
+    setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+    const s = client.getLocalStream();
+    setLocalStream(s ? new MediaStream(s.getTracks()) : null);
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -284,5 +361,12 @@ export function useVideoClient(
     disconnect,
     error,
     client,
+    audioInputs,
+    videoInputs,
+    currentMicDeviceId,
+    currentCameraDeviceId,
+    setMicDevice,
+    setCameraDevice,
+    refreshDevices,
   };
 }
