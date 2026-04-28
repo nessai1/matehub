@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 export type ChannelKind = "text" | "voice" | "stage" | "dm";
 

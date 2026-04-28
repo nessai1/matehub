@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# MateHub boxed deploy -- one-shot bootstrap for a fresh VPS.
+# MateHub box deploy -- one-shot bootstrap for a fresh VPS.
 #
-# 1. Make sure deploy/.env exists, copying from .env.example otherwise.
+# 1. Make sure deploy/.env exists, copying from .env.box.example otherwise.
 # 2. Validate the manual fields (DOMAIN, PUBLIC_IP, ACME_EMAIL).
 # 3. Generate any blank secrets in-place using openssl.
-# 4. Build images and bring the stack up.
-# 5. Tail healthcheck status until everything is up (or a 90s timeout fires).
+# 4. Pull images from the configured registry and bring the stack up.
+# 5. Tail healthcheck status until everything is up (or a 120s timeout fires).
+#
+# Pre-requisite: the host must be authenticated against REGISTRY_URL. For
+# YC CR that means a one-off `docker login --username json_key
+# --password-stdin cr.yandex < puller.json`. Public registries skip this.
 #
 # Idempotent: re-running never overwrites already-set secrets, so the same
 # JWT_SECRET / passwords survive across deploys.
@@ -15,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_DIR="$REPO_ROOT/deploy"
 ENV_FILE="$DEPLOY_DIR/.env"
-ENV_TEMPLATE="$DEPLOY_DIR/.env.example"
+ENV_TEMPLATE="$DEPLOY_DIR/.env.box.example"
 COMPOSE_FILE="$DEPLOY_DIR/docker-compose.box.yml"
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -62,12 +66,12 @@ set_if_blank JWT_SECRET        "$(gen_secret)"
 set_if_blank S3_SECRET_KEY     "$(gen_secret)"
 set_if_blank TURN_PASSWORD     "$(gen_secret)"
 
-# ── 4. Build & up ────────────────────────────────────────────────────
+# ── 4. Pull & up ─────────────────────────────────────────────────────
 
 cd "$DEPLOY_DIR"
 
-log "building images (this takes ~10 min on first run, mostly cargo)"
-docker compose -f docker-compose.box.yml build
+log "pulling images from $REGISTRY_URL"
+docker compose -f docker-compose.box.yml pull
 
 log "starting services"
 docker compose -f docker-compose.box.yml up -d

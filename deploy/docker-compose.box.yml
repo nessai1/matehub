@@ -1,18 +1,21 @@
-# MateHub -- boxed deployment for a single VPS.
+# MateHub box -- single-VPS deployment, images pulled from a registry.
 #
-# One-host setup: nothing here is meant for horizontal scale. For prod
-# we run on k8s (deploy/helm/). This file is what a friend with a 4 GB
-# VPS uses to bring up an MVP under a single domain.
+# Used both for our own stands (demo, staging, prod-single-tenant) and for
+# self-hosted installations -- the difference is just REGISTRY_URL in .env
+# (your private CR vs. our public mirror).
+#
+# K8s/SaaS deployments (deploy/helm) pull THE SAME images from THE SAME
+# registry. There is no "box-only" or "saas-only" image variant.
 #
 # Usage:
-#   1. cp .env.example .env  &&  fill in DOMAIN/PUBLIC_IP/ACME_EMAIL
-#   2. ./scripts/box-deploy.sh   (generates secrets if blank, then up -d)
+#   1. cp .env.box.example .env  &&  fill in DOMAIN / PUBLIC_IP / ACME_EMAIL
+#   2. docker login --username json_key --password-stdin cr.yandex < puller.json
+#      (skip if REGISTRY_URL points at a public registry)
+#   3. ./scripts/box-deploy.sh
 #
-# Topology:
-#   Caddy (80/443) ── HTTPS terminates, reverse-proxies /api/* → services,
-#                     serves the Vite SPA from a shared volume
-#   video :4001/udp ── exposed directly on the host for SFU media
-#   coturn ── network_mode: host (UDP relay needs a wide port range)
+# Updating one service:
+#   - bump <SERVICE>_VERSION in .env (e.g. CHAT_VERSION=0.1.1)
+#   - docker compose pull chat && docker compose up -d chat
 
 name: matehub-box
 
@@ -28,7 +31,6 @@ volumes:
   minio-data:
   caddy-data:
   caddy-config:
-  frontend-dist:
 
 services:
   # ── Infrastructure ────────────────────────────────────────────────
@@ -51,8 +53,6 @@ services:
   scylla:
     image: scylladb/scylla:6.2
     restart: unless-stopped
-    # Tuned for a 4 GB host: a single shard, 768 MB heap, dev mode disables
-    # the production-grade IO scheduler so we don't fight Postgres for IOPS.
     command: >
       --smp 1
       --memory 768M
@@ -110,9 +110,6 @@ services:
       retries: 10
     networks: [matehub]
 
-  # One-shot: create buckets and make them publicly readable so the SPA can
-  # fetch avatars / inline attachments by direct URL (current frontend
-  # behaviour — the authed `/stream` proxy is implemented but not yet used).
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -130,26 +127,29 @@ services:
     restart: "no"
     networks: [matehub]
 
-  # ── Application services ──────────────────────────────────────────
+  # ── Application services (pulled from Yandex CR) ──────────────────
   hub:
-    build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.rust
-      target: hub
+    image: ${REGISTRY_URL}/matehub-hub:${HUB_VERSION}
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-info}
       PORT: "3002"
+      STATIC_DIR: /srv/dist
       DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       JWT_SECRET: ${JWT_SECRET}
-      DEV_MODE: "false"  # first browser hits /setup wizard instead of seed
+      DEV_MODE: "false"
       S3_ENDPOINT: http://minio:9000
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
       S3_BUCKET_HUB_ASSETS: hub-assets
+      # Surfaced to the SPA via GET /config.json so a single hub image
+      # works against any TURN deployment without a rebuild.
+      TURN_URL: ${TURN_URL}
+      TURN_USERNAME: ${TURN_USERNAME}
+      TURN_PASSWORD: ${TURN_PASSWORD}
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }
@@ -158,10 +158,7 @@ services:
     networks: [matehub]
 
   chat:
-    build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.rust
-      target: chat
+    image: ${REGISTRY_URL}/matehub-chat:${CHAT_VERSION}
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-info}
@@ -185,10 +182,7 @@ services:
     networks: [matehub]
 
   video:
-    build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.rust
-      target: video
+    image: ${REGISTRY_URL}/matehub-video:${VIDEO_VERSION}
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-info}
@@ -196,23 +190,17 @@ services:
       UDP_PORT: "4001"
       NATS_URL: nats://nats:4222
       JWT_SECRET: ${JWT_SECRET}
-      # Comma-separated list of public IPs str0m advertises as ICE host
-      # candidates. Without this the SFU offers docker-internal addresses
-      # and clients can never connect.
       PUBLIC_IP: ${PUBLIC_IP}
     ports:
-      # SFU media. Must be reachable from the open internet — Caddy can't
-      # proxy UDP, so this port is mapped straight to the host.
+      # SFU media. Caddy can't proxy UDP, so this port is mapped straight
+      # to the host -- has to be reachable from the open internet.
       - "4001:4001/udp"
     depends_on:
       nats: { condition: service_healthy }
     networks: [matehub]
 
   transcoder:
-    build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.rust
-      target: transcoder
+    image: ${REGISTRY_URL}/matehub-transcoder:${TRANSCODER_VERSION}
     restart: unless-stopped
     environment:
       RUST_LOG: ${RUST_LOG:-info}
@@ -228,12 +216,6 @@ services:
     networks: [matehub]
 
   # ── TURN ──────────────────────────────────────────────────────────
-  # network_mode: host because TURN relay needs a wide UDP port range
-  # (49152-65535 by default). Mapping that through docker-proxy is slow
-  # and memory-hungry — host networking is the standard workaround.
-  # The friend's firewall must allow:
-  #   3478/udp, 3478/tcp     — STUN + TURN signalling
-  #   49152-65535/udp        — relay (configurable, see --max-port)
   coturn:
     image: coturn/coturn:latest
     restart: unless-stopped
@@ -253,25 +235,6 @@ services:
       --no-cli
       --log-file=stdout
 
-  # ── Frontend bundle ───────────────────────────────────────────────
-  # One-shot: builds the SPA with the right VITE_* baked in, copies the
-  # dist into a shared volume, exits. Caddy serves the volume.
-  frontend-build:
-    build:
-      context: ..
-      dockerfile: deploy/docker/Dockerfile.frontend
-      args:
-        VITE_HUB_API_URL: https://${DOMAIN}/api/hub
-        VITE_CHAT_API_URL: https://${DOMAIN}/api/chat
-        VITE_VIDEO_SERVER_URL: https://${DOMAIN}/api/video
-        VITE_TURN_URL: turn:${DOMAIN}:3478?transport=udp
-        VITE_TURN_USERNAME: ${TURN_USERNAME}
-        VITE_TURN_CREDENTIAL: ${TURN_PASSWORD}
-        VITE_DEV_MODE: "false"
-    volumes:
-      - frontend-dist:/srv
-    restart: "no"
-
   # ── Edge ──────────────────────────────────────────────────────────
   caddy:
     image: caddy:2-alpine
@@ -284,11 +247,9 @@ services:
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - frontend-dist:/srv:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      frontend-build: { condition: service_completed_successfully }
       hub:   { condition: service_started }
       chat:  { condition: service_started }
       video: { condition: service_started }

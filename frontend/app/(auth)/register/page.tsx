@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 interface InvitationPreview {
   hub_name: string;

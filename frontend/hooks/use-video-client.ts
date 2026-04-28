@@ -6,6 +6,7 @@ import {
   type VideoClientEvent,
 } from "../../packages/sdk-video/src";
 import { playCallSound } from "@/lib/call-sounds";
+import { getTurnConfig } from "@/src/config";
 
 interface UseVideoClientOptions {
   serverUrl: string;
@@ -87,13 +88,9 @@ export function useVideoClient(
     const iceServers: RTCIceServer[] = [
       { urls: "stun:stun.l.google.com:19302" },
     ];
-    const turnUrl = import.meta.env.VITE_TURN_URL;
-    if (turnUrl) {
-      iceServers.push({
-        urls: turnUrl,
-        username: import.meta.env.VITE_TURN_USERNAME,
-        credential: import.meta.env.VITE_TURN_CREDENTIAL,
-      });
+    const turn = getTurnConfig();
+    if (turn) {
+      iceServers.push(turn);
     }
 
     const client = new VideoClient({

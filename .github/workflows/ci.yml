@@ -1,5 +1,8 @@
 name: CI
 
+# Quality gate for main: tests, lint, typecheck.
+# Image builds live in release.yml (triggered by tags).
+
 on:
   push:
     branches: [main]
@@ -8,15 +11,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  REGISTRY: cr.yandex
-  # Set in GitHub repo secrets: YC_REGISTRY_ID, YC_SA_KEY
 
 jobs:
-  # ──────────────────────────────────────────────
-  # Rust: check, test, clippy
-  # ──────────────────────────────────────────────
   rust-check:
-    name: Rust Check & Test
+    name: Rust check & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,11 +36,8 @@ jobs:
       - name: Test
         run: cargo test --all
 
-  # ──────────────────────────────────────────────
-  # TypeScript: lint, typecheck
-  # ──────────────────────────────────────────────
   frontend-check:
-    name: Frontend Check
+    name: Frontend check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,71 +50,3 @@ jobs:
       - run: npm ci
       - run: npm run lint:frontend
       - run: npm run typecheck
-
-  # ──────────────────────────────────────────────
-  # Build & push Docker images (only on main)
-  # ──────────────────────────────────────────────
-  build-images:
-    name: Build & Push Images
-    needs: [rust-check, frontend-check]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - name: video
-            dockerfile: deploy/docker/Dockerfile.video
-          - name: chat
-            dockerfile: deploy/docker/Dockerfile.chat
-          - name: general
-            dockerfile: deploy/docker/Dockerfile.general
-          - name: frontend
-            dockerfile: deploy/docker/Dockerfile.frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Yandex Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: json_key
-          password: ${{ secrets.YC_SA_KEY }}
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.service.dockerfile }}
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/matehub-${{ matrix.service.name }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/matehub-${{ matrix.service.name }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ──────────────────────────────────────────────
-  # Update image tags in Helm values (GitOps trigger)
-  # ──────────────────────────────────────────────
-  update-deploy:
-    name: Update Deploy Manifest
-    needs: [build-images]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Update image tags
-        run: |
-          cd deploy/helm/matehub
-          sed -i "s/tag: .*/tag: \"${{ github.sha }}\"/" values-staging.yaml
-
-      - name: Commit updated tags
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deploy/helm/matehub/values-staging.yaml
-          git diff --cached --quiet || git commit -m "deploy: update staging images to ${{ github.sha }}"
-          git push

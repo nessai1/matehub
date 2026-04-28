@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 interface SetupAdminResponse {
   access_token: string;

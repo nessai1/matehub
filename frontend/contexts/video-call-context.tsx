@@ -16,8 +16,7 @@ import type {
   VideoClient,
 } from "../../packages/sdk-video/src";
 
-const VIDEO_SERVER_URL =
-  import.meta.env.VITE_VIDEO_SERVER_URL ?? "http://localhost:4000";
+const VIDEO_SERVER_URL = "/api/video";
 
 interface VideoCallContextValue {
   /** The voice channel the user is currently CONNECTED to (not just viewing). */

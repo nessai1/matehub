@@ -1,8 +1,13 @@
-# MateHub edge -- TLS termination, API routing, SPA serving.
+# MateHub edge -- TLS termination + API path routing.
+#
+# Static SPA is no longer served by Caddy: it's baked into the hub image
+# and served by tower-http ServeDir as a fallback. The default `handle`
+# block forwards everything that didn't match an API prefix to hub, which
+# returns either an API response (if the path matches /v1/* or /ws/*) or a
+# static asset / index.html (everything else).
 #
 # `handle_path` strips the matched prefix before forwarding, so each
-# upstream sees its own native path layout (`/v1/...`, `/ws/...`, etc.)
-# even though everything is bolted onto a single domain.
+# upstream sees its own native path layout (`/v1/...`, `/ws/...`).
 
 {
     email {$ACME_EMAIL}
@@ -12,13 +17,11 @@
     encode zstd gzip
 
     # ── hub: REST + presence WebSocket ─────────────────────────────
-    # Strips /api/hub → upstream sees /v1/..., /ws/presence/...
     handle_path /api/hub/* {
         reverse_proxy hub:3002
     }
 
     # ── chat: REST + gateway WebSocket ─────────────────────────────
-    # Caddy v2 forwards `Upgrade: websocket` automatically.
     handle_path /api/chat/* {
         reverse_proxy chat:3003
     }
@@ -29,12 +32,8 @@
         reverse_proxy video:4000
     }
 
-    # ── SPA root ───────────────────────────────────────────────────
-    # `try_files` falls through to index.html so client-side react-router
-    # can handle deep links (refresh on /hub/123/channel/456 etc.).
+    # ── SPA + everything else → hub (ServeDir fallback) ────────────
     handle {
-        root * /srv
-        try_files {path} /index.html
-        file_server
+        reverse_proxy hub:3002
     }
 }

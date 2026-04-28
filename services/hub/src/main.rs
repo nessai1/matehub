@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 #[tokio::main]
@@ -96,6 +97,21 @@ async fn main() -> Result<()> {
     let (metrics_layer, metrics_handle) =
         matehub_common::observability::metrics_layer_and_handle();
 
+    // SPA bundle: when STATIC_DIR is set and exists, hub serves the Vite
+    // bundle for any route the API didn't match. Unknown paths fall through
+    // to index.html so client-side react-router handles deep links.
+    // In dev (cargo run) STATIC_DIR is unset → directory doesn't exist →
+    // ServeDir 404s, frontend is served separately by `vite dev` on :3000.
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "/srv/dist".into());
+    let index_path = format!("{static_dir}/index.html");
+    let spa_fallback =
+        ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
+    if std::path::Path::new(&static_dir).is_dir() {
+        tracing::info!(%static_dir, "serving SPA bundle as fallback");
+    } else {
+        tracing::warn!(%static_dir, "STATIC_DIR not present, SPA fallback will 404");
+    }
+
     let app = api::routes(pool, s3, redis, events_tx, dev_mode, sso_state)
         .route(
             "/metrics",
@@ -105,6 +121,7 @@ async fn main() -> Result<()> {
             }),
         )
         .route("/health", axum::routing::get(|| async { "ok" }))
+        .fallback_service(spa_fallback)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(metrics_layer);

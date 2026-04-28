@@ -11,7 +11,7 @@ import { useChannels } from "@/hooks/use-channels";
 import { useChatContext } from "@/contexts/chat-context";
 import { useVideoCall } from "@/contexts/video-call-context";
 
-const CHAT_API = import.meta.env.VITE_CHAT_API_URL || "http://localhost:3003";
+const CHAT_API = "/api/chat";
 
 export interface IncomingCall {
   fromUserId: string;

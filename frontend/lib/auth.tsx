@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 export interface AuthSession {
   type: "permanent" | "temp";

@@ -17,7 +17,7 @@ import {
   type Message,
 } from "@matehub/sdk-chat";
 
-const CHAT_API = import.meta.env.VITE_CHAT_API_URL || "http://localhost:3003";
+const CHAT_API = "/api/chat";
 
 /// Sonyflake epoch (matches matehub-common::snowflake::SONYFLAKE_EPOCH_MS).
 const SONYFLAKE_EPOCH_MS = 1_409_529_600_000;

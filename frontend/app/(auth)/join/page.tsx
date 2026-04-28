@@ -37,9 +37,7 @@ export default function JoinPage() {
   useEffect(() => {
     const resolve = async () => {
       try {
-        const hubApi =
-          import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
-        const res = await fetch(`${hubApi}/v1/join/${params.token}`);
+        const res = await fetch(`/api/hub/v1/join/${params.token}`);
         if (!res.ok) {
           if (res.status === 404) {
             setError("Link expired or revoked");

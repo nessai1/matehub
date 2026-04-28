@@ -1,19 +1,60 @@
-# MateHub Rust services -- single multi-target Dockerfile.
+# MateHub services -- single multi-target Dockerfile.
 #
-# One builder stage compiles every service binary in a single `cargo build`
-# (lets BuildKit share the heaviest layer across runtime images). Each
-# service maps to its own final stage that copies just the binary it needs.
+# Per-build the user picks ONE service via two coordinated knobs:
+#   --build-arg SERVICE=hub   -- tells the Rust builder which crate to compile
+#   --target hub              -- tells BuildKit which final stage to assemble
 #
-# Usage from docker-compose:
+# Both must match. Mismatched values produce a "matehub-X not found" copy
+# error at the final stage, which is the desired loud failure.
+#
+# Targets / SERVICE values:
+#   hub         -- API + Vite SPA bundle + migrations
+#   chat        -- API only
+#   video       -- SFU (str0m, needs libssl)
+#   transcoder  -- ffmpeg worker
+#   general     -- SaaS control plane + migrations + mail templates
+#
+# Usage from GitHub Actions (release.yml does this automatically):
 #   build:
-#     context: ../..
+#     context: .
 #     dockerfile: deploy/docker/Dockerfile.rust
-#     target: hub      # or: chat, video, transcoder
+#     target: hub
+#     build-args:
+#       SERVICE: hub
 #
-# str0m needs OpenSSL at runtime, so we stay on debian-slim, not alpine.
+# Rust targets stay on debian-slim because str0m needs OpenSSL at runtime.
 
-# ── Builder ───────────────────────────────────────────────────────────
+# Global ARG so it's visible after FROM in stages that re-declare it.
+ARG SERVICE
+
+# ── Frontend builder (Vite SPA, baked into hub) ──────────────────────
+# Built unconditionally -- BuildKit only assembles stages reachable from
+# the chosen --target, so non-hub builds skip this layer entirely.
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app
+
+# npm workspace manifests first so the install layer caches.
+COPY package.json package-lock.json ./
+COPY packages/sdk-video/package.json packages/sdk-video/package.json
+COPY packages/sdk-chat/package.json packages/sdk-chat/package.json
+COPY frontend/package.json frontend/package.json
+
+RUN npm ci
+
+# Source.
+COPY packages packages
+COPY frontend frontend
+
+# Build is deterministic: API URLs are same-origin (/api/hub, /api/chat,
+# /api/video) and TURN/app config is fetched from hub at runtime via
+# /config.json. Same image runs on any deployment.
+WORKDIR /app/frontend
+RUN npm run build
+
+# ── Rust builder ─────────────────────────────────────────────────────
 FROM rust:1.87-bookworm AS builder
+ARG SERVICE
 
 WORKDIR /app
 
@@ -22,44 +63,39 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Workspace manifests + shared crate first so the dep layer caches.
+# All five Cargo.toml files are required even if we only build one service:
+# Cargo refuses to operate on an incomplete workspace.
 COPY Cargo.toml Cargo.lock ./
 COPY packages/common-rust packages/common-rust
-COPY services/hub/Cargo.toml services/hub/Cargo.toml
-COPY services/chat/Cargo.toml services/chat/Cargo.toml
-COPY services/video/Cargo.toml services/video/Cargo.toml
-COPY services/general/Cargo.toml services/general/Cargo.toml
+COPY services/hub/Cargo.toml        services/hub/Cargo.toml
+COPY services/chat/Cargo.toml       services/chat/Cargo.toml
+COPY services/video/Cargo.toml      services/video/Cargo.toml
+COPY services/general/Cargo.toml    services/general/Cargo.toml
 COPY services/transcoder/Cargo.toml services/transcoder/Cargo.toml
 
-# Stub mains so dep-only build succeeds.
+# Stub mains for every workspace member -- needed to make the workspace
+# valid before we have real sources. They get overwritten only for the
+# target service below; the others stay as stubs and are never compiled.
 RUN mkdir -p services/hub/src services/chat/src services/video/src \
              services/general/src services/transcoder/src && \
     for s in hub chat video general transcoder; do \
         echo "fn main() {}" > services/$s/src/main.rs; \
     done
 
-RUN cargo build --release \
-    -p matehub-hub \
-    -p matehub-chat \
-    -p matehub-video \
-    -p matehub-transcoder \
-    || true
+# Pre-build dependencies for the target service. `|| true` because the
+# dep-only graph technically can't link (no real main), but the side-
+# effect we want -- compiled crates in target/release/deps -- happens
+# anyway, and that's what the next layer caches.
+RUN cargo build --release -p matehub-${SERVICE} || true
 
-# Real sources.
-COPY services/hub/src services/hub/src
-COPY services/hub/migrations services/hub/migrations
-COPY services/chat/src services/chat/src
-COPY services/video/src services/video/src
-COPY services/transcoder/src services/transcoder/src
+# Real source for ONE service. Changes to other services don't invalidate
+# this layer. Includes src/, plus migrations/ and templates/ for services
+# that have them (hub, general).
+COPY services/${SERVICE} services/${SERVICE}
 
-# Touch mains so cargo rebuilds the leaves, not the cached deps.
-RUN for s in hub chat video transcoder; do \
-        touch services/$s/src/main.rs; \
-    done && \
-    cargo build --release \
-        -p matehub-hub \
-        -p matehub-chat \
-        -p matehub-video \
-        -p matehub-transcoder
+# Touch main so cargo rebuilds the leaf crate, not the cached deps.
+RUN touch services/${SERVICE}/src/main.rs && \
+    cargo build --release -p matehub-${SERVICE}
 
 # ── Common runtime base (debian-slim + libssl) ───────────────────────
 FROM debian:bookworm-slim AS runtime-base
@@ -70,10 +106,14 @@ RUN apt-get update && \
 
 ENV RUST_LOG=info
 
-# ── hub ──────────────────────────────────────────────────────────────
+# ── hub (binary + migrations + Vite SPA bundle) ──────────────────────
 FROM runtime-base AS hub
 
-COPY --from=builder /app/target/release/matehub-hub /usr/local/bin/matehub-hub
+COPY --from=builder           /app/target/release/matehub-hub /usr/local/bin/matehub-hub
+COPY --from=builder           /app/services/hub/migrations    /var/lib/matehub/migrations
+COPY --from=frontend-builder  /app/frontend/dist              /srv/dist
+
+ENV STATIC_DIR=/srv/dist
 
 EXPOSE 3002
 
@@ -118,3 +158,17 @@ RUN apt-get update && \
 COPY --from=builder /app/target/release/matehub-transcoder /usr/local/bin/matehub-transcoder
 
 ENTRYPOINT ["matehub-transcoder"]
+
+# ── general (SaaS control plane) ─────────────────────────────────────
+FROM runtime-base AS general
+
+COPY --from=builder /app/target/release/matehub-general /usr/local/bin/matehub-general
+COPY --from=builder /app/services/general/migrations    /var/lib/matehub/migrations
+COPY --from=builder /app/services/general/templates     /var/lib/matehub/templates
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
+    CMD curl -fsS http://localhost:3001/health || exit 1
+
+ENTRYPOINT ["matehub-general"]

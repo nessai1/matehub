@@ -1,5 +1,6 @@
 pub mod auth_api;
 pub mod channels;
+pub mod config;
 pub mod dev;
 pub mod dms;
 pub mod groups;
@@ -61,6 +62,7 @@ pub fn routes(
 
     let mut app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .merge(config::routes())
         .merge(setup::routes(pool.clone()))
         .merge(invitations::routes(pool.clone()))
         .nest("/v1", auth_api::routes(pool.clone()))

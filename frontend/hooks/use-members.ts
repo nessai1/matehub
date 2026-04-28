@@ -5,7 +5,7 @@ import {
   setVoiceOccupancy,
 } from "@/lib/voice-occupancy-store";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 export interface MemberGroup {
   id: string;

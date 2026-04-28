@@ -38,7 +38,7 @@ import {
   LoaderIcon,
 } from "lucide-react"
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002"
+const HUB_API = "/api/hub"
 
 export function NavUser({
   user,

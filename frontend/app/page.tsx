@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/lib/auth";
 
-const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
+const HUB_API = "/api/hub";
 
 // Boot gate. The first browser to land on a fresh hub gets routed to
 // /setup; everyone else flows to /hub or /login as before.
