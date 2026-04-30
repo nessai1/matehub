@@ -42,7 +42,12 @@ import {
   CameraIcon,
   LoaderIcon,
   LanguagesIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+  PaletteIcon,
 } from "lucide-react"
+import { useTheme } from "next-themes"
 import { t, useLocale, LOCALES } from "@/i18n"
 
 const HUB_API = "/api/hub"
@@ -236,6 +241,7 @@ export function NavUser({
                 {t("Profile")}
               </DropdownMenuItem>
               <LanguageMenu />
+              <ThemeMenu />
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
@@ -373,6 +379,41 @@ function LanguageMenu() {
               {l.nativeLabel}
             </DropdownMenuRadioItem>
           ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
+// ── Theme picker ──────────────────────────────────────────────
+// Submenu mirroring the language one. next-themes keeps the choice in
+// localStorage and applies the `class="dark"` (or scheme attr) on <html>
+// — no reload needed, the document re-styles immediately.
+function ThemeMenu() {
+  const { theme, setTheme } = useTheme()
+  // theme can be undefined on first paint; fall back to "system" so the
+  // radio group always has a value.
+  const current = theme ?? "system"
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <PaletteIcon />
+        {t("Theme")}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuRadioGroup value={current} onValueChange={setTheme}>
+          <DropdownMenuRadioItem value="light">
+            <SunIcon className="mr-2 h-3.5 w-3.5" />
+            {t("Light")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">
+            <MoonIcon className="mr-2 h-3.5 w-3.5" />
+            {t("Dark")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">
+            <MonitorIcon className="mr-2 h-3.5 w-3.5" />
+            {t("System")}
+          </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
       </DropdownMenuSubContent>
     </DropdownMenuSub>

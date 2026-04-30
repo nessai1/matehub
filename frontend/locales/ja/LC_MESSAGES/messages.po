@@ -603,3 +603,15 @@ msgstr "ログをクリア"
 
 msgid "Voice Channels"
 msgstr "ボイスチャンネル"
+
+msgid "Theme"
+msgstr "テーマ"
+
+msgid "Light"
+msgstr "ライト"
+
+msgid "Dark"
+msgstr "ダーク"
+
+msgid "System"
+msgstr "システム"

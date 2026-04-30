@@ -628,3 +628,15 @@ msgstr "Clear logs"
 
 msgid "Voice Channels"
 msgstr "Voice Channels"
+
+msgid "Theme"
+msgstr "Theme"
+
+msgid "Light"
+msgstr "Light"
+
+msgid "Dark"
+msgstr "Dark"
+
+msgid "System"
+msgstr "System"

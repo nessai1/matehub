@@ -603,3 +603,15 @@ msgstr "Borrar registros"
 
 msgid "Voice Channels"
 msgstr "Canales de voz"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "Light"
+msgstr "Claro"
+
+msgid "Dark"
+msgstr "Oscuro"
+
+msgid "System"
+msgstr "Sistema"

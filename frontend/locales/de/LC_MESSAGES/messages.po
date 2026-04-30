@@ -603,3 +603,15 @@ msgstr "Logs löschen"
 
 msgid "Voice Channels"
 msgstr "Sprach-Kanäle"
+
+msgid "Theme"
+msgstr "Design"
+
+msgid "Light"
+msgstr "Hell"
+
+msgid "Dark"
+msgstr "Dunkel"
+
+msgid "System"
+msgstr "System"

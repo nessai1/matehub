@@ -603,3 +603,15 @@ msgstr "Очистить логи"
 
 msgid "Voice Channels"
 msgstr "Голосовые каналы"
+
+msgid "Theme"
+msgstr "Тема"
+
+msgid "Light"
+msgstr "Светлая"
+
+msgid "Dark"
+msgstr "Тёмная"
+
+msgid "System"
+msgstr "Системная"

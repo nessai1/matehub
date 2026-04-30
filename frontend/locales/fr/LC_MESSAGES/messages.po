@@ -603,3 +603,15 @@ msgstr "Effacer les logs"
 
 msgid "Voice Channels"
 msgstr "Canaux vocaux"
+
+msgid "Theme"
+msgstr "Thème"
+
+msgid "Light"
+msgstr "Clair"
+
+msgid "Dark"
+msgstr "Sombre"
+
+msgid "System"
+msgstr "Système"

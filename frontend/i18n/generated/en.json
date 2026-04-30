@@ -603,6 +603,18 @@
       ],
       "Voice Channels": [
         "Voice Channels"
+      ],
+      "Theme": [
+        "Theme"
+      ],
+      "Light": [
+        "Light"
+      ],
+      "Dark": [
+        "Dark"
+      ],
+      "System": [
+        "System"
       ]
     }
   }

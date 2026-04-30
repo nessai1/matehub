@@ -603,3 +603,15 @@ msgstr "清空日志"
 
 msgid "Voice Channels"
 msgstr "语音频道"
+
+msgid "Theme"
+msgstr "主题"
+
+msgid "Light"
+msgstr "浅色"
+
+msgid "Dark"
+msgstr "深色"
+
+msgid "System"
+msgstr "系统"

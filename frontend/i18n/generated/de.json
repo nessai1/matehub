@@ -603,6 +603,18 @@
       ],
       "Voice Channels": [
         "Sprach-Kanäle"
+      ],
+      "Theme": [
+        "Design"
+      ],
+      "Light": [
+        "Hell"
+      ],
+      "Dark": [
+        "Dunkel"
+      ],
+      "System": [
+        "System"
       ]
     }
   }
