@@ -7,7 +7,8 @@
 // generated URL and shares it however they like.
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Check } from "lucide-react";
+import { format } from "date-fns";
+import { Copy, Check, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,13 +17,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useAuth } from "@/lib/auth";
 
 const HUB_API = "/api/hub";
+
+const pad2 = (n: number) => n.toString().padStart(2, "0");
 
 interface Group {
   id: string;
@@ -63,10 +72,17 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="temp">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="temp">Временная ссылка</TabsTrigger>
-            <TabsTrigger value="permanent">Постоянный пользователь</TabsTrigger>
+        <Tabs defaultValue="temp" className="mt-4">
+          {/* Pill is content-sized (inline-flex w-fit, shadcn default) so the
+              longer "Постоянный пользователь" gets natural breathing room
+              instead of being squeezed into a forced 50% column. */}
+          <TabsList>
+            <TabsTrigger value="temp" className="px-4">
+              Временная ссылка
+            </TabsTrigger>
+            <TabsTrigger value="permanent" className="px-4">
+              Постоянный пользователь
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="temp" className="mt-4">
@@ -107,6 +123,7 @@ function TempInviteForm({
   }, []);
   const [nickname, setNickname] = useState("");
   const [expiresAt, setExpiresAt] = useState<Date>(defaultExpiry);
+  const [dateOpen, setDateOpen] = useState(false);
   const [inviteUrl, setInviteUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -173,16 +190,70 @@ function TempInviteForm({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label>Действует до</Label>
-        <Calendar
-          mode="single"
-          selected={expiresAt}
-          onSelect={(d) => d && setExpiresAt(d)}
-          disabled={(d) => d <= new Date()}
-          className="rounded-md border"
-        />
-      </div>
+      <FieldGroup className="flex-row">
+        <Field>
+          <FieldLabel htmlFor="expires-date">Действует до</FieldLabel>
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                id="expires-date"
+                variant="outline"
+                className="w-40 justify-between font-normal"
+              >
+                {format(expiresAt, "PPP")}
+                <ChevronDownIcon className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={expiresAt}
+                captionLayout="dropdown"
+                defaultMonth={expiresAt}
+                onSelect={(d) => {
+                  if (!d) return;
+                  // Calendar lands on 00:00 — keep the time the user picked
+                  // in the sibling input.
+                  const next = new Date(d);
+                  next.setHours(
+                    expiresAt.getHours(),
+                    expiresAt.getMinutes(),
+                    0,
+                    0,
+                  );
+                  setExpiresAt(next);
+                  setDateOpen(false);
+                }}
+                disabled={(d) => {
+                  // Compare at day granularity: today is OK, only past dates
+                  // are blocked. (`new Date()` is the current moment, so a
+                  // raw `d <= new Date()` would refuse today after 00:00.)
+                  const startOfToday = new Date();
+                  startOfToday.setHours(0, 0, 0, 0);
+                  return d < startOfToday;
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </Field>
+        <Field className="w-32">
+          <FieldLabel htmlFor="expires-time">Время</FieldLabel>
+          <Input
+            id="expires-time"
+            type="time"
+            step="60"
+            value={`${pad2(expiresAt.getHours())}:${pad2(expiresAt.getMinutes())}`}
+            onChange={(e) => {
+              const [h, m] = e.target.value.split(":").map(Number);
+              if (Number.isNaN(h) || Number.isNaN(m)) return;
+              const next = new Date(expiresAt);
+              next.setHours(h, m, 0, 0);
+              setExpiresAt(next);
+            }}
+            className="appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+          />
+        </Field>
+      </FieldGroup>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 

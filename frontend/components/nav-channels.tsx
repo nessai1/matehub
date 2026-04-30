@@ -29,6 +29,7 @@ import { useVideoCall } from "@/contexts/video-call-context"
 import { useHubSelection } from "@/contexts/hub-selection-context"
 import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
 import { useUnreadCounts } from "@/contexts/chat-context"
+import { useAddTeammates } from "@/contexts/add-teammates-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
 
 export type ChannelType = "text" | "voice" | "stage" | "dm"
@@ -259,6 +260,7 @@ export function NavChannels() {
   const { selectedTextChannelId, selectTextChannel } = useHubSelection()
   const occupancy = useVoiceOccupancy()
   const unreadCounts = useUnreadCounts()
+  const { open: openAddTeammates } = useAddTeammates()
 
   // Text and voice selections are independent — both get highlighted
   // concurrently when the user is in a call AND reading a text channel.
@@ -492,7 +494,10 @@ export function NavChannels() {
           })}
           {(hasPerm(P.INVITE_PERMANENT) || hasPerm(P.CREATE_TEMP_LINKS)) && (
             <li>
-              <button className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70">
+              <button
+                onClick={openAddTeammates}
+                className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70"
+              >
                 <UserPlusIcon className="h-3 w-3" />
                 <span>Add Teammates</span>
               </button>
