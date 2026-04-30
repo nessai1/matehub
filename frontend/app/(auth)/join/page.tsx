@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 
 interface JoinData {
   hub_id: string;
@@ -40,9 +41,9 @@ export default function JoinPage() {
         const res = await fetch(`/api/hub/v1/join/${params.token}`);
         if (!res.ok) {
           if (res.status === 404) {
-            setError("Link expired or revoked");
+            setError(t("Link expired or revoked"));
           } else {
-            setError(`Server error (${res.status})`);
+            setError(`${t("Server error")} (${res.status})`);
           }
           setPhase("error");
           return;
@@ -53,7 +54,7 @@ export default function JoinPage() {
         setData(json);
         setPhase("ready");
       } catch {
-        setError("Cannot reach server");
+        setError(t("Cannot reach server"));
         setPhase("error");
       }
     };
@@ -109,7 +110,7 @@ export default function JoinPage() {
               </svg>
             </div>
             <p className="font-mono text-sm text-zinc-400">
-              Resolving invite{dots}
+              {t("Resolving invite")}{dots}
             </p>
           </div>
         )}
@@ -123,7 +124,7 @@ export default function JoinPage() {
 
             <div className="text-center">
               <p className="font-mono text-[10px] tracking-widest text-blue-400/80 uppercase">
-                You are invited to
+                {t("You are invited to")}
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-100">
                 {data.hub_name}
@@ -139,7 +140,7 @@ export default function JoinPage() {
               </div>
               <div className="min-w-0">
                 <p className="font-mono text-[10px] text-zinc-500 uppercase">
-                  Your identity
+                  {t("Your identity")}
                 </p>
                 <p className="truncate text-sm font-medium text-zinc-200">
                   {data.nickname}
@@ -152,11 +153,11 @@ export default function JoinPage() {
               className="w-full bg-blue-600 font-mono text-sm tracking-wide text-white hover:bg-blue-500 transition-colors"
               size="lg"
             >
-              Enter Hub
+              {t("Enter Hub")}
             </Button>
 
             <p className="text-center font-mono text-[10px] text-zinc-600">
-              Temporary access. No account required.
+              {t("Temporary access. No account required.")}
             </p>
           </div>
         )}
@@ -165,7 +166,7 @@ export default function JoinPage() {
           <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
             <p className="font-mono text-sm text-blue-400">
-              Entering hub...
+              {t("Entering hub...")}
             </p>
           </div>
         )}
@@ -186,7 +187,7 @@ export default function JoinPage() {
             <div className="text-center">
               <p className="text-sm font-medium text-zinc-300">{error}</p>
               <p className="mt-1 font-mono text-[10px] text-zinc-600">
-                Contact the person who shared this link.
+                {t("Contact the person who shared this link.")}
               </p>
             </div>
           </div>

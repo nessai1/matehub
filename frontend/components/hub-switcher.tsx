@@ -35,6 +35,7 @@ import { GroupsRolesDialog } from "@/components/hub/groups-roles-dialog"
 import { useMembers } from "@/hooks/use-members"
 import { usePermissions, P } from "@/hooks/use-permissions"
 import { useAuth } from "@/lib/auth"
+import { t } from "@/i18n"
 
 interface Hub {
   id: string
@@ -103,30 +104,30 @@ export function HubSwitcher({
                 setFeedbackOpen(true)
               }}>
                 <MessageSquareIcon className="size-4 text-muted-foreground" />
-                Send Feedback
+                {t("Send Feedback")}
               </DropdownMenuItem>
               {(perms?.is_admin || has(P.MANAGE_ROLES) || has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS)) && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Hub Settings
+                    {t("Hub Settings")}
                   </DropdownMenuLabel>
                   {perms?.is_admin && (
                     <DropdownMenuItem className="gap-2">
                       <SettingsIcon className="size-4 text-muted-foreground" />
-                      General
+                      {t("General")}
                     </DropdownMenuItem>
                   )}
                   {has(P.MANAGE_ROLES) && (
                     <DropdownMenuItem className="gap-2" onSelect={() => setRolesOpen(true)}>
                       <ShieldIcon className="size-4 text-muted-foreground" />
-                      Groups & Roles
+                      {t("Groups & Roles")}
                     </DropdownMenuItem>
                   )}
                   {(has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS)) && (
                     <DropdownMenuItem className="gap-2">
                       <LinkIcon className="size-4 text-muted-foreground" />
-                      Invite Links
+                      {t("Invite Links")}
                     </DropdownMenuItem>
                   )}
                 </>
@@ -135,7 +136,7 @@ export function HubSwitcher({
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
-                    Other Hubs
+                    {t("Other Hubs")}
                   </DropdownMenuLabel>
                   {otherHubs.map((hub) => (
                     <DropdownMenuItem key={hub.id} className="gap-2 p-2">
@@ -157,18 +158,18 @@ export function HubSwitcher({
       <Dialog open={feedbackOpen} onOpenChange={(v: boolean) => setFeedbackOpen(v)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Send Feedback</DialogTitle>
+            <DialogTitle>{t("Send Feedback")}</DialogTitle>
           </DialogHeader>
 
           {feedbackSent ? (
             <div className="py-8 text-center">
-              <p className="text-sm font-medium">Thank you!</p>
-              <p className="mt-1 text-xs text-muted-foreground">Your feedback has been sent.</p>
+              <p className="text-sm font-medium">{t("Thank you!")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("Your feedback has been sent.")}</p>
             </div>
           ) : (
             <div className="flex flex-col gap-4 py-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Email</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("Email")}</label>
                 <Input
                   type="email"
                   value={feedbackEmail}
@@ -177,11 +178,11 @@ export function HubSwitcher({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Message</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("Message")}</label>
                 <textarea
                   value={feedbackText}
                   onChange={(e) => setFeedbackText(e.target.value)}
-                  placeholder="What's on your mind?"
+                  placeholder={t("What's on your mind?")}
                   rows={4}
                   className="w-full resize-none rounded-md border bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-primary"
                 />
@@ -191,11 +192,11 @@ export function HubSwitcher({
 
           <DialogFooter>
             {feedbackSent ? (
-              <Button onClick={() => setFeedbackOpen(false)}>Close</Button>
+              <Button onClick={() => setFeedbackOpen(false)}>{t("Close")}</Button>
             ) : (
               <>
                 <Button variant="outline" onClick={() => setFeedbackOpen(false)}>
-                  Cancel
+                  {t("Cancel")}
                 </Button>
                 <Button
                   disabled={!feedbackEmail.trim() || !feedbackText.trim() || feedbackSending}
@@ -210,7 +211,7 @@ export function HubSwitcher({
                     }
                   }}
                 >
-                  {feedbackSending ? "Sending..." : "Send"}
+                  {feedbackSending ? t("Sending...") : t("Send")}
                 </Button>
               </>
             )}

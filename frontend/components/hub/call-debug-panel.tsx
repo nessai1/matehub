@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useVideoDebug } from "@/hooks/use-video-debug";
 import { useMembers } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 import type { VideoClient } from "../../../packages/sdk-video/src";
 
 /** userId (Snowflake) → human-friendly label. Falls back to the raw id when
@@ -209,8 +210,8 @@ export function CallDebugPanel({ client }: CallDebugPanelProps) {
           backdropFilter: "blur(8px)",
           cursor: "grab",
         }}
-        title="Video debug (drag to move, click to toggle)"
-        aria-label="Toggle video debug panel"
+        title={t("Video debug (drag to move, click to toggle)")}
+        aria-label={t("Toggle video debug panel")}
       >
         <Bug className="h-5 w-5" />
       </button>
@@ -276,7 +277,7 @@ function PanelHeader({
       }}
     >
       <Bug className="h-4 w-4 text-amber-400" />
-      <span className="text-xs font-semibold tracking-wide">Video Debug</span>
+      <span className="text-xs font-semibold tracking-wide">{t("Video Debug")}</span>
       {diagnostics?.userId && (
         <span
           className="rounded px-1.5 py-0.5 font-mono text-[10px]"
@@ -291,17 +292,17 @@ function PanelHeader({
       )}
       <StatePills diagnostics={diagnostics} />
       <div className="ml-auto flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-        <IconBtn onClick={onCopy} title="Copy JSON snapshot">
+        <IconBtn onClick={onCopy} title={t("Copy JSON snapshot")}>
           {copied ? (
             <Check className="h-3.5 w-3.5 text-emerald-400" />
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}
         </IconBtn>
-        <IconBtn onClick={onClear} title="Clear logs">
+        <IconBtn onClick={onClear} title={t("Clear logs")}>
           <Eraser className="h-3.5 w-3.5" />
         </IconBtn>
-        <IconBtn onClick={onClose} title="Close">
+        <IconBtn onClick={onClose} title={t("Close")}>
           <X className="h-3.5 w-3.5" />
         </IconBtn>
       </div>

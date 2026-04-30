@@ -1,0 +1,605 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: matehub 0.1\n"
+"Language: zh\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Sign in"
+msgstr "登录"
+
+msgid "Username"
+msgstr "用户名"
+
+msgid "Password"
+msgstr "密码"
+
+msgid "Remember me"
+msgstr "记住我"
+
+msgid "Logging in..."
+msgstr "登录中..."
+
+msgid "Don't have an account?"
+msgstr "还没有账号？"
+
+msgid "Create one"
+msgstr "创建账号"
+
+msgid "Link does not exist"
+msgstr "链接不存在"
+
+msgid "This link has already been used"
+msgstr "此链接已被使用"
+
+msgid "Enter your name"
+msgstr "请输入姓名"
+
+msgid "Password too short (minimum 6 characters)"
+msgstr "密码过短（至少 6 个字符）"
+
+msgid "Passwords don't match"
+msgstr "两次输入的密码不一致"
+
+msgid "Login is taken"
+msgstr "账号已被使用"
+
+msgid "Could not reach the server"
+msgstr "无法连接到服务器"
+
+msgid "Checking link..."
+msgstr "正在检查链接..."
+
+msgid "Link is invalid"
+msgstr "链接无效"
+
+msgid "Ask the administrator to create a new one."
+msgstr "请联系管理员创建新链接。"
+
+msgid "Join %s"
+msgstr "加入 %s"
+
+msgid "Upload avatar"
+msgstr "上传头像"
+
+msgid "Your name"
+msgstr "您的姓名"
+
+msgid "Confirm password"
+msgstr "确认密码"
+
+msgid "Accept invitation"
+msgstr "接受邀请"
+
+msgid "Link expired or revoked"
+msgstr "链接已过期或被撤销"
+
+msgid "Server error"
+msgstr "服务器错误"
+
+msgid "Cannot reach server"
+msgstr "无法连接服务器"
+
+msgid "Resolving invite"
+msgstr "正在解析邀请"
+
+msgid "You are invited to"
+msgstr "您被邀请加入"
+
+msgid "Your identity"
+msgstr "您的身份"
+
+msgid "Enter Hub"
+msgstr "进入 Hub"
+
+msgid "Temporary access. No account required."
+msgstr "临时访问，无需账号。"
+
+msgid "Entering hub..."
+msgstr "正在进入 Hub..."
+
+msgid "Contact the person who shared this link."
+msgstr "请联系分享此链接的人。"
+
+msgid "Fill in name and login"
+msgstr "请填写姓名和账号"
+
+msgid "Enter hub name"
+msgstr "请输入 Hub 名称"
+
+msgid "Hub is already initialised"
+msgstr "Hub 已初始化"
+
+msgid "Hooray! Your hub is ready."
+msgstr "您的 Hub 已就绪！"
+
+msgid "Step 1 of 2 — create the admin account"
+msgstr "第 1/2 步——创建管理员账号"
+
+msgid "Step 2 of 2 — name your hub"
+msgstr "第 2/2 步——为 Hub 命名"
+
+msgid "Continue"
+msgstr "继续"
+
+msgid "Upload hub icon"
+msgstr "上传 Hub 图标"
+
+msgid "Hub name"
+msgstr "Hub 名称"
+
+msgid "e.g. Acme Team"
+msgstr "例如：Acme 团队"
+
+msgid "Back"
+msgstr "返回"
+
+msgid "Create hub"
+msgstr "创建 Hub"
+
+msgid "Channels"
+msgstr "频道"
+
+msgid "Add Channel"
+msgstr "添加频道"
+
+msgid "Direct Messages"
+msgstr "私信"
+
+msgid "Add Teammates"
+msgstr "添加队友"
+
+msgid "Send Feedback"
+msgstr "发送反馈"
+
+msgid "Hub Settings"
+msgstr "Hub 设置"
+
+msgid "General"
+msgstr "通用"
+
+msgid "Invite Links"
+msgstr "邀请链接"
+
+msgid "Other Hubs"
+msgstr "其他 Hub"
+
+msgid "Thank you!"
+msgstr "感谢！"
+
+msgid "Your feedback has been sent."
+msgstr "您的反馈已发送。"
+
+msgid "Email"
+msgstr "邮箱"
+
+msgid "Message"
+msgstr "信息"
+
+msgid "What's on your mind?"
+msgstr "您想说什么？"
+
+msgid "Sending..."
+msgstr "发送中..."
+
+msgid "Send"
+msgstr "发送"
+
+msgid "Profile"
+msgstr "个人资料"
+
+msgid "Settings"
+msgstr "设置"
+
+msgid "Language"
+msgstr "语言"
+
+msgid "Log out"
+msgstr "退出登录"
+
+msgid "Edit Profile"
+msgstr "编辑个人资料"
+
+msgid "Click to upload avatar (max 10MB)"
+msgstr "点击上传头像（最大 10 MB）"
+
+msgid "Display Name"
+msgstr "显示名称"
+
+msgid "Your display name"
+msgstr "您的显示名称"
+
+msgid "Image must be under 10MB"
+msgstr "图片大小须在 10 MB 以内"
+
+msgid "Image too large (max 2MB)"
+msgstr "图片过大（上限 2 MB）"
+
+msgid "Unsupported image format"
+msgstr "不支持的图片格式"
+
+msgid "Saving"
+msgstr "保存中"
+
+msgid "Members"
+msgstr "成员"
+
+msgid "Online"
+msgstr "在线"
+
+msgid "Offline"
+msgstr "离线"
+
+msgid "Invite participants"
+msgstr "邀请成员"
+
+msgid "Temporary link expires by timer. Permanent link is bound to a login."
+msgstr "临时链接按定时器过期。永久链接绑定到一个账号。"
+
+msgid "Temporary link"
+msgstr "临时链接"
+
+msgid "Permanent user"
+msgstr "永久用户"
+
+msgid "Guest name"
+msgstr "访客名称"
+
+msgid "Valid until"
+msgstr "有效期至"
+
+msgid "Time"
+msgstr "时间"
+
+msgid "Generate link"
+msgstr "生成链接"
+
+msgid "Creating..."
+msgstr "正在创建..."
+
+msgid "Login"
+msgstr "账号"
+
+msgid "Email (optional)"
+msgstr "邮箱（可选）"
+
+msgid "Create invitation"
+msgstr "创建邀请"
+
+msgid "Done — share the link with the invitee:"
+msgstr "完成——将链接发送给受邀者："
+
+msgid "Create another"
+msgstr "再创建一个"
+
+msgid "Create Text Channel"
+msgstr "创建文本频道"
+
+msgid "Edit Text Channel"
+msgstr "编辑文本频道"
+
+msgid "Create Voice Channel"
+msgstr "创建语音频道"
+
+msgid "Edit Voice Channel"
+msgstr "编辑语音频道"
+
+msgid "Create Stage Channel"
+msgstr "创建舞台频道"
+
+msgid "Edit Stage Channel"
+msgstr "编辑舞台频道"
+
+msgid "Icon"
+msgstr "图标"
+
+msgid "Color"
+msgstr "颜色"
+
+msgid "Image"
+msgstr "图片"
+
+msgid "Change image"
+msgstr "更换图片"
+
+msgid "Upload image"
+msgstr "上传图片"
+
+msgid "Channel name"
+msgstr "频道名称"
+
+msgid "Visible to groups"
+msgstr "对以下小组可见"
+
+msgid "Delete"
+msgstr "删除"
+
+msgid "Create"
+msgstr "创建"
+
+msgid "Groups & Roles"
+msgstr "小组和角色"
+
+msgid "protected"
+msgstr "受保护"
+
+msgid "Create role"
+msgstr "创建角色"
+
+msgid "Name"
+msgstr "名称"
+
+msgid "Permissions"
+msgstr "权限"
+
+msgid "This is a protected group. Only name and color can be changed."
+msgstr "这是受保护的小组，仅可更改名称和颜色。"
+
+msgid "Delete role"
+msgstr "删除角色"
+
+msgid "Create text channels"
+msgstr "创建文本频道"
+
+msgid "Create voice channels"
+msgstr "创建语音频道"
+
+msgid "Edit other channels"
+msgstr "编辑其他频道"
+
+msgid "Manage members"
+msgstr "管理成员"
+
+msgid "Invite permanent users"
+msgstr "邀请永久用户"
+
+msgid "Create temp links"
+msgstr "创建临时链接"
+
+msgid "Manage roles"
+msgstr "管理角色"
+
+msgid "Share your screen"
+msgstr "共享屏幕"
+
+msgid "Pick a quality profile. Your browser will ask which window or screen to share next."
+msgstr "选择画质方案。浏览器随后将询问要共享的窗口或屏幕。"
+
+msgid "Gaming"
+msgstr "游戏"
+
+msgid "High motion, 60 fps. For gameplay demos."
+msgstr "高动态，60 fps。适合游戏演示。"
+
+msgid "Standard"
+msgstr "标准"
+
+msgid "Balanced quality. For general screen sharing."
+msgstr "平衡画质。适合一般屏幕共享。"
+
+msgid "Detail"
+msgstr "细节"
+
+msgid "Sharp text. For documents and code."
+msgstr "清晰文本。适合文档与代码。"
+
+msgid "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+msgstr "在 macOS 上，系统音频只能从浏览器标签页捕获。共享整个屏幕将仅有画面。"
+
+msgid "Start sharing"
+msgstr "开始共享"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Loading..."
+msgstr "加载中..."
+
+msgid "Error"
+msgstr "错误"
+
+msgid "Today"
+msgstr "今天"
+
+msgid "Yesterday"
+msgstr "昨天"
+
+msgid "New"
+msgstr "新消息"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "sending…"
+msgstr "发送中…"
+
+msgid "failed"
+msgstr "失败"
+
+msgid "retry"
+msgstr "重试"
+
+msgid "(edited)"
+msgstr "(已编辑)"
+
+msgid "%s is typing"
+msgstr "%s 正在输入"
+
+msgid "%s and %s are typing"
+msgstr "%s 和 %s 正在输入"
+
+msgid "%d people are typing"
+msgstr "%d 人正在输入"
+
+msgid "Connecting..."
+msgstr "正在连接..."
+
+msgid "Reconnecting..."
+msgstr "正在重连..."
+
+msgid "Disconnected"
+msgstr "已断开"
+
+msgid "Welcome to #%s"
+msgstr "欢迎来到 #%s"
+
+msgid "This is the start of the channel."
+msgstr "这是频道的开始。"
+
+msgid "Type something... # %s"
+msgstr "在 #%s 中输入..."
+
+msgid "Attach file"
+msgstr "附加文件"
+
+msgid "Send on Enter"
+msgstr "回车发送"
+
+msgid "Enter to send"
+msgstr "回车发送"
+
+msgid "%s+Enter to send"
+msgstr "%s+回车发送"
+
+msgid "Drop to attach"
+msgstr "拖放以附加"
+
+msgid "Files upload to #%s"
+msgstr "文件上传到 #%s"
+
+msgid "External link"
+msgstr "外部链接"
+
+msgid "You are about to visit an external resource"
+msgstr "您即将访问外部资源"
+
+msgid "Open link"
+msgstr "打开链接"
+
+msgid "No microphone detected"
+msgstr "未检测到麦克风"
+
+msgid "Mute"
+msgstr "静音"
+
+msgid "Unmute"
+msgstr "取消静音"
+
+msgid "No camera detected"
+msgstr "未检测到摄像头"
+
+msgid "Turn off camera"
+msgstr "关闭摄像头"
+
+msgid "Turn on camera"
+msgstr "打开摄像头"
+
+msgid "Stop sharing"
+msgstr "停止共享"
+
+msgid "Leave call"
+msgstr "离开通话"
+
+msgid "Audio & video devices"
+msgstr "音视频设备"
+
+msgid "Microphone"
+msgstr "麦克风"
+
+msgid "No microphones found"
+msgstr "未找到麦克风"
+
+msgid "Microphone %d"
+msgstr "麦克风 %d"
+
+msgid "Camera"
+msgstr "摄像头"
+
+msgid "No cameras found"
+msgstr "未找到摄像头"
+
+msgid "Camera %d"
+msgstr "摄像头 %d"
+
+msgid "Incoming call"
+msgstr "来电"
+
+msgid "%s is calling"
+msgstr "%s 正在呼叫"
+
+msgid "Decline call"
+msgstr "拒绝"
+
+msgid "Accept call"
+msgstr "接听"
+
+msgid "Never"
+msgstr "从未"
+
+msgid "Just now"
+msgstr "刚刚"
+
+msgid "%dm ago"
+msgstr "%d 分钟前"
+
+msgid "%dh ago"
+msgstr "%d 小时前"
+
+msgid "online"
+msgstr "在线"
+
+msgid "Temporary"
+msgstr "临时"
+
+msgid "Search groups..."
+msgstr "搜索小组..."
+
+msgid "No groups found"
+msgstr "未找到小组"
+
+msgid "Remove member"
+msgstr "移除成员"
+
+msgid "Are you sure you want to remove %s from the hub?"
+msgstr "确定要将 %s 从 Hub 中移除吗？"
+
+msgid "Removing..."
+msgstr "移除中..."
+
+msgid "Remove"
+msgstr "移除"
+
+msgid "in call"
+msgstr "通话中"
+
+msgid "Call"
+msgstr "呼叫"
+
+msgid "Collapse"
+msgstr "收起"
+
+msgid "Video debug (drag to move, click to toggle)"
+msgstr "视频调试（拖动，点击切换）"
+
+msgid "Toggle video debug panel"
+msgstr "切换视频调试面板"
+
+msgid "Video Debug"
+msgstr "视频调试"
+
+msgid "Copy JSON snapshot"
+msgstr "复制 JSON 快照"
+
+msgid "Clear logs"
+msgstr "清空日志"
+
+msgid "Voice Channels"
+msgstr "语音频道"

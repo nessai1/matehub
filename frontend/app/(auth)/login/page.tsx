@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
 // TODO: get hub_id from subdomain or config. Wire-format is always a string
@@ -63,7 +64,7 @@ export default function LoginPage() {
     <div className="flex flex-col items-center">
       <div className="mb-8 text-center">
         <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
-          Sign in
+          {t("Sign in")}
         </h1>
         <p className="mt-1 font-mono text-xs text-zinc-500">
           Dev Hub
@@ -74,7 +75,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           <div className="flex flex-col gap-2">
             <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Username or Email
+              {t("Username")}
             </label>
             <Input
               type="text"
@@ -89,7 +90,7 @@ export default function LoginPage() {
 
           <div className="flex flex-col gap-2">
             <label className="font-mono text-[10px] tracking-widest text-zinc-500 uppercase">
-              Password
+              {t("Password")}
             </label>
             <Input
               type="password"
@@ -107,7 +108,7 @@ export default function LoginPage() {
               onCheckedChange={(checked) => setRememberMe(checked === true)}
               className="border-zinc-700 bg-zinc-950 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
             />
-            <span className="font-mono text-xs text-zinc-400">Remember me</span>
+            <span className="font-mono text-xs text-zinc-400">{t("Remember me")}</span>
           </label>
 
           {error && (
@@ -125,10 +126,10 @@ export default function LoginPage() {
             {loading ? (
               <span className="flex items-center gap-2">
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                Signing in
+                {t("Logging in...")}
               </span>
             ) : (
-              "Sign in"
+              t("Sign in")
             )}
           </Button>
         </form>

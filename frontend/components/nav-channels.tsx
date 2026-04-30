@@ -31,6 +31,7 @@ import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
 import { useUnreadCounts } from "@/contexts/chat-context"
 import { useAddTeammates } from "@/contexts/add-teammates-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
+import { t } from "@/i18n"
 
 export type ChannelType = "text" | "voice" | "stage" | "dm"
 
@@ -358,7 +359,7 @@ export function NavChannels() {
   return (
     <>
       {/* ── Text Channels ── */}
-      <ChannelSection label="Channels">
+      <ChannelSection label={t("Channels")}>
         {textChannels.map((ch) => (
           <ChannelLink
             key={ch.id}
@@ -370,12 +371,12 @@ export function NavChannels() {
           />
         ))}
         {hasPerm(P.CREATE_TEXT_CHANNELS) && (
-          <AddButton label="Add Channel" onClick={() => openCreate("text")} />
+          <AddButton label={t("Add Channel")} onClick={() => openCreate("text")} />
         )}
       </ChannelSection>
 
       {/* ── Voice Channels ── */}
-      <ChannelSection label="Voice Channels">
+      <ChannelSection label={t("Voice Channels")}>
         {voiceChannels.map((ch) => {
           // Roster is occupancy-driven — list everyone in this voice channel,
           // whether or not *we* are in it. Speaking/mic-muted state only
@@ -429,7 +430,7 @@ export function NavChannels() {
           )
         })}
         {hasPerm(P.CREATE_VOICE_CHANNELS) && (
-          <AddButton label="Add Channel" onClick={() => openCreate("voice")} />
+          <AddButton label={t("Add Channel")} onClick={() => openCreate("voice")} />
         )}
       </ChannelSection>
 
@@ -438,7 +439,7 @@ export function NavChannels() {
           channel-by-channel — a member with no DM history doesn't appear
           here, by design (start one via the right-side member card). */}
       {dmChannels.length > 0 && (
-        <ChannelSection label="Direct Messages">
+        <ChannelSection label={t("Direct Messages")}>
           {dmChannels.map((dm) => {
             const peerId = dm.participants?.find((id) => id !== session?.userId)
             const peer = peerId ? members.find((m) => m.user_id === peerId) : undefined
@@ -499,7 +500,7 @@ export function NavChannels() {
                 className="flex w-full items-center gap-1.5 px-2 py-1 text-xs text-sidebar-foreground/40 transition-colors hover:text-sidebar-foreground/70"
               >
                 <UserPlusIcon className="h-3 w-3" />
-                <span>Add Teammates</span>
+                <span>{t("Add Teammates")}</span>
               </button>
             </li>
           )}

@@ -36,6 +36,7 @@ import type { Member, MemberGroup } from "@/hooks/use-members";
 import { useChannels } from "@/hooks/use-channels";
 import { useIncomingCall } from "@/contexts/incoming-call-context";
 import { useHubSelection } from "@/contexts/hub-selection-context";
+import { t } from "@/i18n";
 
 const HUB_API = import.meta.env.VITE_HUB_API_URL || "http://localhost:3002";
 
@@ -141,13 +142,13 @@ export function MemberCard({
   }, [session, member.user_id, onGroupsChanged]);
 
   const formatLastSeen = (iso: string | null) => {
-    if (!iso) return "Never";
+    if (!iso) return t("Never");
     const d = new Date(iso);
     const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
-    if (diffMin < 1) return "Just now";
-    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffMin < 1) return t("Just now");
+    if (diffMin < 60) return t("%dm ago", diffMin);
     const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `${diffH}h ago`;
+    if (diffH < 24) return t("%dh ago", diffH);
     return d.toLocaleDateString();
   };
 
@@ -172,7 +173,7 @@ export function MemberCard({
 
               {member.is_online ? (
                 <span className="mt-2 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-medium text-emerald-500">
-                  online
+                  {t("online")}
                 </span>
               ) : (
                 <span className="mt-2 rounded-full bg-muted px-2.5 py-0.5 text-[10px] text-muted-foreground">
@@ -187,7 +188,7 @@ export function MemberCard({
 
               {member.user_type === "temp" && (
                 <span className="mt-0.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] text-amber-500">
-                  Temporary
+                  {t("Temporary")}
                 </span>
               )}
             </div>
@@ -239,9 +240,9 @@ export function MemberCard({
                   </PopoverTrigger>
                   <PopoverContent className="w-52 p-0" side="bottom">
                     <Command>
-                      <CommandInput placeholder="Search groups..." />
+                      <CommandInput placeholder={t("Search groups...")} />
                       <CommandList>
-                        <CommandEmpty>No groups found</CommandEmpty>
+                        <CommandEmpty>{t("No groups found")}</CommandEmpty>
                         <CommandGroup>
                           {pickerGroups.map((g) => {
                             const assigned = memberGroupIds.has(g.id);
@@ -290,7 +291,7 @@ export function MemberCard({
                   onClick={handleMessage}
                 >
                   <SendHorizontalIcon className="h-3.5 w-3.5" />
-                  Message
+                  {t("Message")}
                 </Button>
 
                 {canManageMembers && (
@@ -313,21 +314,21 @@ export function MemberCard({
       <Dialog open={kickDialogOpen} onOpenChange={(open: boolean) => setKickDialogOpen(open)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Remove member</DialogTitle>
+            <DialogTitle>{t("Remove member")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to remove <strong>{member.display_name}</strong> from the hub?
+            {t("Are you sure you want to remove %s from the hub?", member.display_name)}
           </p>
           <DialogFooter className="gap-2 sm:justify-center">
             <Button variant="outline" onClick={() => setKickDialogOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               variant="destructive"
               onClick={kickMember}
               disabled={kicking}
             >
-              {kicking ? "Removing..." : "Remove"}
+              {kicking ? t("Removing...") : t("Remove")}
             </Button>
           </DialogFooter>
         </DialogContent>

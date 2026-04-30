@@ -1,0 +1,630 @@
+# MateHub English (source). msgstr == msgid.
+msgid ""
+msgstr ""
+"Project-Id-Version: matehub 0.1\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# ── Auth ─────────────────────────────────────────────
+msgid "Sign in"
+msgstr "Sign in"
+
+msgid "Username"
+msgstr "Username"
+
+msgid "Password"
+msgstr "Password"
+
+msgid "Remember me"
+msgstr "Remember me"
+
+msgid "Logging in..."
+msgstr "Logging in..."
+
+msgid "Don't have an account?"
+msgstr "Don't have an account?"
+
+msgid "Create one"
+msgstr "Create one"
+
+# ── Register / invite-accept page ───────────────────
+msgid "Link does not exist"
+msgstr "Link does not exist"
+
+msgid "This link has already been used"
+msgstr "This link has already been used"
+
+msgid "Enter your name"
+msgstr "Enter your name"
+
+msgid "Password too short (minimum 6 characters)"
+msgstr "Password too short (minimum 6 characters)"
+
+msgid "Passwords don't match"
+msgstr "Passwords don't match"
+
+msgid "Login is taken"
+msgstr "Login is taken"
+
+msgid "Could not reach the server"
+msgstr "Could not reach the server"
+
+msgid "Checking link..."
+msgstr "Checking link..."
+
+msgid "Link is invalid"
+msgstr "Link is invalid"
+
+msgid "Ask the administrator to create a new one."
+msgstr "Ask the administrator to create a new one."
+
+msgid "Join %s"
+msgstr "Join %s"
+
+msgid "Upload avatar"
+msgstr "Upload avatar"
+
+msgid "Your name"
+msgstr "Your name"
+
+msgid "Confirm password"
+msgstr "Confirm password"
+
+msgid "Accept invitation"
+msgstr "Accept invitation"
+
+# ── Join (temp-user) page ───────────────────────────
+msgid "Link expired or revoked"
+msgstr "Link expired or revoked"
+
+msgid "Server error"
+msgstr "Server error"
+
+msgid "Cannot reach server"
+msgstr "Cannot reach server"
+
+msgid "Resolving invite"
+msgstr "Resolving invite"
+
+msgid "You are invited to"
+msgstr "You are invited to"
+
+msgid "Your identity"
+msgstr "Your identity"
+
+msgid "Enter Hub"
+msgstr "Enter Hub"
+
+msgid "Temporary access. No account required."
+msgstr "Temporary access. No account required."
+
+msgid "Entering hub..."
+msgstr "Entering hub..."
+
+msgid "Contact the person who shared this link."
+msgstr "Contact the person who shared this link."
+
+# ── Setup wizard ────────────────────────────────────
+msgid "Fill in name and login"
+msgstr "Fill in name and login"
+
+msgid "Enter hub name"
+msgstr "Enter hub name"
+
+msgid "Hub is already initialised"
+msgstr "Hub is already initialised"
+
+msgid "Hooray! Your hub is ready."
+msgstr "Hooray! Your hub is ready."
+
+msgid "Step 1 of 2 — create the admin account"
+msgstr "Step 1 of 2 — create the admin account"
+
+msgid "Step 2 of 2 — name your hub"
+msgstr "Step 2 of 2 — name your hub"
+
+msgid "Continue"
+msgstr "Continue"
+
+msgid "Upload hub icon"
+msgstr "Upload hub icon"
+
+msgid "Hub name"
+msgstr "Hub name"
+
+msgid "e.g. Acme Team"
+msgstr "e.g. Acme Team"
+
+msgid "Back"
+msgstr "Back"
+
+msgid "Create hub"
+msgstr "Create hub"
+
+# ── Sidebar / channels ──────────────────────────────
+msgid "Channels"
+msgstr "Channels"
+
+msgid "Add Channel"
+msgstr "Add Channel"
+
+msgid "Direct Messages"
+msgstr "Direct Messages"
+
+msgid "Add Teammates"
+msgstr "Add Teammates"
+
+# ── Hub switcher ────────────────────────────────────
+msgid "Send Feedback"
+msgstr "Send Feedback"
+
+msgid "Hub Settings"
+msgstr "Hub Settings"
+
+msgid "General"
+msgstr "General"
+
+msgid "Invite Links"
+msgstr "Invite Links"
+
+msgid "Other Hubs"
+msgstr "Other Hubs"
+
+msgid "Thank you!"
+msgstr "Thank you!"
+
+msgid "Your feedback has been sent."
+msgstr "Your feedback has been sent."
+
+msgid "Email"
+msgstr "Email"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "What's on your mind?"
+msgstr "What's on your mind?"
+
+msgid "Sending..."
+msgstr "Sending..."
+
+msgid "Send"
+msgstr "Send"
+
+# ── User profile dropdown ───────────────────────────
+msgid "Profile"
+msgstr "Profile"
+
+msgid "Settings"
+msgstr "Settings"
+
+msgid "Language"
+msgstr "Language"
+
+msgid "Log out"
+msgstr "Log out"
+
+# ── Edit Profile dialog ─────────────────────────────
+msgid "Edit Profile"
+msgstr "Edit Profile"
+
+msgid "Click to upload avatar (max 10MB)"
+msgstr "Click to upload avatar (max 10MB)"
+
+msgid "Display Name"
+msgstr "Display Name"
+
+msgid "Your display name"
+msgstr "Your display name"
+
+msgid "Image must be under 10MB"
+msgstr "Image must be under 10MB"
+
+msgid "Image too large (max 2MB)"
+msgstr "Image too large (max 2MB)"
+
+msgid "Unsupported image format"
+msgstr "Unsupported image format"
+
+msgid "Saving"
+msgstr "Saving"
+
+# ── Member sidebar ──────────────────────────────────
+msgid "Members"
+msgstr "Members"
+
+msgid "Online"
+msgstr "Online"
+
+msgid "Offline"
+msgstr "Offline"
+
+# ── Add Teammates dialog ────────────────────────────
+msgid "Invite participants"
+msgstr "Invite participants"
+
+msgid "Temporary link expires by timer. Permanent link is bound to a login."
+msgstr "Temporary link expires by timer. Permanent link is bound to a login."
+
+msgid "Temporary link"
+msgstr "Temporary link"
+
+msgid "Permanent user"
+msgstr "Permanent user"
+
+msgid "Guest name"
+msgstr "Guest name"
+
+msgid "Valid until"
+msgstr "Valid until"
+
+msgid "Time"
+msgstr "Time"
+
+msgid "Generate link"
+msgstr "Generate link"
+
+msgid "Creating..."
+msgstr "Creating..."
+
+msgid "Login"
+msgstr "Login"
+
+msgid "Email (optional)"
+msgstr "Email (optional)"
+
+msgid "Create invitation"
+msgstr "Create invitation"
+
+msgid "Done — share the link with the invitee:"
+msgstr "Done — share the link with the invitee:"
+
+msgid "Create another"
+msgstr "Create another"
+
+# ── Channel editor ──────────────────────────────────
+msgid "Create Text Channel"
+msgstr "Create Text Channel"
+
+msgid "Edit Text Channel"
+msgstr "Edit Text Channel"
+
+msgid "Create Voice Channel"
+msgstr "Create Voice Channel"
+
+msgid "Edit Voice Channel"
+msgstr "Edit Voice Channel"
+
+msgid "Create Stage Channel"
+msgstr "Create Stage Channel"
+
+msgid "Edit Stage Channel"
+msgstr "Edit Stage Channel"
+
+msgid "Icon"
+msgstr "Icon"
+
+msgid "Color"
+msgstr "Color"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Change image"
+msgstr "Change image"
+
+msgid "Upload image"
+msgstr "Upload image"
+
+msgid "Channel name"
+msgstr "Channel name"
+
+msgid "Visible to groups"
+msgstr "Visible to groups"
+
+msgid "Delete"
+msgstr "Delete"
+
+msgid "Create"
+msgstr "Create"
+
+# ── Groups & Roles dialog ───────────────────────────
+msgid "Groups & Roles"
+msgstr "Groups & Roles"
+
+msgid "protected"
+msgstr "protected"
+
+msgid "Create role"
+msgstr "Create role"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Permissions"
+msgstr "Permissions"
+
+msgid "This is a protected group. Only name and color can be changed."
+msgstr "This is a protected group. Only name and color can be changed."
+
+msgid "Delete role"
+msgstr "Delete role"
+
+# ── Permission labels (HUB_PERMISSION_LABELS) ──────
+msgid "Create text channels"
+msgstr "Create text channels"
+
+msgid "Create voice channels"
+msgstr "Create voice channels"
+
+msgid "Edit other channels"
+msgstr "Edit other channels"
+
+msgid "Manage members"
+msgstr "Manage members"
+
+msgid "Invite permanent users"
+msgstr "Invite permanent users"
+
+msgid "Create temp links"
+msgstr "Create temp links"
+
+msgid "Manage roles"
+msgstr "Manage roles"
+
+# ── Screen share profile dialog ─────────────────────
+msgid "Share your screen"
+msgstr "Share your screen"
+
+msgid "Pick a quality profile. Your browser will ask which window or screen to share next."
+msgstr "Pick a quality profile. Your browser will ask which window or screen to share next."
+
+msgid "Gaming"
+msgstr "Gaming"
+
+msgid "High motion, 60 fps. For gameplay demos."
+msgstr "High motion, 60 fps. For gameplay demos."
+
+msgid "Standard"
+msgstr "Standard"
+
+msgid "Balanced quality. For general screen sharing."
+msgstr "Balanced quality. For general screen sharing."
+
+msgid "Detail"
+msgstr "Detail"
+
+msgid "Sharp text. For documents and code."
+msgstr "Sharp text. For documents and code."
+
+msgid "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+msgstr "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+
+msgid "Start sharing"
+msgstr "Start sharing"
+
+# ── Common ──────────────────────────────────────────
+msgid "Cancel"
+msgstr "Cancel"
+
+msgid "Save"
+msgstr "Save"
+
+msgid "Close"
+msgstr "Close"
+
+msgid "Loading..."
+msgstr "Loading..."
+
+msgid "Error"
+msgstr "Error"
+
+# ── Text channel view ───────────────────────────────
+msgid "Today"
+msgstr "Today"
+
+msgid "Yesterday"
+msgstr "Yesterday"
+
+msgid "New"
+msgstr "New"
+
+msgid "Unknown"
+msgstr "Unknown"
+
+msgid "sending…"
+msgstr "sending…"
+
+msgid "failed"
+msgstr "failed"
+
+msgid "retry"
+msgstr "retry"
+
+msgid "(edited)"
+msgstr "(edited)"
+
+msgid "%s is typing"
+msgstr "%s is typing"
+
+msgid "%s and %s are typing"
+msgstr "%s and %s are typing"
+
+msgid "%d people are typing"
+msgstr "%d people are typing"
+
+msgid "Connecting..."
+msgstr "Connecting..."
+
+msgid "Reconnecting..."
+msgstr "Reconnecting..."
+
+msgid "Disconnected"
+msgstr "Disconnected"
+
+msgid "Welcome to #%s"
+msgstr "Welcome to #%s"
+
+msgid "This is the start of the channel."
+msgstr "This is the start of the channel."
+
+msgid "Type something... # %s"
+msgstr "Type something... # %s"
+
+msgid "Attach file"
+msgstr "Attach file"
+
+msgid "Send on Enter"
+msgstr "Send on Enter"
+
+msgid "Enter to send"
+msgstr "Enter to send"
+
+msgid "%s+Enter to send"
+msgstr "%s+Enter to send"
+
+msgid "Drop to attach"
+msgstr "Drop to attach"
+
+msgid "Files upload to #%s"
+msgstr "Files upload to #%s"
+
+msgid "External link"
+msgstr "External link"
+
+msgid "You are about to visit an external resource"
+msgstr "You are about to visit an external resource"
+
+msgid "Open link"
+msgstr "Open link"
+
+# ── Video controls ──────────────────────────────────
+msgid "No microphone detected"
+msgstr "No microphone detected"
+
+msgid "Mute"
+msgstr "Mute"
+
+msgid "Unmute"
+msgstr "Unmute"
+
+msgid "No camera detected"
+msgstr "No camera detected"
+
+msgid "Turn off camera"
+msgstr "Turn off camera"
+
+msgid "Turn on camera"
+msgstr "Turn on camera"
+
+msgid "Stop sharing"
+msgstr "Stop sharing"
+
+msgid "Leave call"
+msgstr "Leave call"
+
+msgid "Audio & video devices"
+msgstr "Audio & video devices"
+
+msgid "Microphone"
+msgstr "Microphone"
+
+msgid "No microphones found"
+msgstr "No microphones found"
+
+msgid "Microphone %d"
+msgstr "Microphone %d"
+
+msgid "Camera"
+msgstr "Camera"
+
+msgid "No cameras found"
+msgstr "No cameras found"
+
+msgid "Camera %d"
+msgstr "Camera %d"
+
+# ── Incoming call ───────────────────────────────────
+msgid "Incoming call"
+msgstr "Incoming call"
+
+msgid "%s is calling"
+msgstr "%s is calling"
+
+msgid "Decline call"
+msgstr "Decline call"
+
+msgid "Accept call"
+msgstr "Accept call"
+
+# ── Member card ─────────────────────────────────────
+msgid "Never"
+msgstr "Never"
+
+msgid "Just now"
+msgstr "Just now"
+
+msgid "%dm ago"
+msgstr "%dm ago"
+
+msgid "%dh ago"
+msgstr "%dh ago"
+
+msgid "online"
+msgstr "online"
+
+msgid "Temporary"
+msgstr "Temporary"
+
+msgid "Search groups..."
+msgstr "Search groups..."
+
+msgid "No groups found"
+msgstr "No groups found"
+
+msgid "Message"
+msgstr "Message"
+
+msgid "Remove member"
+msgstr "Remove member"
+
+msgid "Are you sure you want to remove %s from the hub?"
+msgstr "Are you sure you want to remove %s from the hub?"
+
+msgid "Removing..."
+msgstr "Removing..."
+
+msgid "Remove"
+msgstr "Remove"
+
+# ── Chat workspace / call ──────────────────────────
+msgid "in call"
+msgstr "in call"
+
+msgid "Call"
+msgstr "Call"
+
+msgid "Collapse"
+msgstr "Collapse"
+
+# ── Debug panel ─────────────────────────────────────
+msgid "Video debug (drag to move, click to toggle)"
+msgstr "Video debug (drag to move, click to toggle)"
+
+msgid "Toggle video debug panel"
+msgstr "Toggle video debug panel"
+
+msgid "Video Debug"
+msgstr "Video Debug"
+
+msgid "Copy JSON snapshot"
+msgstr "Copy JSON snapshot"
+
+msgid "Clear logs"
+msgstr "Clear logs"
+
+msgid "Voice Channels"
+msgstr "Voice Channels"

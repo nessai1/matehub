@@ -1,0 +1,605 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: matehub 0.1\n"
+"Language: ja\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Sign in"
+msgstr "ログイン"
+
+msgid "Username"
+msgstr "ユーザー名"
+
+msgid "Password"
+msgstr "パスワード"
+
+msgid "Remember me"
+msgstr "ログイン状態を保持する"
+
+msgid "Logging in..."
+msgstr "ログイン中..."
+
+msgid "Don't have an account?"
+msgstr "アカウントをお持ちでない方"
+
+msgid "Create one"
+msgstr "アカウントを作成"
+
+msgid "Link does not exist"
+msgstr "リンクが存在しません"
+
+msgid "This link has already been used"
+msgstr "このリンクは既に使用済みです"
+
+msgid "Enter your name"
+msgstr "お名前を入力してください"
+
+msgid "Password too short (minimum 6 characters)"
+msgstr "パスワードが短すぎます（6 文字以上）"
+
+msgid "Passwords don't match"
+msgstr "パスワードが一致しません"
+
+msgid "Login is taken"
+msgstr "このログイン名は使用されています"
+
+msgid "Could not reach the server"
+msgstr "サーバーに接続できません"
+
+msgid "Checking link..."
+msgstr "リンクを確認中..."
+
+msgid "Link is invalid"
+msgstr "リンクが無効です"
+
+msgid "Ask the administrator to create a new one."
+msgstr "管理者に新しいリンクの作成を依頼してください。"
+
+msgid "Join %s"
+msgstr "%s に参加"
+
+msgid "Upload avatar"
+msgstr "アバターをアップロード"
+
+msgid "Your name"
+msgstr "お名前"
+
+msgid "Confirm password"
+msgstr "パスワード確認"
+
+msgid "Accept invitation"
+msgstr "招待を承諾"
+
+msgid "Link expired or revoked"
+msgstr "リンクの有効期限が切れたか取り消されました"
+
+msgid "Server error"
+msgstr "サーバーエラー"
+
+msgid "Cannot reach server"
+msgstr "サーバーに接続できません"
+
+msgid "Resolving invite"
+msgstr "招待を確認中"
+
+msgid "You are invited to"
+msgstr "招待されています"
+
+msgid "Your identity"
+msgstr "あなたの表示名"
+
+msgid "Enter Hub"
+msgstr "Hub に入る"
+
+msgid "Temporary access. No account required."
+msgstr "一時アクセス。アカウント不要。"
+
+msgid "Entering hub..."
+msgstr "Hub に入っています..."
+
+msgid "Contact the person who shared this link."
+msgstr "リンクを共有してくれた方に連絡してください。"
+
+msgid "Fill in name and login"
+msgstr "名前とログイン名を入力してください"
+
+msgid "Enter hub name"
+msgstr "Hub 名を入力してください"
+
+msgid "Hub is already initialised"
+msgstr "Hub は既に初期化済みです"
+
+msgid "Hooray! Your hub is ready."
+msgstr "Hub の準備ができました！"
+
+msgid "Step 1 of 2 — create the admin account"
+msgstr "ステップ 1/2 — 管理者アカウントを作成"
+
+msgid "Step 2 of 2 — name your hub"
+msgstr "ステップ 2/2 — Hub に名前を付ける"
+
+msgid "Continue"
+msgstr "次へ"
+
+msgid "Upload hub icon"
+msgstr "Hub アイコンをアップロード"
+
+msgid "Hub name"
+msgstr "Hub 名"
+
+msgid "e.g. Acme Team"
+msgstr "例: Acme チーム"
+
+msgid "Back"
+msgstr "戻る"
+
+msgid "Create hub"
+msgstr "Hub を作成"
+
+msgid "Channels"
+msgstr "チャンネル"
+
+msgid "Add Channel"
+msgstr "チャンネルを追加"
+
+msgid "Direct Messages"
+msgstr "ダイレクトメッセージ"
+
+msgid "Add Teammates"
+msgstr "メンバーを招待"
+
+msgid "Send Feedback"
+msgstr "フィードバックを送る"
+
+msgid "Hub Settings"
+msgstr "Hub 設定"
+
+msgid "General"
+msgstr "全般"
+
+msgid "Invite Links"
+msgstr "招待リンク"
+
+msgid "Other Hubs"
+msgstr "その他の Hub"
+
+msgid "Thank you!"
+msgstr "ありがとうございます！"
+
+msgid "Your feedback has been sent."
+msgstr "フィードバックを送信しました。"
+
+msgid "Email"
+msgstr "メール"
+
+msgid "Message"
+msgstr "メッセージ"
+
+msgid "What's on your mind?"
+msgstr "ご意見をお書きください"
+
+msgid "Sending..."
+msgstr "送信中..."
+
+msgid "Send"
+msgstr "送信"
+
+msgid "Profile"
+msgstr "プロフィール"
+
+msgid "Settings"
+msgstr "設定"
+
+msgid "Language"
+msgstr "言語"
+
+msgid "Log out"
+msgstr "ログアウト"
+
+msgid "Edit Profile"
+msgstr "プロフィール編集"
+
+msgid "Click to upload avatar (max 10MB)"
+msgstr "クリックでアバターをアップロード（最大 10MB）"
+
+msgid "Display Name"
+msgstr "表示名"
+
+msgid "Your display name"
+msgstr "あなたの表示名"
+
+msgid "Image must be under 10MB"
+msgstr "画像は 10MB 以下にしてください"
+
+msgid "Image too large (max 2MB)"
+msgstr "画像が大きすぎます（上限 2MB）"
+
+msgid "Unsupported image format"
+msgstr "対応していない画像形式です"
+
+msgid "Saving"
+msgstr "保存中"
+
+msgid "Members"
+msgstr "メンバー"
+
+msgid "Online"
+msgstr "オンライン"
+
+msgid "Offline"
+msgstr "オフライン"
+
+msgid "Invite participants"
+msgstr "参加者を招待"
+
+msgid "Temporary link expires by timer. Permanent link is bound to a login."
+msgstr "一時リンクはタイマーで失効します。固定リンクはログインに紐づきます。"
+
+msgid "Temporary link"
+msgstr "一時リンク"
+
+msgid "Permanent user"
+msgstr "固定ユーザー"
+
+msgid "Guest name"
+msgstr "ゲスト名"
+
+msgid "Valid until"
+msgstr "有効期限"
+
+msgid "Time"
+msgstr "時刻"
+
+msgid "Generate link"
+msgstr "リンクを生成"
+
+msgid "Creating..."
+msgstr "作成中..."
+
+msgid "Login"
+msgstr "ログイン名"
+
+msgid "Email (optional)"
+msgstr "メール（任意）"
+
+msgid "Create invitation"
+msgstr "招待を作成"
+
+msgid "Done — share the link with the invitee:"
+msgstr "完了 — 招待相手にリンクを共有してください："
+
+msgid "Create another"
+msgstr "もう1つ作成"
+
+msgid "Create Text Channel"
+msgstr "テキストチャンネルを作成"
+
+msgid "Edit Text Channel"
+msgstr "テキストチャンネルを編集"
+
+msgid "Create Voice Channel"
+msgstr "ボイスチャンネルを作成"
+
+msgid "Edit Voice Channel"
+msgstr "ボイスチャンネルを編集"
+
+msgid "Create Stage Channel"
+msgstr "ステージチャンネルを作成"
+
+msgid "Edit Stage Channel"
+msgstr "ステージチャンネルを編集"
+
+msgid "Icon"
+msgstr "アイコン"
+
+msgid "Color"
+msgstr "色"
+
+msgid "Image"
+msgstr "画像"
+
+msgid "Change image"
+msgstr "画像を変更"
+
+msgid "Upload image"
+msgstr "画像をアップロード"
+
+msgid "Channel name"
+msgstr "チャンネル名"
+
+msgid "Visible to groups"
+msgstr "表示するグループ"
+
+msgid "Delete"
+msgstr "削除"
+
+msgid "Create"
+msgstr "作成"
+
+msgid "Groups & Roles"
+msgstr "グループとロール"
+
+msgid "protected"
+msgstr "保護"
+
+msgid "Create role"
+msgstr "ロールを作成"
+
+msgid "Name"
+msgstr "名前"
+
+msgid "Permissions"
+msgstr "権限"
+
+msgid "This is a protected group. Only name and color can be changed."
+msgstr "保護されたグループです。名前と色のみ変更できます。"
+
+msgid "Delete role"
+msgstr "ロールを削除"
+
+msgid "Create text channels"
+msgstr "テキストチャンネルを作成"
+
+msgid "Create voice channels"
+msgstr "ボイスチャンネルを作成"
+
+msgid "Edit other channels"
+msgstr "他のチャンネルを編集"
+
+msgid "Manage members"
+msgstr "メンバーを管理"
+
+msgid "Invite permanent users"
+msgstr "固定ユーザーを招待"
+
+msgid "Create temp links"
+msgstr "一時リンクを作成"
+
+msgid "Manage roles"
+msgstr "ロールを管理"
+
+msgid "Share your screen"
+msgstr "画面を共有"
+
+msgid "Pick a quality profile. Your browser will ask which window or screen to share next."
+msgstr "画質プロファイルを選択してください。次にブラウザが共有するウィンドウまたは画面を尋ねます。"
+
+msgid "Gaming"
+msgstr "ゲーム"
+
+msgid "High motion, 60 fps. For gameplay demos."
+msgstr "高フレームレート 60fps。ゲームプレイ向け。"
+
+msgid "Standard"
+msgstr "標準"
+
+msgid "Balanced quality. For general screen sharing."
+msgstr "バランスの取れた画質。一般的な画面共有向け。"
+
+msgid "Detail"
+msgstr "詳細"
+
+msgid "Sharp text. For documents and code."
+msgstr "鮮明なテキスト。ドキュメントやコード向け。"
+
+msgid "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+msgstr "macOS ではシステム音声はブラウザタブからのみ取得できます。画面全体の共有は映像のみとなります。"
+
+msgid "Start sharing"
+msgstr "共有を開始"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "Save"
+msgstr "保存"
+
+msgid "Close"
+msgstr "閉じる"
+
+msgid "Loading..."
+msgstr "読み込み中..."
+
+msgid "Error"
+msgstr "エラー"
+
+msgid "Today"
+msgstr "今日"
+
+msgid "Yesterday"
+msgstr "昨日"
+
+msgid "New"
+msgstr "新着"
+
+msgid "Unknown"
+msgstr "不明"
+
+msgid "sending…"
+msgstr "送信中…"
+
+msgid "failed"
+msgstr "失敗"
+
+msgid "retry"
+msgstr "再試行"
+
+msgid "(edited)"
+msgstr "(編集済み)"
+
+msgid "%s is typing"
+msgstr "%s が入力中"
+
+msgid "%s and %s are typing"
+msgstr "%s と %s が入力中"
+
+msgid "%d people are typing"
+msgstr "%d 人が入力中"
+
+msgid "Connecting..."
+msgstr "接続中..."
+
+msgid "Reconnecting..."
+msgstr "再接続中..."
+
+msgid "Disconnected"
+msgstr "切断されました"
+
+msgid "Welcome to #%s"
+msgstr "#%s へようこそ"
+
+msgid "This is the start of the channel."
+msgstr "このチャンネルの始まりです。"
+
+msgid "Type something... # %s"
+msgstr "#%s にメッセージを入力..."
+
+msgid "Attach file"
+msgstr "ファイルを添付"
+
+msgid "Send on Enter"
+msgstr "Enter で送信"
+
+msgid "Enter to send"
+msgstr "Enter で送信"
+
+msgid "%s+Enter to send"
+msgstr "%s+Enter で送信"
+
+msgid "Drop to attach"
+msgstr "ドロップして添付"
+
+msgid "Files upload to #%s"
+msgstr "#%s にファイルをアップロード"
+
+msgid "External link"
+msgstr "外部リンク"
+
+msgid "You are about to visit an external resource"
+msgstr "外部リソースへ移動します"
+
+msgid "Open link"
+msgstr "リンクを開く"
+
+msgid "No microphone detected"
+msgstr "マイクが検出されません"
+
+msgid "Mute"
+msgstr "ミュート"
+
+msgid "Unmute"
+msgstr "ミュート解除"
+
+msgid "No camera detected"
+msgstr "カメラが検出されません"
+
+msgid "Turn off camera"
+msgstr "カメラをオフ"
+
+msgid "Turn on camera"
+msgstr "カメラをオン"
+
+msgid "Stop sharing"
+msgstr "共有を停止"
+
+msgid "Leave call"
+msgstr "通話を退出"
+
+msgid "Audio & video devices"
+msgstr "オーディオ・ビデオデバイス"
+
+msgid "Microphone"
+msgstr "マイク"
+
+msgid "No microphones found"
+msgstr "マイクが見つかりません"
+
+msgid "Microphone %d"
+msgstr "マイク %d"
+
+msgid "Camera"
+msgstr "カメラ"
+
+msgid "No cameras found"
+msgstr "カメラが見つかりません"
+
+msgid "Camera %d"
+msgstr "カメラ %d"
+
+msgid "Incoming call"
+msgstr "着信"
+
+msgid "%s is calling"
+msgstr "%s から着信"
+
+msgid "Decline call"
+msgstr "拒否"
+
+msgid "Accept call"
+msgstr "応答"
+
+msgid "Never"
+msgstr "なし"
+
+msgid "Just now"
+msgstr "たった今"
+
+msgid "%dm ago"
+msgstr "%d 分前"
+
+msgid "%dh ago"
+msgstr "%d 時間前"
+
+msgid "online"
+msgstr "オンライン"
+
+msgid "Temporary"
+msgstr "一時"
+
+msgid "Search groups..."
+msgstr "グループを検索..."
+
+msgid "No groups found"
+msgstr "グループが見つかりません"
+
+msgid "Remove member"
+msgstr "メンバーを削除"
+
+msgid "Are you sure you want to remove %s from the hub?"
+msgstr "本当に %s を Hub から削除しますか？"
+
+msgid "Removing..."
+msgstr "削除中..."
+
+msgid "Remove"
+msgstr "削除"
+
+msgid "in call"
+msgstr "通話中"
+
+msgid "Call"
+msgstr "通話"
+
+msgid "Collapse"
+msgstr "折りたたむ"
+
+msgid "Video debug (drag to move, click to toggle)"
+msgstr "ビデオデバッグ（ドラッグ・クリック）"
+
+msgid "Toggle video debug panel"
+msgstr "ビデオデバッグパネルを切り替え"
+
+msgid "Video Debug"
+msgstr "ビデオデバッグ"
+
+msgid "Copy JSON snapshot"
+msgstr "JSON スナップショットをコピー"
+
+msgid "Clear logs"
+msgstr "ログをクリア"
+
+msgid "Voice Channels"
+msgstr "ボイスチャンネル"

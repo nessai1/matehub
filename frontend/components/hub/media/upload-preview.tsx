@@ -1,5 +1,6 @@
 import { XIcon, FileIcon, Loader2 } from "lucide-react";
 import type { PendingUpload } from "@/hooks/use-attachment-upload";
+import { t } from "@/i18n";
 
 interface Props {
   uploads: PendingUpload[];
@@ -77,7 +78,7 @@ export function UploadPreview({ uploads }: Props) {
             <button
               onClick={u.abort}
               className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur transition-opacity hover:bg-black/90"
-              title="Remove"
+              title={t("Remove")}
             >
               <XIcon className="h-3 w-3" />
             </button>

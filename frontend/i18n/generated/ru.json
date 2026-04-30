@@ -1,0 +1,609 @@
+{
+  "domain": "matehub",
+  "locale_data": {
+    "matehub": {
+      "": {
+        "domain": "matehub",
+        "lang": "ru",
+        "plural_forms": "nplurals=2; plural=(n != 1)"
+      },
+      "Sign in": [
+        "Войти"
+      ],
+      "Username": [
+        "Имя пользователя"
+      ],
+      "Password": [
+        "Пароль"
+      ],
+      "Remember me": [
+        "Запомнить меня"
+      ],
+      "Logging in...": [
+        "Вход..."
+      ],
+      "Don't have an account?": [
+        "Нет аккаунта?"
+      ],
+      "Create one": [
+        "Создать"
+      ],
+      "Link does not exist": [
+        "Ссылка не существует"
+      ],
+      "This link has already been used": [
+        "Эта ссылка уже использована"
+      ],
+      "Enter your name": [
+        "Введите имя"
+      ],
+      "Password too short (minimum 6 characters)": [
+        "Пароль слишком короткий (минимум 6 символов)"
+      ],
+      "Passwords don't match": [
+        "Пароли не совпадают"
+      ],
+      "Login is taken": [
+        "Логин занят"
+      ],
+      "Could not reach the server": [
+        "Не получилось связаться с сервером"
+      ],
+      "Checking link...": [
+        "Проверяем ссылку..."
+      ],
+      "Link is invalid": [
+        "Ссылка недействительна"
+      ],
+      "Ask the administrator to create a new one.": [
+        "Попросите администратора создать новую."
+      ],
+      "Join %s": [
+        "Присоединиться к %s"
+      ],
+      "Upload avatar": [
+        "Загрузить аватар"
+      ],
+      "Your name": [
+        "Ваше имя"
+      ],
+      "Confirm password": [
+        "Повторите пароль"
+      ],
+      "Accept invitation": [
+        "Принять приглашение"
+      ],
+      "Link expired or revoked": [
+        "Ссылка истекла или отозвана"
+      ],
+      "Server error": [
+        "Ошибка сервера"
+      ],
+      "Cannot reach server": [
+        "Не удаётся подключиться к серверу"
+      ],
+      "Resolving invite": [
+        "Проверяем приглашение"
+      ],
+      "You are invited to": [
+        "Вас пригласили в"
+      ],
+      "Your identity": [
+        "Ваше имя"
+      ],
+      "Enter Hub": [
+        "Войти в хаб"
+      ],
+      "Temporary access. No account required.": [
+        "Временный доступ. Аккаунт не требуется."
+      ],
+      "Entering hub...": [
+        "Входим в хаб..."
+      ],
+      "Contact the person who shared this link.": [
+        "Свяжитесь с тем, кто отправил вам ссылку."
+      ],
+      "Fill in name and login": [
+        "Заполните имя и логин"
+      ],
+      "Enter hub name": [
+        "Введите название хаба"
+      ],
+      "Hub is already initialised": [
+        "Хаб уже инициализирован"
+      ],
+      "Hooray! Your hub is ready.": [
+        "Ура! Ваш хаб готов к работе."
+      ],
+      "Step 1 of 2 — create the admin account": [
+        "Шаг 1 из 2 — создайте аккаунт администратора"
+      ],
+      "Step 2 of 2 — name your hub": [
+        "Шаг 2 из 2 — назовите свой хаб"
+      ],
+      "Continue": [
+        "Продолжить"
+      ],
+      "Upload hub icon": [
+        "Загрузить иконку хаба"
+      ],
+      "Hub name": [
+        "Название хаба"
+      ],
+      "e.g. Acme Team": [
+        "Например: Команда Acme"
+      ],
+      "Back": [
+        "Назад"
+      ],
+      "Create hub": [
+        "Создать хаб"
+      ],
+      "Channels": [
+        "Каналы"
+      ],
+      "Add Channel": [
+        "Создать канал"
+      ],
+      "Direct Messages": [
+        "Личные сообщения"
+      ],
+      "Add Teammates": [
+        "Добавить участников"
+      ],
+      "Send Feedback": [
+        "Оставить отзыв"
+      ],
+      "Hub Settings": [
+        "Настройки хаба"
+      ],
+      "General": [
+        "Общие"
+      ],
+      "Invite Links": [
+        "Ссылки-приглашения"
+      ],
+      "Other Hubs": [
+        "Другие хабы"
+      ],
+      "Thank you!": [
+        "Спасибо!"
+      ],
+      "Your feedback has been sent.": [
+        "Ваш отзыв отправлен."
+      ],
+      "Email": [
+        "Email"
+      ],
+      "Message": [
+        "Сообщение"
+      ],
+      "What's on your mind?": [
+        "Что у вас на уме?"
+      ],
+      "Sending...": [
+        "Отправка..."
+      ],
+      "Send": [
+        "Отправить"
+      ],
+      "Profile": [
+        "Профиль"
+      ],
+      "Settings": [
+        "Настройки"
+      ],
+      "Language": [
+        "Язык"
+      ],
+      "Log out": [
+        "Выйти"
+      ],
+      "Edit Profile": [
+        "Редактировать профиль"
+      ],
+      "Click to upload avatar (max 10MB)": [
+        "Нажмите, чтобы загрузить аватар (макс. 10 МБ)"
+      ],
+      "Display Name": [
+        "Отображаемое имя"
+      ],
+      "Your display name": [
+        "Ваше отображаемое имя"
+      ],
+      "Image must be under 10MB": [
+        "Размер изображения не должен превышать 10 МБ"
+      ],
+      "Image too large (max 2MB)": [
+        "Изображение слишком большое (макс. 2 МБ)"
+      ],
+      "Unsupported image format": [
+        "Неподдерживаемый формат изображения"
+      ],
+      "Saving": [
+        "Сохранение"
+      ],
+      "Members": [
+        "Участники"
+      ],
+      "Online": [
+        "В сети"
+      ],
+      "Offline": [
+        "Не в сети"
+      ],
+      "Invite participants": [
+        "Пригласить участников"
+      ],
+      "Temporary link expires by timer. Permanent link is bound to a login.": [
+        "Временная ссылка истекает по таймеру. Постоянная привязывается к логину."
+      ],
+      "Temporary link": [
+        "Временная ссылка"
+      ],
+      "Permanent user": [
+        "Постоянный пользователь"
+      ],
+      "Guest name": [
+        "Имя гостя"
+      ],
+      "Valid until": [
+        "Действует до"
+      ],
+      "Time": [
+        "Время"
+      ],
+      "Generate link": [
+        "Сгенерировать ссылку"
+      ],
+      "Creating...": [
+        "Создаём..."
+      ],
+      "Login": [
+        "Логин"
+      ],
+      "Email (optional)": [
+        "Email (необязательно)"
+      ],
+      "Create invitation": [
+        "Создать приглашение"
+      ],
+      "Done — share the link with the invitee:": [
+        "Готово — отправьте ссылку приглашённому:"
+      ],
+      "Create another": [
+        "Создать ещё одну"
+      ],
+      "Create Text Channel": [
+        "Создать текстовый канал"
+      ],
+      "Edit Text Channel": [
+        "Изменить текстовый канал"
+      ],
+      "Create Voice Channel": [
+        "Создать голосовой канал"
+      ],
+      "Edit Voice Channel": [
+        "Изменить голосовой канал"
+      ],
+      "Create Stage Channel": [
+        "Создать stage-канал"
+      ],
+      "Edit Stage Channel": [
+        "Изменить stage-канал"
+      ],
+      "Icon": [
+        "Иконка"
+      ],
+      "Color": [
+        "Цвет"
+      ],
+      "Image": [
+        "Картинка"
+      ],
+      "Change image": [
+        "Сменить картинку"
+      ],
+      "Upload image": [
+        "Загрузить картинку"
+      ],
+      "Channel name": [
+        "Название канала"
+      ],
+      "Visible to groups": [
+        "Видим группам"
+      ],
+      "Delete": [
+        "Удалить"
+      ],
+      "Create": [
+        "Создать"
+      ],
+      "Groups & Roles": [
+        "Группы и роли"
+      ],
+      "protected": [
+        "защищённая"
+      ],
+      "Create role": [
+        "Создать роль"
+      ],
+      "Name": [
+        "Название"
+      ],
+      "Permissions": [
+        "Права"
+      ],
+      "This is a protected group. Only name and color can be changed.": [
+        "Это защищённая группа. Можно изменить только название и цвет."
+      ],
+      "Delete role": [
+        "Удалить роль"
+      ],
+      "Create text channels": [
+        "Создавать текстовые каналы"
+      ],
+      "Create voice channels": [
+        "Создавать голосовые каналы"
+      ],
+      "Edit other channels": [
+        "Редактировать чужие каналы"
+      ],
+      "Manage members": [
+        "Управлять участниками"
+      ],
+      "Invite permanent users": [
+        "Приглашать постоянных пользователей"
+      ],
+      "Create temp links": [
+        "Создавать временные ссылки"
+      ],
+      "Manage roles": [
+        "Управлять ролями"
+      ],
+      "Share your screen": [
+        "Демонстрация экрана"
+      ],
+      "Pick a quality profile. Your browser will ask which window or screen to share next.": [
+        "Выберите профиль качества. Браузер спросит, какое окно или экран показать."
+      ],
+      "Gaming": [
+        "Игры"
+      ],
+      "High motion, 60 fps. For gameplay demos.": [
+        "Высокая частота, 60 fps. Для демонстрации игр."
+      ],
+      "Standard": [
+        "Стандарт"
+      ],
+      "Balanced quality. For general screen sharing.": [
+        "Сбалансированное качество. Для обычной демонстрации."
+      ],
+      "Detail": [
+        "Детализация"
+      ],
+      "Sharp text. For documents and code.": [
+        "Чёткий текст. Для документов и кода."
+      ],
+      "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.": [
+        "В macOS системный звук можно захватить только с вкладки браузера. Демонстрация всего экрана будет без звука."
+      ],
+      "Start sharing": [
+        "Начать демонстрацию"
+      ],
+      "Cancel": [
+        "Отмена"
+      ],
+      "Save": [
+        "Сохранить"
+      ],
+      "Close": [
+        "Закрыть"
+      ],
+      "Loading...": [
+        "Загрузка..."
+      ],
+      "Error": [
+        "Ошибка"
+      ],
+      "Today": [
+        "Сегодня"
+      ],
+      "Yesterday": [
+        "Вчера"
+      ],
+      "New": [
+        "Новые"
+      ],
+      "Unknown": [
+        "Неизвестно"
+      ],
+      "sending…": [
+        "отправка…"
+      ],
+      "failed": [
+        "ошибка"
+      ],
+      "retry": [
+        "повторить"
+      ],
+      "(edited)": [
+        "(изменено)"
+      ],
+      "%s is typing": [
+        "%s печатает"
+      ],
+      "%s and %s are typing": [
+        "%s и %s печатают"
+      ],
+      "%d people are typing": [
+        "%d участников печатают"
+      ],
+      "Connecting...": [
+        "Подключение..."
+      ],
+      "Reconnecting...": [
+        "Переподключение..."
+      ],
+      "Disconnected": [
+        "Соединение потеряно"
+      ],
+      "Welcome to #%s": [
+        "Добро пожаловать в #%s"
+      ],
+      "This is the start of the channel.": [
+        "Это начало канала."
+      ],
+      "Type something... # %s": [
+        "Что-нибудь напишите... # %s"
+      ],
+      "Attach file": [
+        "Прикрепить файл"
+      ],
+      "Send on Enter": [
+        "Отправлять по Enter"
+      ],
+      "Enter to send": [
+        "Enter — отправить"
+      ],
+      "%s+Enter to send": [
+        "%s+Enter — отправить"
+      ],
+      "Drop to attach": [
+        "Отпустите, чтобы прикрепить"
+      ],
+      "Files upload to #%s": [
+        "Файлы загрузятся в #%s"
+      ],
+      "External link": [
+        "Внешняя ссылка"
+      ],
+      "You are about to visit an external resource": [
+        "Вы переходите на внешний ресурс"
+      ],
+      "Open link": [
+        "Открыть ссылку"
+      ],
+      "No microphone detected": [
+        "Микрофон не обнаружен"
+      ],
+      "Mute": [
+        "Выключить микрофон"
+      ],
+      "Unmute": [
+        "Включить микрофон"
+      ],
+      "No camera detected": [
+        "Камера не обнаружена"
+      ],
+      "Turn off camera": [
+        "Выключить камеру"
+      ],
+      "Turn on camera": [
+        "Включить камеру"
+      ],
+      "Stop sharing": [
+        "Остановить демонстрацию"
+      ],
+      "Leave call": [
+        "Покинуть звонок"
+      ],
+      "Audio & video devices": [
+        "Аудио и видеоустройства"
+      ],
+      "Microphone": [
+        "Микрофон"
+      ],
+      "No microphones found": [
+        "Микрофоны не найдены"
+      ],
+      "Microphone %d": [
+        "Микрофон %d"
+      ],
+      "Camera": [
+        "Камера"
+      ],
+      "No cameras found": [
+        "Камеры не найдены"
+      ],
+      "Camera %d": [
+        "Камера %d"
+      ],
+      "Incoming call": [
+        "Входящий звонок"
+      ],
+      "%s is calling": [
+        "%s звонит"
+      ],
+      "Decline call": [
+        "Отклонить"
+      ],
+      "Accept call": [
+        "Принять"
+      ],
+      "Never": [
+        "Никогда"
+      ],
+      "Just now": [
+        "Только что"
+      ],
+      "%dm ago": [
+        "%d мин назад"
+      ],
+      "%dh ago": [
+        "%d ч назад"
+      ],
+      "online": [
+        "в сети"
+      ],
+      "Temporary": [
+        "Временный"
+      ],
+      "Search groups...": [
+        "Поиск групп..."
+      ],
+      "No groups found": [
+        "Группы не найдены"
+      ],
+      "Remove member": [
+        "Удалить участника"
+      ],
+      "Are you sure you want to remove %s from the hub?": [
+        "Удалить %s из хаба?"
+      ],
+      "Removing...": [
+        "Удаление..."
+      ],
+      "Remove": [
+        "Удалить"
+      ],
+      "in call": [
+        "в звонке"
+      ],
+      "Call": [
+        "Позвонить"
+      ],
+      "Collapse": [
+        "Свернуть"
+      ],
+      "Video debug (drag to move, click to toggle)": [
+        "Видео-дебаг (перетащите, кликните)"
+      ],
+      "Toggle video debug panel": [
+        "Открыть/закрыть панель видео-дебага"
+      ],
+      "Video Debug": [
+        "Видео-дебаг"
+      ],
+      "Copy JSON snapshot": [
+        "Копировать JSON-снапшот"
+      ],
+      "Clear logs": [
+        "Очистить логи"
+      ],
+      "Voice Channels": [
+        "Голосовые каналы"
+      ]
+    }
+  }
+}

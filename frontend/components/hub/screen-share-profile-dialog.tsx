@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 import type { ScreenShareProfile } from "../../../packages/sdk-video/src";
 
 interface Props {
@@ -59,10 +60,9 @@ export function ScreenShareProfileDialog({ open, onOpenChange, onConfirm }: Prop
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Share your screen</DialogTitle>
+          <DialogTitle>{t("Share your screen")}</DialogTitle>
           <DialogDescription>
-            Pick a quality profile. Your browser will ask which window or
-            screen to share next.
+            {t("Pick a quality profile. Your browser will ask which window or screen to share next.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -85,13 +85,13 @@ export function ScreenShareProfileDialog({ open, onOpenChange, onConfirm }: Prop
                 <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">{p.title}</span>
+                    <span className="text-sm font-semibold">{t(p.title)}</span>
                     <span className="font-mono text-[10px] text-muted-foreground">
                       {p.resolution}
                     </span>
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {p.description}
+                    {t(p.description)}
                   </p>
                 </div>
               </button>
@@ -101,14 +101,13 @@ export function ScreenShareProfileDialog({ open, onOpenChange, onConfirm }: Prop
 
         {isMac && (
           <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
-            On macOS, game/system audio can only be captured from a browser tab.
-            Sharing a full screen will be video-only.
+            {t("On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.")}
           </p>
         )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             onClick={() => {
@@ -116,7 +115,7 @@ export function ScreenShareProfileDialog({ open, onOpenChange, onConfirm }: Prop
               onOpenChange(false);
             }}
           >
-            Start sharing
+            {t("Start sharing")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -8,6 +8,7 @@ import "@fontsource-variable/geist-mono";
 import "@/app/globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/lib/auth";
+import { LocaleProvider, detectInitialLocale, loadLocale } from "@/i18n";
 import { router } from "./router";
 import { loadConfig } from "./config";
 
@@ -24,12 +25,17 @@ const rootEl = document.getElementById("root")!;
 // mount/unmount/mount cycle causes connect-close-connect flapping that shows
 // up as "flicker" online status and visible voice-call join sounds during dev.
 // The fix is to ship without StrictMode in dev; production doesn't double-run.
-loadConfig().then(() => {
+// Locale + runtime config in parallel — both block first render. Translator
+// must be hydrated before any t() call site mounts, otherwise the first
+// frame paints English msgids regardless of the chosen language.
+Promise.all([loadConfig(), loadLocale(detectInitialLocale())]).then(() => {
   createRoot(rootEl).render(
     <ThemeProvider>
-      <AuthProvider>
-        <RouterProvider router={router} />
-      </AuthProvider>
+      <LocaleProvider>
+        <AuthProvider>
+          <RouterProvider router={router} />
+        </AuthProvider>
+      </LocaleProvider>
     </ThemeProvider>,
   );
 });

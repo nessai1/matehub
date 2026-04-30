@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
 
@@ -43,9 +44,9 @@ export default function InvitePage() {
     if (!token) return;
     fetch(`${HUB_API}/v1/invitations/${token}`)
       .then(async (r) => {
-        if (r.status === 404) throw new Error("Ссылка не существует");
-        if (r.status === 410) throw new Error("Эта ссылка уже использована");
-        if (!r.ok) throw new Error(`Ошибка: ${r.status}`);
+        if (r.status === 404) throw new Error(t("Link does not exist"));
+        if (r.status === 410) throw new Error(t("This link has already been used"));
+        if (!r.ok) throw new Error(`${t("Error")}: ${r.status}`);
         return r.json();
       })
       .then((data: InvitationPreview) => setPreview(data))
@@ -64,15 +65,15 @@ export default function InvitePage() {
     if (!token || !preview) return;
     setError("");
     if (!displayName.trim()) {
-      setError("Введите имя");
+      setError(t("Enter your name"));
       return;
     }
     if (password.length < 6) {
-      setError("Пароль слишком короткий (минимум 6 символов)");
+      setError(t("Password too short (minimum 6 characters)"));
       return;
     }
     if (password !== passwordConfirm) {
-      setError("Пароли не совпадают");
+      setError(t("Passwords don't match"));
       return;
     }
     setSubmitting(true);
@@ -87,17 +88,17 @@ export default function InvitePage() {
         }),
       });
       if (res.status === 410) {
-        setError("Эта ссылка уже использована");
+        setError(t("This link has already been used"));
         setSubmitting(false);
         return;
       }
       if (res.status === 409) {
-        setError("Логин занят");
+        setError(t("Login is taken"));
         setSubmitting(false);
         return;
       }
       if (!res.ok) {
-        setError(`Ошибка: ${res.status}`);
+        setError(`${t("Error")}: ${res.status}`);
         setSubmitting(false);
         return;
       }
@@ -126,7 +127,7 @@ export default function InvitePage() {
       });
       navigate("/hub", { replace: true });
     } catch {
-      setError("Не получилось связаться с сервером");
+      setError(t("Could not reach the server"));
       setSubmitting(false);
     }
   };
@@ -135,7 +136,7 @@ export default function InvitePage() {
     return (
       <div className="flex flex-col items-center gap-3 p-8">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-        <p className="font-mono text-xs text-zinc-500">Проверяем ссылку...</p>
+        <p className="font-mono text-xs text-zinc-500">{t("Checking link...")}</p>
       </div>
     );
   }
@@ -143,8 +144,8 @@ export default function InvitePage() {
   if (loadError || !preview) {
     return (
       <div className="space-y-3 p-8 text-center">
-        <h1 className="text-lg font-semibold">{loadError || "Ссылка недействительна"}</h1>
-        <p className="text-sm text-muted-foreground">Попросите администратора создать новую.</p>
+        <h1 className="text-lg font-semibold">{loadError || t("Link is invalid")}</h1>
+        <p className="text-sm text-muted-foreground">{t("Ask the administrator to create a new one.")}</p>
       </div>
     );
   }
@@ -152,9 +153,9 @@ export default function InvitePage() {
   return (
     <form onSubmit={submit} className="space-y-4 p-2">
       <div className="space-y-1">
-        <h1 className="text-xl font-semibold">Присоединиться к {preview.hub_name}</h1>
+        <h1 className="text-xl font-semibold">{t("Join %s", preview.hub_name)}</h1>
         <p className="text-sm text-muted-foreground">
-          Логин: <span className="font-mono">{preview.username}</span>
+          {t("Login")}: <span className="font-mono">{preview.username}</span>
         </p>
       </div>
 
@@ -168,7 +169,7 @@ export default function InvitePage() {
         </Avatar>
         <div>
           <Label htmlFor="invite-avatar" className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-            Загрузить аватар
+            {t("Upload avatar")}
           </Label>
           <Input
             id="invite-avatar"
@@ -181,7 +182,7 @@ export default function InvitePage() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="display-name">Ваше имя</Label>
+        <Label htmlFor="display-name">{t("Your name")}</Label>
         <Input
           id="display-name"
           value={displayName}
@@ -191,7 +192,7 @@ export default function InvitePage() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="invite-password">Пароль</Label>
+        <Label htmlFor="invite-password">{t("Password")}</Label>
         <Input
           id="invite-password"
           type="password"
@@ -203,7 +204,7 @@ export default function InvitePage() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="invite-password-confirm">Повторите пароль</Label>
+        <Label htmlFor="invite-password-confirm">{t("Confirm password")}</Label>
         <Input
           id="invite-password-confirm"
           type="password"
@@ -217,7 +218,7 @@ export default function InvitePage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button type="submit" className="w-full" disabled={submitting}>
-        {submitting ? "Создаём..." : "Принять приглашение"}
+        {submitting ? t("Creating...") : t("Accept invitation")}
       </Button>
     </form>
   );

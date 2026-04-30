@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { usePermissions, HUB_PERMISSION_LABELS, hasBit, P } from "@/hooks/use-permissions";
+import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
 
@@ -158,7 +159,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
               </button>
             )}
             <ShieldIcon className="h-4 w-4" />
-            {selected ? selected.name : "Groups & Roles"}
+            {selected ? selected.name : t("Groups & Roles")}
           </DialogTitle>
         </DialogHeader>
 
@@ -178,7 +179,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
                   />
                   <span className="flex-1 text-sm font-medium">{g.name}</span>
                   {(g.name === "admin" || g.name === "everyone") && (
-                    <Badge variant="outline" className="text-[10px]">protected</Badge>
+                    <Badge variant="outline" className="text-[10px]">{t("protected")}</Badge>
                   )}
                 </button>
               ))}
@@ -189,7 +190,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
                   className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
                   <PlusIcon className="h-3.5 w-3.5" />
-                  Create role
+                  {t("Create role")}
                 </button>
               )}
             </div>
@@ -198,7 +199,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
             <div className="flex flex-col gap-4">
               {/* Name */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Name</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("Name")}</label>
                 <Input
                   value={selected.name}
                   onChange={(e) => {
@@ -214,7 +215,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
 
               {/* Color */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Color</label>
+                <label className="text-xs font-medium text-muted-foreground">{t("Color")}</label>
                 <div className="flex flex-wrap gap-1.5">
                   {colors.map((c) => (
                     <button
@@ -237,7 +238,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
               {/* Hub permissions (not for protected groups) */}
               {!isProtected && (
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground">Permissions</label>
+                  <label className="text-xs font-medium text-muted-foreground">{t("Permissions")}</label>
                   <div className="flex flex-col gap-1">
                     {HUB_PERMISSION_LABELS.map((p) => {
                       const enabled = hasBit(selected.hub_permissions, p.bit);
@@ -252,7 +253,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
                             canToggle ? "hover:bg-muted" : "opacity-50",
                           )}
                         >
-                          <span>{p.label}</span>
+                          <span>{t(p.label)}</span>
                           <div
                             className={cn(
                               "flex h-5 w-9 items-center rounded-full transition-colors",
@@ -275,7 +276,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
 
               {isProtected && (
                 <p className="text-xs text-muted-foreground">
-                  This is a protected group. Only name and color can be changed.
+                  {t("This is a protected group. Only name and color can be changed.")}
                 </p>
               )}
 
@@ -290,7 +291,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
                     onClick={() => deleteGroup(selected.id)}
                   >
                     <Trash2Icon className="h-3.5 w-3.5" />
-                    Delete role
+                    {t("Delete role")}
                   </Button>
                 </>
               )}

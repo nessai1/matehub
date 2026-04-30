@@ -1,0 +1,605 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: matehub 0.1\n"
+"Language: ru\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+
+msgid "Sign in"
+msgstr "Войти"
+
+msgid "Username"
+msgstr "Имя пользователя"
+
+msgid "Password"
+msgstr "Пароль"
+
+msgid "Remember me"
+msgstr "Запомнить меня"
+
+msgid "Logging in..."
+msgstr "Вход..."
+
+msgid "Don't have an account?"
+msgstr "Нет аккаунта?"
+
+msgid "Create one"
+msgstr "Создать"
+
+msgid "Link does not exist"
+msgstr "Ссылка не существует"
+
+msgid "This link has already been used"
+msgstr "Эта ссылка уже использована"
+
+msgid "Enter your name"
+msgstr "Введите имя"
+
+msgid "Password too short (minimum 6 characters)"
+msgstr "Пароль слишком короткий (минимум 6 символов)"
+
+msgid "Passwords don't match"
+msgstr "Пароли не совпадают"
+
+msgid "Login is taken"
+msgstr "Логин занят"
+
+msgid "Could not reach the server"
+msgstr "Не получилось связаться с сервером"
+
+msgid "Checking link..."
+msgstr "Проверяем ссылку..."
+
+msgid "Link is invalid"
+msgstr "Ссылка недействительна"
+
+msgid "Ask the administrator to create a new one."
+msgstr "Попросите администратора создать новую."
+
+msgid "Join %s"
+msgstr "Присоединиться к %s"
+
+msgid "Upload avatar"
+msgstr "Загрузить аватар"
+
+msgid "Your name"
+msgstr "Ваше имя"
+
+msgid "Confirm password"
+msgstr "Повторите пароль"
+
+msgid "Accept invitation"
+msgstr "Принять приглашение"
+
+msgid "Link expired or revoked"
+msgstr "Ссылка истекла или отозвана"
+
+msgid "Server error"
+msgstr "Ошибка сервера"
+
+msgid "Cannot reach server"
+msgstr "Не удаётся подключиться к серверу"
+
+msgid "Resolving invite"
+msgstr "Проверяем приглашение"
+
+msgid "You are invited to"
+msgstr "Вас пригласили в"
+
+msgid "Your identity"
+msgstr "Ваше имя"
+
+msgid "Enter Hub"
+msgstr "Войти в хаб"
+
+msgid "Temporary access. No account required."
+msgstr "Временный доступ. Аккаунт не требуется."
+
+msgid "Entering hub..."
+msgstr "Входим в хаб..."
+
+msgid "Contact the person who shared this link."
+msgstr "Свяжитесь с тем, кто отправил вам ссылку."
+
+msgid "Fill in name and login"
+msgstr "Заполните имя и логин"
+
+msgid "Enter hub name"
+msgstr "Введите название хаба"
+
+msgid "Hub is already initialised"
+msgstr "Хаб уже инициализирован"
+
+msgid "Hooray! Your hub is ready."
+msgstr "Ура! Ваш хаб готов к работе."
+
+msgid "Step 1 of 2 — create the admin account"
+msgstr "Шаг 1 из 2 — создайте аккаунт администратора"
+
+msgid "Step 2 of 2 — name your hub"
+msgstr "Шаг 2 из 2 — назовите свой хаб"
+
+msgid "Continue"
+msgstr "Продолжить"
+
+msgid "Upload hub icon"
+msgstr "Загрузить иконку хаба"
+
+msgid "Hub name"
+msgstr "Название хаба"
+
+msgid "e.g. Acme Team"
+msgstr "Например: Команда Acme"
+
+msgid "Back"
+msgstr "Назад"
+
+msgid "Create hub"
+msgstr "Создать хаб"
+
+msgid "Channels"
+msgstr "Каналы"
+
+msgid "Add Channel"
+msgstr "Создать канал"
+
+msgid "Direct Messages"
+msgstr "Личные сообщения"
+
+msgid "Add Teammates"
+msgstr "Добавить участников"
+
+msgid "Send Feedback"
+msgstr "Оставить отзыв"
+
+msgid "Hub Settings"
+msgstr "Настройки хаба"
+
+msgid "General"
+msgstr "Общие"
+
+msgid "Invite Links"
+msgstr "Ссылки-приглашения"
+
+msgid "Other Hubs"
+msgstr "Другие хабы"
+
+msgid "Thank you!"
+msgstr "Спасибо!"
+
+msgid "Your feedback has been sent."
+msgstr "Ваш отзыв отправлен."
+
+msgid "Email"
+msgstr "Email"
+
+msgid "Message"
+msgstr "Сообщение"
+
+msgid "What's on your mind?"
+msgstr "Что у вас на уме?"
+
+msgid "Sending..."
+msgstr "Отправка..."
+
+msgid "Send"
+msgstr "Отправить"
+
+msgid "Profile"
+msgstr "Профиль"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Language"
+msgstr "Язык"
+
+msgid "Log out"
+msgstr "Выйти"
+
+msgid "Edit Profile"
+msgstr "Редактировать профиль"
+
+msgid "Click to upload avatar (max 10MB)"
+msgstr "Нажмите, чтобы загрузить аватар (макс. 10 МБ)"
+
+msgid "Display Name"
+msgstr "Отображаемое имя"
+
+msgid "Your display name"
+msgstr "Ваше отображаемое имя"
+
+msgid "Image must be under 10MB"
+msgstr "Размер изображения не должен превышать 10 МБ"
+
+msgid "Image too large (max 2MB)"
+msgstr "Изображение слишком большое (макс. 2 МБ)"
+
+msgid "Unsupported image format"
+msgstr "Неподдерживаемый формат изображения"
+
+msgid "Saving"
+msgstr "Сохранение"
+
+msgid "Members"
+msgstr "Участники"
+
+msgid "Online"
+msgstr "В сети"
+
+msgid "Offline"
+msgstr "Не в сети"
+
+msgid "Invite participants"
+msgstr "Пригласить участников"
+
+msgid "Temporary link expires by timer. Permanent link is bound to a login."
+msgstr "Временная ссылка истекает по таймеру. Постоянная привязывается к логину."
+
+msgid "Temporary link"
+msgstr "Временная ссылка"
+
+msgid "Permanent user"
+msgstr "Постоянный пользователь"
+
+msgid "Guest name"
+msgstr "Имя гостя"
+
+msgid "Valid until"
+msgstr "Действует до"
+
+msgid "Time"
+msgstr "Время"
+
+msgid "Generate link"
+msgstr "Сгенерировать ссылку"
+
+msgid "Creating..."
+msgstr "Создаём..."
+
+msgid "Login"
+msgstr "Логин"
+
+msgid "Email (optional)"
+msgstr "Email (необязательно)"
+
+msgid "Create invitation"
+msgstr "Создать приглашение"
+
+msgid "Done — share the link with the invitee:"
+msgstr "Готово — отправьте ссылку приглашённому:"
+
+msgid "Create another"
+msgstr "Создать ещё одну"
+
+msgid "Create Text Channel"
+msgstr "Создать текстовый канал"
+
+msgid "Edit Text Channel"
+msgstr "Изменить текстовый канал"
+
+msgid "Create Voice Channel"
+msgstr "Создать голосовой канал"
+
+msgid "Edit Voice Channel"
+msgstr "Изменить голосовой канал"
+
+msgid "Create Stage Channel"
+msgstr "Создать stage-канал"
+
+msgid "Edit Stage Channel"
+msgstr "Изменить stage-канал"
+
+msgid "Icon"
+msgstr "Иконка"
+
+msgid "Color"
+msgstr "Цвет"
+
+msgid "Image"
+msgstr "Картинка"
+
+msgid "Change image"
+msgstr "Сменить картинку"
+
+msgid "Upload image"
+msgstr "Загрузить картинку"
+
+msgid "Channel name"
+msgstr "Название канала"
+
+msgid "Visible to groups"
+msgstr "Видим группам"
+
+msgid "Delete"
+msgstr "Удалить"
+
+msgid "Create"
+msgstr "Создать"
+
+msgid "Groups & Roles"
+msgstr "Группы и роли"
+
+msgid "protected"
+msgstr "защищённая"
+
+msgid "Create role"
+msgstr "Создать роль"
+
+msgid "Name"
+msgstr "Название"
+
+msgid "Permissions"
+msgstr "Права"
+
+msgid "This is a protected group. Only name and color can be changed."
+msgstr "Это защищённая группа. Можно изменить только название и цвет."
+
+msgid "Delete role"
+msgstr "Удалить роль"
+
+msgid "Create text channels"
+msgstr "Создавать текстовые каналы"
+
+msgid "Create voice channels"
+msgstr "Создавать голосовые каналы"
+
+msgid "Edit other channels"
+msgstr "Редактировать чужие каналы"
+
+msgid "Manage members"
+msgstr "Управлять участниками"
+
+msgid "Invite permanent users"
+msgstr "Приглашать постоянных пользователей"
+
+msgid "Create temp links"
+msgstr "Создавать временные ссылки"
+
+msgid "Manage roles"
+msgstr "Управлять ролями"
+
+msgid "Share your screen"
+msgstr "Демонстрация экрана"
+
+msgid "Pick a quality profile. Your browser will ask which window or screen to share next."
+msgstr "Выберите профиль качества. Браузер спросит, какое окно или экран показать."
+
+msgid "Gaming"
+msgstr "Игры"
+
+msgid "High motion, 60 fps. For gameplay demos."
+msgstr "Высокая частота, 60 fps. Для демонстрации игр."
+
+msgid "Standard"
+msgstr "Стандарт"
+
+msgid "Balanced quality. For general screen sharing."
+msgstr "Сбалансированное качество. Для обычной демонстрации."
+
+msgid "Detail"
+msgstr "Детализация"
+
+msgid "Sharp text. For documents and code."
+msgstr "Чёткий текст. Для документов и кода."
+
+msgid "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+msgstr "В macOS системный звук можно захватить только с вкладки браузера. Демонстрация всего экрана будет без звука."
+
+msgid "Start sharing"
+msgstr "Начать демонстрацию"
+
+msgid "Cancel"
+msgstr "Отмена"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "Close"
+msgstr "Закрыть"
+
+msgid "Loading..."
+msgstr "Загрузка..."
+
+msgid "Error"
+msgstr "Ошибка"
+
+msgid "Today"
+msgstr "Сегодня"
+
+msgid "Yesterday"
+msgstr "Вчера"
+
+msgid "New"
+msgstr "Новые"
+
+msgid "Unknown"
+msgstr "Неизвестно"
+
+msgid "sending…"
+msgstr "отправка…"
+
+msgid "failed"
+msgstr "ошибка"
+
+msgid "retry"
+msgstr "повторить"
+
+msgid "(edited)"
+msgstr "(изменено)"
+
+msgid "%s is typing"
+msgstr "%s печатает"
+
+msgid "%s and %s are typing"
+msgstr "%s и %s печатают"
+
+msgid "%d people are typing"
+msgstr "%d участников печатают"
+
+msgid "Connecting..."
+msgstr "Подключение..."
+
+msgid "Reconnecting..."
+msgstr "Переподключение..."
+
+msgid "Disconnected"
+msgstr "Соединение потеряно"
+
+msgid "Welcome to #%s"
+msgstr "Добро пожаловать в #%s"
+
+msgid "This is the start of the channel."
+msgstr "Это начало канала."
+
+msgid "Type something... # %s"
+msgstr "Что-нибудь напишите... # %s"
+
+msgid "Attach file"
+msgstr "Прикрепить файл"
+
+msgid "Send on Enter"
+msgstr "Отправлять по Enter"
+
+msgid "Enter to send"
+msgstr "Enter — отправить"
+
+msgid "%s+Enter to send"
+msgstr "%s+Enter — отправить"
+
+msgid "Drop to attach"
+msgstr "Отпустите, чтобы прикрепить"
+
+msgid "Files upload to #%s"
+msgstr "Файлы загрузятся в #%s"
+
+msgid "External link"
+msgstr "Внешняя ссылка"
+
+msgid "You are about to visit an external resource"
+msgstr "Вы переходите на внешний ресурс"
+
+msgid "Open link"
+msgstr "Открыть ссылку"
+
+msgid "No microphone detected"
+msgstr "Микрофон не обнаружен"
+
+msgid "Mute"
+msgstr "Выключить микрофон"
+
+msgid "Unmute"
+msgstr "Включить микрофон"
+
+msgid "No camera detected"
+msgstr "Камера не обнаружена"
+
+msgid "Turn off camera"
+msgstr "Выключить камеру"
+
+msgid "Turn on camera"
+msgstr "Включить камеру"
+
+msgid "Stop sharing"
+msgstr "Остановить демонстрацию"
+
+msgid "Leave call"
+msgstr "Покинуть звонок"
+
+msgid "Audio & video devices"
+msgstr "Аудио и видеоустройства"
+
+msgid "Microphone"
+msgstr "Микрофон"
+
+msgid "No microphones found"
+msgstr "Микрофоны не найдены"
+
+msgid "Microphone %d"
+msgstr "Микрофон %d"
+
+msgid "Camera"
+msgstr "Камера"
+
+msgid "No cameras found"
+msgstr "Камеры не найдены"
+
+msgid "Camera %d"
+msgstr "Камера %d"
+
+msgid "Incoming call"
+msgstr "Входящий звонок"
+
+msgid "%s is calling"
+msgstr "%s звонит"
+
+msgid "Decline call"
+msgstr "Отклонить"
+
+msgid "Accept call"
+msgstr "Принять"
+
+msgid "Never"
+msgstr "Никогда"
+
+msgid "Just now"
+msgstr "Только что"
+
+msgid "%dm ago"
+msgstr "%d мин назад"
+
+msgid "%dh ago"
+msgstr "%d ч назад"
+
+msgid "online"
+msgstr "в сети"
+
+msgid "Temporary"
+msgstr "Временный"
+
+msgid "Search groups..."
+msgstr "Поиск групп..."
+
+msgid "No groups found"
+msgstr "Группы не найдены"
+
+msgid "Remove member"
+msgstr "Удалить участника"
+
+msgid "Are you sure you want to remove %s from the hub?"
+msgstr "Удалить %s из хаба?"
+
+msgid "Removing..."
+msgstr "Удаление..."
+
+msgid "Remove"
+msgstr "Удалить"
+
+msgid "in call"
+msgstr "в звонке"
+
+msgid "Call"
+msgstr "Позвонить"
+
+msgid "Collapse"
+msgstr "Свернуть"
+
+msgid "Video debug (drag to move, click to toggle)"
+msgstr "Видео-дебаг (перетащите, кликните)"
+
+msgid "Toggle video debug panel"
+msgstr "Открыть/закрыть панель видео-дебага"
+
+msgid "Video Debug"
+msgstr "Видео-дебаг"
+
+msgid "Copy JSON snapshot"
+msgstr "Копировать JSON-снапшот"
+
+msgid "Clear logs"
+msgstr "Очистить логи"
+
+msgid "Voice Channels"
+msgstr "Голосовые каналы"

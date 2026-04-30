@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
 
@@ -66,15 +67,15 @@ export default function SetupPage() {
     e.preventDefault();
     setError("");
     if (!username.trim() || !displayName.trim()) {
-      setError("Заполните имя и логин");
+      setError(t("Fill in name and login"));
       return;
     }
     if (password.length < 6) {
-      setError("Пароль слишком короткий (минимум 6 символов)");
+      setError(t("Password too short (minimum 6 characters)"));
       return;
     }
     if (password !== passwordConfirm) {
-      setError("Пароли не совпадают");
+      setError(t("Passwords don't match"));
       return;
     }
     setStep(2);
@@ -83,7 +84,7 @@ export default function SetupPage() {
   const finish = async (e: FormEvent) => {
     e.preventDefault();
     if (!hubName.trim()) {
-      setError("Введите название хаба");
+      setError(t("Enter hub name"));
       return;
     }
     setError("");
@@ -103,7 +104,7 @@ export default function SetupPage() {
       });
 
       if (!res.ok) {
-        if (res.status === 409) setError("Хаб уже инициализирован");
+        if (res.status === 409) setError(t("Hub is already initialised"));
         else setError(`Setup failed (${res.status})`);
         setSubmitting(false);
         return;
@@ -147,7 +148,7 @@ export default function SetupPage() {
 
       navigate("/hub", { replace: true });
     } catch {
-      setError("Не получилось связаться с сервером");
+      setError(t("Could not reach the server"));
       setSubmitting(false);
     }
   };
@@ -156,11 +157,11 @@ export default function SetupPage() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Ура! Ваш хаб готов к работе.</CardTitle>
+          <CardTitle>{t("Hooray! Your hub is ready.")}</CardTitle>
           <CardDescription>
             {step === 1
-              ? "Шаг 1 из 2 — создайте аккаунт администратора"
-              : "Шаг 2 из 2 — назовите свой хаб"}
+              ? t("Step 1 of 2 — create the admin account")
+              : t("Step 2 of 2 — name your hub")}
           </CardDescription>
         </CardHeader>
 
@@ -179,7 +180,7 @@ export default function SetupPage() {
                 </Avatar>
                 <div>
                   <Label htmlFor="admin-avatar" className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                    Загрузить аватар
+                    {t("Upload avatar")}
                   </Label>
                   <Input
                     id="admin-avatar"
@@ -192,7 +193,7 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="display-name">Ваше имя</Label>
+                <Label htmlFor="display-name">{t("Your name")}</Label>
                 <Input
                   id="display-name"
                   value={displayName}
@@ -202,7 +203,7 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="username">Логин</Label>
+                <Label htmlFor="username">{t("Login")}</Label>
                 <Input
                   id="username"
                   value={username}
@@ -213,7 +214,7 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="email">Email (необязательно)</Label>
+                <Label htmlFor="email">{t("Email (optional)")}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -224,7 +225,7 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Пароль</Label>
+                <Label htmlFor="password">{t("Password")}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -236,7 +237,7 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password-confirm">Повторите пароль</Label>
+                <Label htmlFor="password-confirm">{t("Confirm password")}</Label>
                 <Input
                   id="password-confirm"
                   type="password"
@@ -251,7 +252,7 @@ export default function SetupPage() {
             </CardContent>
 
             <CardFooter>
-              <Button type="submit" className="w-full">Продолжить</Button>
+              <Button type="submit" className="w-full">{t("Continue")}</Button>
             </CardFooter>
           </form>
         ) : (
@@ -269,7 +270,7 @@ export default function SetupPage() {
                 </Avatar>
                 <div>
                   <Label htmlFor="hub-avatar" className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
-                    Загрузить иконку хаба
+                    {t("Upload hub icon")}
                   </Label>
                   <Input
                     id="hub-avatar"
@@ -282,13 +283,13 @@ export default function SetupPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="hub-name">Название хаба</Label>
+                <Label htmlFor="hub-name">{t("Hub name")}</Label>
                 <Input
                   id="hub-name"
                   value={hubName}
                   onChange={(e) => setHubName(e.target.value)}
                   required
-                  placeholder="Например: Команда Acme"
+                  placeholder={t("e.g. Acme Team")}
                 />
               </div>
 
@@ -297,10 +298,10 @@ export default function SetupPage() {
 
             <CardFooter className="flex gap-2">
               <Button type="button" variant="outline" onClick={() => setStep(1)} disabled={submitting}>
-                Назад
+                {t("Back")}
               </Button>
               <Button type="submit" className="flex-1" disabled={submitting}>
-                {submitting ? "Создаём..." : "Создать хаб"}
+                {submitting ? t("Creating...") : t("Create hub")}
               </Button>
             </CardFooter>
           </form>

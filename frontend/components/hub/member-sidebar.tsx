@@ -9,6 +9,7 @@ import { usePermissions, P } from "@/hooks/use-permissions";
 import { useAddTeammates } from "@/contexts/add-teammates-context";
 import { MemberCard } from "./member-card";
 import type { Member, MemberGroup } from "@/hooks/use-members";
+import { t } from "@/i18n";
 
 export function MemberSidebar() {
   usePresence();
@@ -35,7 +36,7 @@ export function MemberSidebar() {
     <aside className="flex w-56 shrink-0 flex-col rounded-2xl bg-sidebar">
       <div className="flex h-10 items-center px-4">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Members — {members.length}
+          {t("Members")} — {members.length}
         </span>
       </div>
 
@@ -53,7 +54,7 @@ export function MemberSidebar() {
           ) : (
             <>
               {online.length > 0 && (
-                <MemberGroupSection label={`Online — ${online.length}`}>
+                <MemberGroupSection label={`${t("Online")} — ${online.length}`}>
                   {online.map((member) => (
                     <MemberItem
                       key={member.user_id}
@@ -66,7 +67,7 @@ export function MemberSidebar() {
               )}
 
               {offline.length > 0 && (
-                <MemberGroupSection label={`Offline — ${offline.length}`}>
+                <MemberGroupSection label={`${t("Offline")} — ${offline.length}`}>
                   {offline.map((member) => (
                     <MemberItem
                       key={member.user_id}
@@ -92,7 +93,7 @@ export function MemberSidebar() {
             className="w-full justify-start gap-2 text-xs text-muted-foreground hover:text-foreground"
           >
             <UserPlusIcon className="h-3.5 w-3.5" />
-            Add Teammates
+            {t("Add Teammates")}
           </Button>
         </div>
       )}

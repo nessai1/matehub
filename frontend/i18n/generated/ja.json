@@ -1,0 +1,609 @@
+{
+  "domain": "matehub",
+  "locale_data": {
+    "matehub": {
+      "": {
+        "domain": "matehub",
+        "lang": "ja",
+        "plural_forms": "nplurals=2; plural=(n != 1)"
+      },
+      "Sign in": [
+        "ログイン"
+      ],
+      "Username": [
+        "ユーザー名"
+      ],
+      "Password": [
+        "パスワード"
+      ],
+      "Remember me": [
+        "ログイン状態を保持する"
+      ],
+      "Logging in...": [
+        "ログイン中..."
+      ],
+      "Don't have an account?": [
+        "アカウントをお持ちでない方"
+      ],
+      "Create one": [
+        "アカウントを作成"
+      ],
+      "Link does not exist": [
+        "リンクが存在しません"
+      ],
+      "This link has already been used": [
+        "このリンクは既に使用済みです"
+      ],
+      "Enter your name": [
+        "お名前を入力してください"
+      ],
+      "Password too short (minimum 6 characters)": [
+        "パスワードが短すぎます（6 文字以上）"
+      ],
+      "Passwords don't match": [
+        "パスワードが一致しません"
+      ],
+      "Login is taken": [
+        "このログイン名は使用されています"
+      ],
+      "Could not reach the server": [
+        "サーバーに接続できません"
+      ],
+      "Checking link...": [
+        "リンクを確認中..."
+      ],
+      "Link is invalid": [
+        "リンクが無効です"
+      ],
+      "Ask the administrator to create a new one.": [
+        "管理者に新しいリンクの作成を依頼してください。"
+      ],
+      "Join %s": [
+        "%s に参加"
+      ],
+      "Upload avatar": [
+        "アバターをアップロード"
+      ],
+      "Your name": [
+        "お名前"
+      ],
+      "Confirm password": [
+        "パスワード確認"
+      ],
+      "Accept invitation": [
+        "招待を承諾"
+      ],
+      "Link expired or revoked": [
+        "リンクの有効期限が切れたか取り消されました"
+      ],
+      "Server error": [
+        "サーバーエラー"
+      ],
+      "Cannot reach server": [
+        "サーバーに接続できません"
+      ],
+      "Resolving invite": [
+        "招待を確認中"
+      ],
+      "You are invited to": [
+        "招待されています"
+      ],
+      "Your identity": [
+        "あなたの表示名"
+      ],
+      "Enter Hub": [
+        "Hub に入る"
+      ],
+      "Temporary access. No account required.": [
+        "一時アクセス。アカウント不要。"
+      ],
+      "Entering hub...": [
+        "Hub に入っています..."
+      ],
+      "Contact the person who shared this link.": [
+        "リンクを共有してくれた方に連絡してください。"
+      ],
+      "Fill in name and login": [
+        "名前とログイン名を入力してください"
+      ],
+      "Enter hub name": [
+        "Hub 名を入力してください"
+      ],
+      "Hub is already initialised": [
+        "Hub は既に初期化済みです"
+      ],
+      "Hooray! Your hub is ready.": [
+        "Hub の準備ができました！"
+      ],
+      "Step 1 of 2 — create the admin account": [
+        "ステップ 1/2 — 管理者アカウントを作成"
+      ],
+      "Step 2 of 2 — name your hub": [
+        "ステップ 2/2 — Hub に名前を付ける"
+      ],
+      "Continue": [
+        "次へ"
+      ],
+      "Upload hub icon": [
+        "Hub アイコンをアップロード"
+      ],
+      "Hub name": [
+        "Hub 名"
+      ],
+      "e.g. Acme Team": [
+        "例: Acme チーム"
+      ],
+      "Back": [
+        "戻る"
+      ],
+      "Create hub": [
+        "Hub を作成"
+      ],
+      "Channels": [
+        "チャンネル"
+      ],
+      "Add Channel": [
+        "チャンネルを追加"
+      ],
+      "Direct Messages": [
+        "ダイレクトメッセージ"
+      ],
+      "Add Teammates": [
+        "メンバーを招待"
+      ],
+      "Send Feedback": [
+        "フィードバックを送る"
+      ],
+      "Hub Settings": [
+        "Hub 設定"
+      ],
+      "General": [
+        "全般"
+      ],
+      "Invite Links": [
+        "招待リンク"
+      ],
+      "Other Hubs": [
+        "その他の Hub"
+      ],
+      "Thank you!": [
+        "ありがとうございます！"
+      ],
+      "Your feedback has been sent.": [
+        "フィードバックを送信しました。"
+      ],
+      "Email": [
+        "メール"
+      ],
+      "Message": [
+        "メッセージ"
+      ],
+      "What's on your mind?": [
+        "ご意見をお書きください"
+      ],
+      "Sending...": [
+        "送信中..."
+      ],
+      "Send": [
+        "送信"
+      ],
+      "Profile": [
+        "プロフィール"
+      ],
+      "Settings": [
+        "設定"
+      ],
+      "Language": [
+        "言語"
+      ],
+      "Log out": [
+        "ログアウト"
+      ],
+      "Edit Profile": [
+        "プロフィール編集"
+      ],
+      "Click to upload avatar (max 10MB)": [
+        "クリックでアバターをアップロード（最大 10MB）"
+      ],
+      "Display Name": [
+        "表示名"
+      ],
+      "Your display name": [
+        "あなたの表示名"
+      ],
+      "Image must be under 10MB": [
+        "画像は 10MB 以下にしてください"
+      ],
+      "Image too large (max 2MB)": [
+        "画像が大きすぎます（上限 2MB）"
+      ],
+      "Unsupported image format": [
+        "対応していない画像形式です"
+      ],
+      "Saving": [
+        "保存中"
+      ],
+      "Members": [
+        "メンバー"
+      ],
+      "Online": [
+        "オンライン"
+      ],
+      "Offline": [
+        "オフライン"
+      ],
+      "Invite participants": [
+        "参加者を招待"
+      ],
+      "Temporary link expires by timer. Permanent link is bound to a login.": [
+        "一時リンクはタイマーで失効します。固定リンクはログインに紐づきます。"
+      ],
+      "Temporary link": [
+        "一時リンク"
+      ],
+      "Permanent user": [
+        "固定ユーザー"
+      ],
+      "Guest name": [
+        "ゲスト名"
+      ],
+      "Valid until": [
+        "有効期限"
+      ],
+      "Time": [
+        "時刻"
+      ],
+      "Generate link": [
+        "リンクを生成"
+      ],
+      "Creating...": [
+        "作成中..."
+      ],
+      "Login": [
+        "ログイン名"
+      ],
+      "Email (optional)": [
+        "メール（任意）"
+      ],
+      "Create invitation": [
+        "招待を作成"
+      ],
+      "Done — share the link with the invitee:": [
+        "完了 — 招待相手にリンクを共有してください："
+      ],
+      "Create another": [
+        "もう1つ作成"
+      ],
+      "Create Text Channel": [
+        "テキストチャンネルを作成"
+      ],
+      "Edit Text Channel": [
+        "テキストチャンネルを編集"
+      ],
+      "Create Voice Channel": [
+        "ボイスチャンネルを作成"
+      ],
+      "Edit Voice Channel": [
+        "ボイスチャンネルを編集"
+      ],
+      "Create Stage Channel": [
+        "ステージチャンネルを作成"
+      ],
+      "Edit Stage Channel": [
+        "ステージチャンネルを編集"
+      ],
+      "Icon": [
+        "アイコン"
+      ],
+      "Color": [
+        "色"
+      ],
+      "Image": [
+        "画像"
+      ],
+      "Change image": [
+        "画像を変更"
+      ],
+      "Upload image": [
+        "画像をアップロード"
+      ],
+      "Channel name": [
+        "チャンネル名"
+      ],
+      "Visible to groups": [
+        "表示するグループ"
+      ],
+      "Delete": [
+        "削除"
+      ],
+      "Create": [
+        "作成"
+      ],
+      "Groups & Roles": [
+        "グループとロール"
+      ],
+      "protected": [
+        "保護"
+      ],
+      "Create role": [
+        "ロールを作成"
+      ],
+      "Name": [
+        "名前"
+      ],
+      "Permissions": [
+        "権限"
+      ],
+      "This is a protected group. Only name and color can be changed.": [
+        "保護されたグループです。名前と色のみ変更できます。"
+      ],
+      "Delete role": [
+        "ロールを削除"
+      ],
+      "Create text channels": [
+        "テキストチャンネルを作成"
+      ],
+      "Create voice channels": [
+        "ボイスチャンネルを作成"
+      ],
+      "Edit other channels": [
+        "他のチャンネルを編集"
+      ],
+      "Manage members": [
+        "メンバーを管理"
+      ],
+      "Invite permanent users": [
+        "固定ユーザーを招待"
+      ],
+      "Create temp links": [
+        "一時リンクを作成"
+      ],
+      "Manage roles": [
+        "ロールを管理"
+      ],
+      "Share your screen": [
+        "画面を共有"
+      ],
+      "Pick a quality profile. Your browser will ask which window or screen to share next.": [
+        "画質プロファイルを選択してください。次にブラウザが共有するウィンドウまたは画面を尋ねます。"
+      ],
+      "Gaming": [
+        "ゲーム"
+      ],
+      "High motion, 60 fps. For gameplay demos.": [
+        "高フレームレート 60fps。ゲームプレイ向け。"
+      ],
+      "Standard": [
+        "標準"
+      ],
+      "Balanced quality. For general screen sharing.": [
+        "バランスの取れた画質。一般的な画面共有向け。"
+      ],
+      "Detail": [
+        "詳細"
+      ],
+      "Sharp text. For documents and code.": [
+        "鮮明なテキスト。ドキュメントやコード向け。"
+      ],
+      "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.": [
+        "macOS ではシステム音声はブラウザタブからのみ取得できます。画面全体の共有は映像のみとなります。"
+      ],
+      "Start sharing": [
+        "共有を開始"
+      ],
+      "Cancel": [
+        "キャンセル"
+      ],
+      "Save": [
+        "保存"
+      ],
+      "Close": [
+        "閉じる"
+      ],
+      "Loading...": [
+        "読み込み中..."
+      ],
+      "Error": [
+        "エラー"
+      ],
+      "Today": [
+        "今日"
+      ],
+      "Yesterday": [
+        "昨日"
+      ],
+      "New": [
+        "新着"
+      ],
+      "Unknown": [
+        "不明"
+      ],
+      "sending…": [
+        "送信中…"
+      ],
+      "failed": [
+        "失敗"
+      ],
+      "retry": [
+        "再試行"
+      ],
+      "(edited)": [
+        "(編集済み)"
+      ],
+      "%s is typing": [
+        "%s が入力中"
+      ],
+      "%s and %s are typing": [
+        "%s と %s が入力中"
+      ],
+      "%d people are typing": [
+        "%d 人が入力中"
+      ],
+      "Connecting...": [
+        "接続中..."
+      ],
+      "Reconnecting...": [
+        "再接続中..."
+      ],
+      "Disconnected": [
+        "切断されました"
+      ],
+      "Welcome to #%s": [
+        "#%s へようこそ"
+      ],
+      "This is the start of the channel.": [
+        "このチャンネルの始まりです。"
+      ],
+      "Type something... # %s": [
+        "#%s にメッセージを入力..."
+      ],
+      "Attach file": [
+        "ファイルを添付"
+      ],
+      "Send on Enter": [
+        "Enter で送信"
+      ],
+      "Enter to send": [
+        "Enter で送信"
+      ],
+      "%s+Enter to send": [
+        "%s+Enter で送信"
+      ],
+      "Drop to attach": [
+        "ドロップして添付"
+      ],
+      "Files upload to #%s": [
+        "#%s にファイルをアップロード"
+      ],
+      "External link": [
+        "外部リンク"
+      ],
+      "You are about to visit an external resource": [
+        "外部リソースへ移動します"
+      ],
+      "Open link": [
+        "リンクを開く"
+      ],
+      "No microphone detected": [
+        "マイクが検出されません"
+      ],
+      "Mute": [
+        "ミュート"
+      ],
+      "Unmute": [
+        "ミュート解除"
+      ],
+      "No camera detected": [
+        "カメラが検出されません"
+      ],
+      "Turn off camera": [
+        "カメラをオフ"
+      ],
+      "Turn on camera": [
+        "カメラをオン"
+      ],
+      "Stop sharing": [
+        "共有を停止"
+      ],
+      "Leave call": [
+        "通話を退出"
+      ],
+      "Audio & video devices": [
+        "オーディオ・ビデオデバイス"
+      ],
+      "Microphone": [
+        "マイク"
+      ],
+      "No microphones found": [
+        "マイクが見つかりません"
+      ],
+      "Microphone %d": [
+        "マイク %d"
+      ],
+      "Camera": [
+        "カメラ"
+      ],
+      "No cameras found": [
+        "カメラが見つかりません"
+      ],
+      "Camera %d": [
+        "カメラ %d"
+      ],
+      "Incoming call": [
+        "着信"
+      ],
+      "%s is calling": [
+        "%s から着信"
+      ],
+      "Decline call": [
+        "拒否"
+      ],
+      "Accept call": [
+        "応答"
+      ],
+      "Never": [
+        "なし"
+      ],
+      "Just now": [
+        "たった今"
+      ],
+      "%dm ago": [
+        "%d 分前"
+      ],
+      "%dh ago": [
+        "%d 時間前"
+      ],
+      "online": [
+        "オンライン"
+      ],
+      "Temporary": [
+        "一時"
+      ],
+      "Search groups...": [
+        "グループを検索..."
+      ],
+      "No groups found": [
+        "グループが見つかりません"
+      ],
+      "Remove member": [
+        "メンバーを削除"
+      ],
+      "Are you sure you want to remove %s from the hub?": [
+        "本当に %s を Hub から削除しますか？"
+      ],
+      "Removing...": [
+        "削除中..."
+      ],
+      "Remove": [
+        "削除"
+      ],
+      "in call": [
+        "通話中"
+      ],
+      "Call": [
+        "通話"
+      ],
+      "Collapse": [
+        "折りたたむ"
+      ],
+      "Video debug (drag to move, click to toggle)": [
+        "ビデオデバッグ（ドラッグ・クリック）"
+      ],
+      "Toggle video debug panel": [
+        "ビデオデバッグパネルを切り替え"
+      ],
+      "Video Debug": [
+        "ビデオデバッグ"
+      ],
+      "Copy JSON snapshot": [
+        "JSON スナップショットをコピー"
+      ],
+      "Clear logs": [
+        "ログをクリア"
+      ],
+      "Voice Channels": [
+        "ボイスチャンネル"
+      ]
+    }
+  }
+}

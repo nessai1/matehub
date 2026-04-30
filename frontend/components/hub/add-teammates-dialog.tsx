@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAuth } from "@/lib/auth";
+import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
 
@@ -66,9 +67,9 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Пригласить участников</DialogTitle>
+          <DialogTitle>{t("Invite participants")}</DialogTitle>
           <DialogDescription>
-            Временная ссылка истекает по таймеру. Постоянная привязывается к логину.
+            {t("Temporary link expires by timer. Permanent link is bound to a login.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -78,10 +79,10 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
               instead of being squeezed into a forced 50% column. */}
           <TabsList>
             <TabsTrigger value="temp" className="px-4">
-              Временная ссылка
+              {t("Temporary link")}
             </TabsTrigger>
             <TabsTrigger value="permanent" className="px-4">
-              Постоянный пользователь
+              {t("Permanent user")}
             </TabsTrigger>
           </TabsList>
 
@@ -181,7 +182,7 @@ function TempInviteForm({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="nickname">Имя гостя</Label>
+        <Label htmlFor="nickname">{t("Guest name")}</Label>
         <Input
           id="nickname"
           value={nickname}
@@ -192,7 +193,7 @@ function TempInviteForm({
 
       <FieldGroup className="flex-row">
         <Field>
-          <FieldLabel htmlFor="expires-date">Действует до</FieldLabel>
+          <FieldLabel htmlFor="expires-date">{t("Valid until")}</FieldLabel>
           <Popover open={dateOpen} onOpenChange={setDateOpen}>
             <PopoverTrigger asChild>
               <Button
@@ -237,7 +238,7 @@ function TempInviteForm({
           </Popover>
         </Field>
         <Field className="w-32">
-          <FieldLabel htmlFor="expires-time">Время</FieldLabel>
+          <FieldLabel htmlFor="expires-time">{t("Time")}</FieldLabel>
           <Input
             id="expires-time"
             type="time"
@@ -258,7 +259,7 @@ function TempInviteForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting} className="w-full">
-        {submitting ? "Создаём..." : "Сгенерировать ссылку"}
+        {submitting ? t("Creating...") : t("Generate link")}
       </Button>
     </div>
   );
@@ -319,7 +320,7 @@ function PermanentInviteForm({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="invite-username">Логин</Label>
+        <Label htmlFor="invite-username">{t("Login")}</Label>
         <Input
           id="invite-username"
           value={username}
@@ -329,7 +330,7 @@ function PermanentInviteForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="invite-email">Email (необязательно)</Label>
+        <Label htmlFor="invite-email">{t("Email (optional)")}</Label>
         <Input
           id="invite-email"
           type="email"
@@ -341,7 +342,7 @@ function PermanentInviteForm({
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting} className="w-full">
-        {submitting ? "Создаём..." : "Создать приглашение"}
+        {submitting ? t("Creating...") : t("Create invitation")}
       </Button>
     </div>
   );
@@ -362,7 +363,7 @@ function InviteResult({ url, onReset }: { url: string; onReset: () => void }) {
   };
   return (
     <div className="space-y-3">
-      <Label>Готово — отправьте ссылку приглашённому:</Label>
+      <Label>{t("Done — share the link with the invitee:")}</Label>
       <div className="flex gap-2">
         <Input value={url} readOnly onFocus={(e) => e.currentTarget.select()} />
         <Button variant="outline" size="icon" onClick={copy} type="button">
@@ -370,7 +371,7 @@ function InviteResult({ url, onReset }: { url: string; onReset: () => void }) {
         </Button>
       </div>
       <Button variant="ghost" onClick={onReset} className="w-full">
-        Создать ещё одну
+        {t("Create another")}
       </Button>
     </div>
   );

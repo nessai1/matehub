@@ -1,0 +1,609 @@
+{
+  "domain": "matehub",
+  "locale_data": {
+    "matehub": {
+      "": {
+        "domain": "matehub",
+        "lang": "en",
+        "plural_forms": "nplurals=2; plural=(n != 1)"
+      },
+      "Sign in": [
+        "Sign in"
+      ],
+      "Username": [
+        "Username"
+      ],
+      "Password": [
+        "Password"
+      ],
+      "Remember me": [
+        "Remember me"
+      ],
+      "Logging in...": [
+        "Logging in..."
+      ],
+      "Don't have an account?": [
+        "Don't have an account?"
+      ],
+      "Create one": [
+        "Create one"
+      ],
+      "Link does not exist": [
+        "Link does not exist"
+      ],
+      "This link has already been used": [
+        "This link has already been used"
+      ],
+      "Enter your name": [
+        "Enter your name"
+      ],
+      "Password too short (minimum 6 characters)": [
+        "Password too short (minimum 6 characters)"
+      ],
+      "Passwords don't match": [
+        "Passwords don't match"
+      ],
+      "Login is taken": [
+        "Login is taken"
+      ],
+      "Could not reach the server": [
+        "Could not reach the server"
+      ],
+      "Checking link...": [
+        "Checking link..."
+      ],
+      "Link is invalid": [
+        "Link is invalid"
+      ],
+      "Ask the administrator to create a new one.": [
+        "Ask the administrator to create a new one."
+      ],
+      "Join %s": [
+        "Join %s"
+      ],
+      "Upload avatar": [
+        "Upload avatar"
+      ],
+      "Your name": [
+        "Your name"
+      ],
+      "Confirm password": [
+        "Confirm password"
+      ],
+      "Accept invitation": [
+        "Accept invitation"
+      ],
+      "Link expired or revoked": [
+        "Link expired or revoked"
+      ],
+      "Server error": [
+        "Server error"
+      ],
+      "Cannot reach server": [
+        "Cannot reach server"
+      ],
+      "Resolving invite": [
+        "Resolving invite"
+      ],
+      "You are invited to": [
+        "You are invited to"
+      ],
+      "Your identity": [
+        "Your identity"
+      ],
+      "Enter Hub": [
+        "Enter Hub"
+      ],
+      "Temporary access. No account required.": [
+        "Temporary access. No account required."
+      ],
+      "Entering hub...": [
+        "Entering hub..."
+      ],
+      "Contact the person who shared this link.": [
+        "Contact the person who shared this link."
+      ],
+      "Fill in name and login": [
+        "Fill in name and login"
+      ],
+      "Enter hub name": [
+        "Enter hub name"
+      ],
+      "Hub is already initialised": [
+        "Hub is already initialised"
+      ],
+      "Hooray! Your hub is ready.": [
+        "Hooray! Your hub is ready."
+      ],
+      "Step 1 of 2 — create the admin account": [
+        "Step 1 of 2 — create the admin account"
+      ],
+      "Step 2 of 2 — name your hub": [
+        "Step 2 of 2 — name your hub"
+      ],
+      "Continue": [
+        "Continue"
+      ],
+      "Upload hub icon": [
+        "Upload hub icon"
+      ],
+      "Hub name": [
+        "Hub name"
+      ],
+      "e.g. Acme Team": [
+        "e.g. Acme Team"
+      ],
+      "Back": [
+        "Back"
+      ],
+      "Create hub": [
+        "Create hub"
+      ],
+      "Channels": [
+        "Channels"
+      ],
+      "Add Channel": [
+        "Add Channel"
+      ],
+      "Direct Messages": [
+        "Direct Messages"
+      ],
+      "Add Teammates": [
+        "Add Teammates"
+      ],
+      "Send Feedback": [
+        "Send Feedback"
+      ],
+      "Hub Settings": [
+        "Hub Settings"
+      ],
+      "General": [
+        "General"
+      ],
+      "Invite Links": [
+        "Invite Links"
+      ],
+      "Other Hubs": [
+        "Other Hubs"
+      ],
+      "Thank you!": [
+        "Thank you!"
+      ],
+      "Your feedback has been sent.": [
+        "Your feedback has been sent."
+      ],
+      "Email": [
+        "Email"
+      ],
+      "Message": [
+        "Message"
+      ],
+      "What's on your mind?": [
+        "What's on your mind?"
+      ],
+      "Sending...": [
+        "Sending..."
+      ],
+      "Send": [
+        "Send"
+      ],
+      "Profile": [
+        "Profile"
+      ],
+      "Settings": [
+        "Settings"
+      ],
+      "Language": [
+        "Language"
+      ],
+      "Log out": [
+        "Log out"
+      ],
+      "Edit Profile": [
+        "Edit Profile"
+      ],
+      "Click to upload avatar (max 10MB)": [
+        "Click to upload avatar (max 10MB)"
+      ],
+      "Display Name": [
+        "Display Name"
+      ],
+      "Your display name": [
+        "Your display name"
+      ],
+      "Image must be under 10MB": [
+        "Image must be under 10MB"
+      ],
+      "Image too large (max 2MB)": [
+        "Image too large (max 2MB)"
+      ],
+      "Unsupported image format": [
+        "Unsupported image format"
+      ],
+      "Saving": [
+        "Saving"
+      ],
+      "Members": [
+        "Members"
+      ],
+      "Online": [
+        "Online"
+      ],
+      "Offline": [
+        "Offline"
+      ],
+      "Invite participants": [
+        "Invite participants"
+      ],
+      "Temporary link expires by timer. Permanent link is bound to a login.": [
+        "Temporary link expires by timer. Permanent link is bound to a login."
+      ],
+      "Temporary link": [
+        "Temporary link"
+      ],
+      "Permanent user": [
+        "Permanent user"
+      ],
+      "Guest name": [
+        "Guest name"
+      ],
+      "Valid until": [
+        "Valid until"
+      ],
+      "Time": [
+        "Time"
+      ],
+      "Generate link": [
+        "Generate link"
+      ],
+      "Creating...": [
+        "Creating..."
+      ],
+      "Login": [
+        "Login"
+      ],
+      "Email (optional)": [
+        "Email (optional)"
+      ],
+      "Create invitation": [
+        "Create invitation"
+      ],
+      "Done — share the link with the invitee:": [
+        "Done — share the link with the invitee:"
+      ],
+      "Create another": [
+        "Create another"
+      ],
+      "Create Text Channel": [
+        "Create Text Channel"
+      ],
+      "Edit Text Channel": [
+        "Edit Text Channel"
+      ],
+      "Create Voice Channel": [
+        "Create Voice Channel"
+      ],
+      "Edit Voice Channel": [
+        "Edit Voice Channel"
+      ],
+      "Create Stage Channel": [
+        "Create Stage Channel"
+      ],
+      "Edit Stage Channel": [
+        "Edit Stage Channel"
+      ],
+      "Icon": [
+        "Icon"
+      ],
+      "Color": [
+        "Color"
+      ],
+      "Image": [
+        "Image"
+      ],
+      "Change image": [
+        "Change image"
+      ],
+      "Upload image": [
+        "Upload image"
+      ],
+      "Channel name": [
+        "Channel name"
+      ],
+      "Visible to groups": [
+        "Visible to groups"
+      ],
+      "Delete": [
+        "Delete"
+      ],
+      "Create": [
+        "Create"
+      ],
+      "Groups & Roles": [
+        "Groups & Roles"
+      ],
+      "protected": [
+        "protected"
+      ],
+      "Create role": [
+        "Create role"
+      ],
+      "Name": [
+        "Name"
+      ],
+      "Permissions": [
+        "Permissions"
+      ],
+      "This is a protected group. Only name and color can be changed.": [
+        "This is a protected group. Only name and color can be changed."
+      ],
+      "Delete role": [
+        "Delete role"
+      ],
+      "Create text channels": [
+        "Create text channels"
+      ],
+      "Create voice channels": [
+        "Create voice channels"
+      ],
+      "Edit other channels": [
+        "Edit other channels"
+      ],
+      "Manage members": [
+        "Manage members"
+      ],
+      "Invite permanent users": [
+        "Invite permanent users"
+      ],
+      "Create temp links": [
+        "Create temp links"
+      ],
+      "Manage roles": [
+        "Manage roles"
+      ],
+      "Share your screen": [
+        "Share your screen"
+      ],
+      "Pick a quality profile. Your browser will ask which window or screen to share next.": [
+        "Pick a quality profile. Your browser will ask which window or screen to share next."
+      ],
+      "Gaming": [
+        "Gaming"
+      ],
+      "High motion, 60 fps. For gameplay demos.": [
+        "High motion, 60 fps. For gameplay demos."
+      ],
+      "Standard": [
+        "Standard"
+      ],
+      "Balanced quality. For general screen sharing.": [
+        "Balanced quality. For general screen sharing."
+      ],
+      "Detail": [
+        "Detail"
+      ],
+      "Sharp text. For documents and code.": [
+        "Sharp text. For documents and code."
+      ],
+      "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.": [
+        "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+      ],
+      "Start sharing": [
+        "Start sharing"
+      ],
+      "Cancel": [
+        "Cancel"
+      ],
+      "Save": [
+        "Save"
+      ],
+      "Close": [
+        "Close"
+      ],
+      "Loading...": [
+        "Loading..."
+      ],
+      "Error": [
+        "Error"
+      ],
+      "Today": [
+        "Today"
+      ],
+      "Yesterday": [
+        "Yesterday"
+      ],
+      "New": [
+        "New"
+      ],
+      "Unknown": [
+        "Unknown"
+      ],
+      "sending…": [
+        "sending…"
+      ],
+      "failed": [
+        "failed"
+      ],
+      "retry": [
+        "retry"
+      ],
+      "(edited)": [
+        "(edited)"
+      ],
+      "%s is typing": [
+        "%s is typing"
+      ],
+      "%s and %s are typing": [
+        "%s and %s are typing"
+      ],
+      "%d people are typing": [
+        "%d people are typing"
+      ],
+      "Connecting...": [
+        "Connecting..."
+      ],
+      "Reconnecting...": [
+        "Reconnecting..."
+      ],
+      "Disconnected": [
+        "Disconnected"
+      ],
+      "Welcome to #%s": [
+        "Welcome to #%s"
+      ],
+      "This is the start of the channel.": [
+        "This is the start of the channel."
+      ],
+      "Type something... # %s": [
+        "Type something... # %s"
+      ],
+      "Attach file": [
+        "Attach file"
+      ],
+      "Send on Enter": [
+        "Send on Enter"
+      ],
+      "Enter to send": [
+        "Enter to send"
+      ],
+      "%s+Enter to send": [
+        "%s+Enter to send"
+      ],
+      "Drop to attach": [
+        "Drop to attach"
+      ],
+      "Files upload to #%s": [
+        "Files upload to #%s"
+      ],
+      "External link": [
+        "External link"
+      ],
+      "You are about to visit an external resource": [
+        "You are about to visit an external resource"
+      ],
+      "Open link": [
+        "Open link"
+      ],
+      "No microphone detected": [
+        "No microphone detected"
+      ],
+      "Mute": [
+        "Mute"
+      ],
+      "Unmute": [
+        "Unmute"
+      ],
+      "No camera detected": [
+        "No camera detected"
+      ],
+      "Turn off camera": [
+        "Turn off camera"
+      ],
+      "Turn on camera": [
+        "Turn on camera"
+      ],
+      "Stop sharing": [
+        "Stop sharing"
+      ],
+      "Leave call": [
+        "Leave call"
+      ],
+      "Audio & video devices": [
+        "Audio & video devices"
+      ],
+      "Microphone": [
+        "Microphone"
+      ],
+      "No microphones found": [
+        "No microphones found"
+      ],
+      "Microphone %d": [
+        "Microphone %d"
+      ],
+      "Camera": [
+        "Camera"
+      ],
+      "No cameras found": [
+        "No cameras found"
+      ],
+      "Camera %d": [
+        "Camera %d"
+      ],
+      "Incoming call": [
+        "Incoming call"
+      ],
+      "%s is calling": [
+        "%s is calling"
+      ],
+      "Decline call": [
+        "Decline call"
+      ],
+      "Accept call": [
+        "Accept call"
+      ],
+      "Never": [
+        "Never"
+      ],
+      "Just now": [
+        "Just now"
+      ],
+      "%dm ago": [
+        "%dm ago"
+      ],
+      "%dh ago": [
+        "%dh ago"
+      ],
+      "online": [
+        "online"
+      ],
+      "Temporary": [
+        "Temporary"
+      ],
+      "Search groups...": [
+        "Search groups..."
+      ],
+      "No groups found": [
+        "No groups found"
+      ],
+      "Remove member": [
+        "Remove member"
+      ],
+      "Are you sure you want to remove %s from the hub?": [
+        "Are you sure you want to remove %s from the hub?"
+      ],
+      "Removing...": [
+        "Removing..."
+      ],
+      "Remove": [
+        "Remove"
+      ],
+      "in call": [
+        "in call"
+      ],
+      "Call": [
+        "Call"
+      ],
+      "Collapse": [
+        "Collapse"
+      ],
+      "Video debug (drag to move, click to toggle)": [
+        "Video debug (drag to move, click to toggle)"
+      ],
+      "Toggle video debug panel": [
+        "Toggle video debug panel"
+      ],
+      "Video Debug": [
+        "Video Debug"
+      ],
+      "Copy JSON snapshot": [
+        "Copy JSON snapshot"
+      ],
+      "Clear logs": [
+        "Clear logs"
+      ],
+      "Voice Channels": [
+        "Voice Channels"
+      ]
+    }
+  }
+}

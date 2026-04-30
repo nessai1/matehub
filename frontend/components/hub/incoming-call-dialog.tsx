@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useIncomingCall } from "@/contexts/incoming-call-context";
 import { useMembers } from "@/hooks/use-members";
 import { startCallSoundLoop } from "@/lib/call-sounds";
+import { t } from "@/i18n";
 
 /**
  * Persistent incoming-call modal. Mounted at hub level so it pops up no matter
@@ -27,7 +28,7 @@ export function IncomingCallDialog() {
   const peer = incomingCall
     ? members.find((m) => m.user_id === incomingCall.fromUserId)
     : null;
-  const displayName = peer?.display_name ?? incomingCall?.fromUserId ?? "Unknown";
+  const displayName = peer?.display_name ?? incomingCall?.fromUserId ?? t("Unknown");
 
   // Continuous ringtone while the dialog is open. The audio element has
   // `loop = true` set inside startCallSoundLoop, so it seamlessly repeats
@@ -41,17 +42,17 @@ export function IncomingCallDialog() {
   // backend writes "X didn't answer" rather than "X declined".
   useEffect(() => {
     if (!incomingCall) return;
-    const t = setTimeout(() => void decline("timeout"), RING_TIMEOUT_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void decline("timeout"), RING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
   }, [incomingCall, decline]);
 
   return (
     <Dialog open={!!incomingCall} onOpenChange={(o: boolean) => !o && void decline()}>
       <DialogContent className="sm:max-w-[280px]">
         <DialogHeader className="space-y-0.5">
-          <DialogTitle className="text-center text-base">Incoming call</DialogTitle>
+          <DialogTitle className="text-center text-base">{t("Incoming call")}</DialogTitle>
           <DialogDescription className="text-center text-xs">
-            {displayName} is calling
+            {t("%s is calling", displayName)}
           </DialogDescription>
         </DialogHeader>
 
@@ -68,14 +69,14 @@ export function IncomingCallDialog() {
               variant="outline"
               className="h-10 w-10 rounded-full border-red-200 p-0 text-red-500 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
               onClick={() => void decline()}
-              aria-label="Decline call"
+              aria-label={t("Decline call")}
             >
               <PhoneOffIcon className="h-4 w-4" />
             </Button>
             <Button
               className="h-10 w-10 rounded-full bg-emerald-600 p-0 text-white hover:bg-emerald-500"
               onClick={() => void accept()}
-              aria-label="Accept call"
+              aria-label={t("Accept call")}
             >
               <PhoneIcon className="h-4 w-4" />
             </Button>

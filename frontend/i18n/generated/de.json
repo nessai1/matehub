@@ -1,0 +1,609 @@
+{
+  "domain": "matehub",
+  "locale_data": {
+    "matehub": {
+      "": {
+        "domain": "matehub",
+        "lang": "de",
+        "plural_forms": "nplurals=2; plural=(n != 1)"
+      },
+      "Sign in": [
+        "Anmelden"
+      ],
+      "Username": [
+        "Benutzername"
+      ],
+      "Password": [
+        "Passwort"
+      ],
+      "Remember me": [
+        "Angemeldet bleiben"
+      ],
+      "Logging in...": [
+        "Anmeldung..."
+      ],
+      "Don't have an account?": [
+        "Noch kein Konto?"
+      ],
+      "Create one": [
+        "Konto erstellen"
+      ],
+      "Link does not exist": [
+        "Link existiert nicht"
+      ],
+      "This link has already been used": [
+        "Dieser Link wurde bereits verwendet"
+      ],
+      "Enter your name": [
+        "Namen eingeben"
+      ],
+      "Password too short (minimum 6 characters)": [
+        "Passwort zu kurz (mindestens 6 Zeichen)"
+      ],
+      "Passwords don't match": [
+        "Passwörter stimmen nicht überein"
+      ],
+      "Login is taken": [
+        "Login ist vergeben"
+      ],
+      "Could not reach the server": [
+        "Server nicht erreichbar"
+      ],
+      "Checking link...": [
+        "Link wird geprüft..."
+      ],
+      "Link is invalid": [
+        "Link ist ungültig"
+      ],
+      "Ask the administrator to create a new one.": [
+        "Bitten Sie den Administrator, einen neuen zu erstellen."
+      ],
+      "Join %s": [
+        "%s beitreten"
+      ],
+      "Upload avatar": [
+        "Avatar hochladen"
+      ],
+      "Your name": [
+        "Ihr Name"
+      ],
+      "Confirm password": [
+        "Passwort bestätigen"
+      ],
+      "Accept invitation": [
+        "Einladung annehmen"
+      ],
+      "Link expired or revoked": [
+        "Link abgelaufen oder widerrufen"
+      ],
+      "Server error": [
+        "Serverfehler"
+      ],
+      "Cannot reach server": [
+        "Server nicht erreichbar"
+      ],
+      "Resolving invite": [
+        "Einladung wird geprüft"
+      ],
+      "You are invited to": [
+        "Sie sind eingeladen zu"
+      ],
+      "Your identity": [
+        "Ihre Identität"
+      ],
+      "Enter Hub": [
+        "Hub betreten"
+      ],
+      "Temporary access. No account required.": [
+        "Temporärer Zugang. Kein Konto erforderlich."
+      ],
+      "Entering hub...": [
+        "Hub wird betreten..."
+      ],
+      "Contact the person who shared this link.": [
+        "Wenden Sie sich an die Person, die diesen Link geteilt hat."
+      ],
+      "Fill in name and login": [
+        "Name und Login ausfüllen"
+      ],
+      "Enter hub name": [
+        "Hub-Namen eingeben"
+      ],
+      "Hub is already initialised": [
+        "Hub wurde bereits initialisiert"
+      ],
+      "Hooray! Your hub is ready.": [
+        "Hurra! Ihr Hub ist bereit."
+      ],
+      "Step 1 of 2 — create the admin account": [
+        "Schritt 1 von 2 — Admin-Konto erstellen"
+      ],
+      "Step 2 of 2 — name your hub": [
+        "Schritt 2 von 2 — Hub benennen"
+      ],
+      "Continue": [
+        "Weiter"
+      ],
+      "Upload hub icon": [
+        "Hub-Symbol hochladen"
+      ],
+      "Hub name": [
+        "Hub-Name"
+      ],
+      "e.g. Acme Team": [
+        "z. B. Team Acme"
+      ],
+      "Back": [
+        "Zurück"
+      ],
+      "Create hub": [
+        "Hub erstellen"
+      ],
+      "Channels": [
+        "Kanäle"
+      ],
+      "Add Channel": [
+        "Kanal hinzufügen"
+      ],
+      "Direct Messages": [
+        "Direktnachrichten"
+      ],
+      "Add Teammates": [
+        "Teammitglieder einladen"
+      ],
+      "Send Feedback": [
+        "Feedback senden"
+      ],
+      "Hub Settings": [
+        "Hub-Einstellungen"
+      ],
+      "General": [
+        "Allgemein"
+      ],
+      "Invite Links": [
+        "Einladungslinks"
+      ],
+      "Other Hubs": [
+        "Andere Hubs"
+      ],
+      "Thank you!": [
+        "Vielen Dank!"
+      ],
+      "Your feedback has been sent.": [
+        "Ihr Feedback wurde gesendet."
+      ],
+      "Email": [
+        "E-Mail"
+      ],
+      "Message": [
+        "Nachricht"
+      ],
+      "What's on your mind?": [
+        "Was haben Sie im Sinn?"
+      ],
+      "Sending...": [
+        "Wird gesendet..."
+      ],
+      "Send": [
+        "Senden"
+      ],
+      "Profile": [
+        "Profil"
+      ],
+      "Settings": [
+        "Einstellungen"
+      ],
+      "Language": [
+        "Sprache"
+      ],
+      "Log out": [
+        "Abmelden"
+      ],
+      "Edit Profile": [
+        "Profil bearbeiten"
+      ],
+      "Click to upload avatar (max 10MB)": [
+        "Klicken, um Avatar hochzuladen (max. 10 MB)"
+      ],
+      "Display Name": [
+        "Anzeigename"
+      ],
+      "Your display name": [
+        "Ihr Anzeigename"
+      ],
+      "Image must be under 10MB": [
+        "Bild darf höchstens 10 MB sein"
+      ],
+      "Image too large (max 2MB)": [
+        "Bild zu groß (max. 2 MB)"
+      ],
+      "Unsupported image format": [
+        "Nicht unterstütztes Bildformat"
+      ],
+      "Saving": [
+        "Wird gespeichert"
+      ],
+      "Members": [
+        "Mitglieder"
+      ],
+      "Online": [
+        "Online"
+      ],
+      "Offline": [
+        "Offline"
+      ],
+      "Invite participants": [
+        "Teilnehmer einladen"
+      ],
+      "Temporary link expires by timer. Permanent link is bound to a login.": [
+        "Der temporäre Link läuft nach einem Timer ab. Der dauerhafte Link ist an ein Login gebunden."
+      ],
+      "Temporary link": [
+        "Temporärer Link"
+      ],
+      "Permanent user": [
+        "Dauerhafter Benutzer"
+      ],
+      "Guest name": [
+        "Gastname"
+      ],
+      "Valid until": [
+        "Gültig bis"
+      ],
+      "Time": [
+        "Zeit"
+      ],
+      "Generate link": [
+        "Link generieren"
+      ],
+      "Creating...": [
+        "Wird erstellt..."
+      ],
+      "Login": [
+        "Login"
+      ],
+      "Email (optional)": [
+        "E-Mail (optional)"
+      ],
+      "Create invitation": [
+        "Einladung erstellen"
+      ],
+      "Done — share the link with the invitee:": [
+        "Fertig — teilen Sie den Link mit dem Eingeladenen:"
+      ],
+      "Create another": [
+        "Weitere erstellen"
+      ],
+      "Create Text Channel": [
+        "Text-Kanal erstellen"
+      ],
+      "Edit Text Channel": [
+        "Text-Kanal bearbeiten"
+      ],
+      "Create Voice Channel": [
+        "Sprach-Kanal erstellen"
+      ],
+      "Edit Voice Channel": [
+        "Sprach-Kanal bearbeiten"
+      ],
+      "Create Stage Channel": [
+        "Stage-Kanal erstellen"
+      ],
+      "Edit Stage Channel": [
+        "Stage-Kanal bearbeiten"
+      ],
+      "Icon": [
+        "Symbol"
+      ],
+      "Color": [
+        "Farbe"
+      ],
+      "Image": [
+        "Bild"
+      ],
+      "Change image": [
+        "Bild ändern"
+      ],
+      "Upload image": [
+        "Bild hochladen"
+      ],
+      "Channel name": [
+        "Kanalname"
+      ],
+      "Visible to groups": [
+        "Sichtbar für Gruppen"
+      ],
+      "Delete": [
+        "Löschen"
+      ],
+      "Create": [
+        "Erstellen"
+      ],
+      "Groups & Roles": [
+        "Gruppen & Rollen"
+      ],
+      "protected": [
+        "geschützt"
+      ],
+      "Create role": [
+        "Rolle erstellen"
+      ],
+      "Name": [
+        "Name"
+      ],
+      "Permissions": [
+        "Berechtigungen"
+      ],
+      "This is a protected group. Only name and color can be changed.": [
+        "Dies ist eine geschützte Gruppe. Nur Name und Farbe können geändert werden."
+      ],
+      "Delete role": [
+        "Rolle löschen"
+      ],
+      "Create text channels": [
+        "Text-Kanäle erstellen"
+      ],
+      "Create voice channels": [
+        "Sprach-Kanäle erstellen"
+      ],
+      "Edit other channels": [
+        "Andere Kanäle bearbeiten"
+      ],
+      "Manage members": [
+        "Mitglieder verwalten"
+      ],
+      "Invite permanent users": [
+        "Dauerhafte Benutzer einladen"
+      ],
+      "Create temp links": [
+        "Temp-Links erstellen"
+      ],
+      "Manage roles": [
+        "Rollen verwalten"
+      ],
+      "Share your screen": [
+        "Bildschirm teilen"
+      ],
+      "Pick a quality profile. Your browser will ask which window or screen to share next.": [
+        "Wählen Sie ein Qualitätsprofil. Der Browser fragt anschließend, welches Fenster oder welchen Bildschirm Sie teilen möchten."
+      ],
+      "Gaming": [
+        "Gaming"
+      ],
+      "High motion, 60 fps. For gameplay demos.": [
+        "Hohe Bewegung, 60 fps. Für Gameplay-Demos."
+      ],
+      "Standard": [
+        "Standard"
+      ],
+      "Balanced quality. For general screen sharing.": [
+        "Ausgewogene Qualität. Für allgemeines Teilen."
+      ],
+      "Detail": [
+        "Detail"
+      ],
+      "Sharp text. For documents and code.": [
+        "Scharfer Text. Für Dokumente und Code."
+      ],
+      "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.": [
+        "Unter macOS kann System-Audio nur aus einem Browser-Tab aufgenommen werden. Das Teilen des gesamten Bildschirms erfolgt nur als Video."
+      ],
+      "Start sharing": [
+        "Teilen starten"
+      ],
+      "Cancel": [
+        "Abbrechen"
+      ],
+      "Save": [
+        "Speichern"
+      ],
+      "Close": [
+        "Schließen"
+      ],
+      "Loading...": [
+        "Wird geladen..."
+      ],
+      "Error": [
+        "Fehler"
+      ],
+      "Today": [
+        "Heute"
+      ],
+      "Yesterday": [
+        "Gestern"
+      ],
+      "New": [
+        "Neu"
+      ],
+      "Unknown": [
+        "Unbekannt"
+      ],
+      "sending…": [
+        "wird gesendet…"
+      ],
+      "failed": [
+        "fehlgeschlagen"
+      ],
+      "retry": [
+        "wiederholen"
+      ],
+      "(edited)": [
+        "(bearbeitet)"
+      ],
+      "%s is typing": [
+        "%s tippt"
+      ],
+      "%s and %s are typing": [
+        "%s und %s tippen"
+      ],
+      "%d people are typing": [
+        "%d Personen tippen"
+      ],
+      "Connecting...": [
+        "Verbindung wird hergestellt..."
+      ],
+      "Reconnecting...": [
+        "Erneut verbinden..."
+      ],
+      "Disconnected": [
+        "Verbindung getrennt"
+      ],
+      "Welcome to #%s": [
+        "Willkommen in #%s"
+      ],
+      "This is the start of the channel.": [
+        "Dies ist der Anfang des Kanals."
+      ],
+      "Type something... # %s": [
+        "Etwas eingeben... # %s"
+      ],
+      "Attach file": [
+        "Datei anhängen"
+      ],
+      "Send on Enter": [
+        "Mit Enter senden"
+      ],
+      "Enter to send": [
+        "Enter zum Senden"
+      ],
+      "%s+Enter to send": [
+        "%s+Enter zum Senden"
+      ],
+      "Drop to attach": [
+        "Loslassen zum Anhängen"
+      ],
+      "Files upload to #%s": [
+        "Dateien werden in #%s hochgeladen"
+      ],
+      "External link": [
+        "Externer Link"
+      ],
+      "You are about to visit an external resource": [
+        "Sie verlassen die Anwendung"
+      ],
+      "Open link": [
+        "Link öffnen"
+      ],
+      "No microphone detected": [
+        "Kein Mikrofon erkannt"
+      ],
+      "Mute": [
+        "Stumm schalten"
+      ],
+      "Unmute": [
+        "Stummschaltung aufheben"
+      ],
+      "No camera detected": [
+        "Keine Kamera erkannt"
+      ],
+      "Turn off camera": [
+        "Kamera ausschalten"
+      ],
+      "Turn on camera": [
+        "Kamera einschalten"
+      ],
+      "Stop sharing": [
+        "Teilen beenden"
+      ],
+      "Leave call": [
+        "Anruf verlassen"
+      ],
+      "Audio & video devices": [
+        "Audio- & Videogeräte"
+      ],
+      "Microphone": [
+        "Mikrofon"
+      ],
+      "No microphones found": [
+        "Keine Mikrofone gefunden"
+      ],
+      "Microphone %d": [
+        "Mikrofon %d"
+      ],
+      "Camera": [
+        "Kamera"
+      ],
+      "No cameras found": [
+        "Keine Kameras gefunden"
+      ],
+      "Camera %d": [
+        "Kamera %d"
+      ],
+      "Incoming call": [
+        "Eingehender Anruf"
+      ],
+      "%s is calling": [
+        "%s ruft an"
+      ],
+      "Decline call": [
+        "Ablehnen"
+      ],
+      "Accept call": [
+        "Annehmen"
+      ],
+      "Never": [
+        "Nie"
+      ],
+      "Just now": [
+        "Gerade eben"
+      ],
+      "%dm ago": [
+        "vor %d Min."
+      ],
+      "%dh ago": [
+        "vor %d Std."
+      ],
+      "online": [
+        "online"
+      ],
+      "Temporary": [
+        "Temporär"
+      ],
+      "Search groups...": [
+        "Gruppen suchen..."
+      ],
+      "No groups found": [
+        "Keine Gruppen gefunden"
+      ],
+      "Remove member": [
+        "Mitglied entfernen"
+      ],
+      "Are you sure you want to remove %s from the hub?": [
+        "Möchten Sie %s wirklich aus dem Hub entfernen?"
+      ],
+      "Removing...": [
+        "Wird entfernt..."
+      ],
+      "Remove": [
+        "Entfernen"
+      ],
+      "in call": [
+        "im Anruf"
+      ],
+      "Call": [
+        "Anruf"
+      ],
+      "Collapse": [
+        "Einklappen"
+      ],
+      "Video debug (drag to move, click to toggle)": [
+        "Video-Debug (ziehen, klicken)"
+      ],
+      "Toggle video debug panel": [
+        "Video-Debug-Panel umschalten"
+      ],
+      "Video Debug": [
+        "Video-Debug"
+      ],
+      "Copy JSON snapshot": [
+        "JSON-Snapshot kopieren"
+      ],
+      "Clear logs": [
+        "Logs löschen"
+      ],
+      "Voice Channels": [
+        "Sprach-Kanäle"
+      ]
+    }
+  }
+}

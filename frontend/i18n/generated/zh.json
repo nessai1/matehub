@@ -1,0 +1,609 @@
+{
+  "domain": "matehub",
+  "locale_data": {
+    "matehub": {
+      "": {
+        "domain": "matehub",
+        "lang": "zh",
+        "plural_forms": "nplurals=2; plural=(n != 1)"
+      },
+      "Sign in": [
+        "登录"
+      ],
+      "Username": [
+        "用户名"
+      ],
+      "Password": [
+        "密码"
+      ],
+      "Remember me": [
+        "记住我"
+      ],
+      "Logging in...": [
+        "登录中..."
+      ],
+      "Don't have an account?": [
+        "还没有账号？"
+      ],
+      "Create one": [
+        "创建账号"
+      ],
+      "Link does not exist": [
+        "链接不存在"
+      ],
+      "This link has already been used": [
+        "此链接已被使用"
+      ],
+      "Enter your name": [
+        "请输入姓名"
+      ],
+      "Password too short (minimum 6 characters)": [
+        "密码过短（至少 6 个字符）"
+      ],
+      "Passwords don't match": [
+        "两次输入的密码不一致"
+      ],
+      "Login is taken": [
+        "账号已被使用"
+      ],
+      "Could not reach the server": [
+        "无法连接到服务器"
+      ],
+      "Checking link...": [
+        "正在检查链接..."
+      ],
+      "Link is invalid": [
+        "链接无效"
+      ],
+      "Ask the administrator to create a new one.": [
+        "请联系管理员创建新链接。"
+      ],
+      "Join %s": [
+        "加入 %s"
+      ],
+      "Upload avatar": [
+        "上传头像"
+      ],
+      "Your name": [
+        "您的姓名"
+      ],
+      "Confirm password": [
+        "确认密码"
+      ],
+      "Accept invitation": [
+        "接受邀请"
+      ],
+      "Link expired or revoked": [
+        "链接已过期或被撤销"
+      ],
+      "Server error": [
+        "服务器错误"
+      ],
+      "Cannot reach server": [
+        "无法连接服务器"
+      ],
+      "Resolving invite": [
+        "正在解析邀请"
+      ],
+      "You are invited to": [
+        "您被邀请加入"
+      ],
+      "Your identity": [
+        "您的身份"
+      ],
+      "Enter Hub": [
+        "进入 Hub"
+      ],
+      "Temporary access. No account required.": [
+        "临时访问，无需账号。"
+      ],
+      "Entering hub...": [
+        "正在进入 Hub..."
+      ],
+      "Contact the person who shared this link.": [
+        "请联系分享此链接的人。"
+      ],
+      "Fill in name and login": [
+        "请填写姓名和账号"
+      ],
+      "Enter hub name": [
+        "请输入 Hub 名称"
+      ],
+      "Hub is already initialised": [
+        "Hub 已初始化"
+      ],
+      "Hooray! Your hub is ready.": [
+        "您的 Hub 已就绪！"
+      ],
+      "Step 1 of 2 — create the admin account": [
+        "第 1/2 步——创建管理员账号"
+      ],
+      "Step 2 of 2 — name your hub": [
+        "第 2/2 步——为 Hub 命名"
+      ],
+      "Continue": [
+        "继续"
+      ],
+      "Upload hub icon": [
+        "上传 Hub 图标"
+      ],
+      "Hub name": [
+        "Hub 名称"
+      ],
+      "e.g. Acme Team": [
+        "例如：Acme 团队"
+      ],
+      "Back": [
+        "返回"
+      ],
+      "Create hub": [
+        "创建 Hub"
+      ],
+      "Channels": [
+        "频道"
+      ],
+      "Add Channel": [
+        "添加频道"
+      ],
+      "Direct Messages": [
+        "私信"
+      ],
+      "Add Teammates": [
+        "添加队友"
+      ],
+      "Send Feedback": [
+        "发送反馈"
+      ],
+      "Hub Settings": [
+        "Hub 设置"
+      ],
+      "General": [
+        "通用"
+      ],
+      "Invite Links": [
+        "邀请链接"
+      ],
+      "Other Hubs": [
+        "其他 Hub"
+      ],
+      "Thank you!": [
+        "感谢！"
+      ],
+      "Your feedback has been sent.": [
+        "您的反馈已发送。"
+      ],
+      "Email": [
+        "邮箱"
+      ],
+      "Message": [
+        "信息"
+      ],
+      "What's on your mind?": [
+        "您想说什么？"
+      ],
+      "Sending...": [
+        "发送中..."
+      ],
+      "Send": [
+        "发送"
+      ],
+      "Profile": [
+        "个人资料"
+      ],
+      "Settings": [
+        "设置"
+      ],
+      "Language": [
+        "语言"
+      ],
+      "Log out": [
+        "退出登录"
+      ],
+      "Edit Profile": [
+        "编辑个人资料"
+      ],
+      "Click to upload avatar (max 10MB)": [
+        "点击上传头像（最大 10 MB）"
+      ],
+      "Display Name": [
+        "显示名称"
+      ],
+      "Your display name": [
+        "您的显示名称"
+      ],
+      "Image must be under 10MB": [
+        "图片大小须在 10 MB 以内"
+      ],
+      "Image too large (max 2MB)": [
+        "图片过大（上限 2 MB）"
+      ],
+      "Unsupported image format": [
+        "不支持的图片格式"
+      ],
+      "Saving": [
+        "保存中"
+      ],
+      "Members": [
+        "成员"
+      ],
+      "Online": [
+        "在线"
+      ],
+      "Offline": [
+        "离线"
+      ],
+      "Invite participants": [
+        "邀请成员"
+      ],
+      "Temporary link expires by timer. Permanent link is bound to a login.": [
+        "临时链接按定时器过期。永久链接绑定到一个账号。"
+      ],
+      "Temporary link": [
+        "临时链接"
+      ],
+      "Permanent user": [
+        "永久用户"
+      ],
+      "Guest name": [
+        "访客名称"
+      ],
+      "Valid until": [
+        "有效期至"
+      ],
+      "Time": [
+        "时间"
+      ],
+      "Generate link": [
+        "生成链接"
+      ],
+      "Creating...": [
+        "正在创建..."
+      ],
+      "Login": [
+        "账号"
+      ],
+      "Email (optional)": [
+        "邮箱（可选）"
+      ],
+      "Create invitation": [
+        "创建邀请"
+      ],
+      "Done — share the link with the invitee:": [
+        "完成——将链接发送给受邀者："
+      ],
+      "Create another": [
+        "再创建一个"
+      ],
+      "Create Text Channel": [
+        "创建文本频道"
+      ],
+      "Edit Text Channel": [
+        "编辑文本频道"
+      ],
+      "Create Voice Channel": [
+        "创建语音频道"
+      ],
+      "Edit Voice Channel": [
+        "编辑语音频道"
+      ],
+      "Create Stage Channel": [
+        "创建舞台频道"
+      ],
+      "Edit Stage Channel": [
+        "编辑舞台频道"
+      ],
+      "Icon": [
+        "图标"
+      ],
+      "Color": [
+        "颜色"
+      ],
+      "Image": [
+        "图片"
+      ],
+      "Change image": [
+        "更换图片"
+      ],
+      "Upload image": [
+        "上传图片"
+      ],
+      "Channel name": [
+        "频道名称"
+      ],
+      "Visible to groups": [
+        "对以下小组可见"
+      ],
+      "Delete": [
+        "删除"
+      ],
+      "Create": [
+        "创建"
+      ],
+      "Groups & Roles": [
+        "小组和角色"
+      ],
+      "protected": [
+        "受保护"
+      ],
+      "Create role": [
+        "创建角色"
+      ],
+      "Name": [
+        "名称"
+      ],
+      "Permissions": [
+        "权限"
+      ],
+      "This is a protected group. Only name and color can be changed.": [
+        "这是受保护的小组，仅可更改名称和颜色。"
+      ],
+      "Delete role": [
+        "删除角色"
+      ],
+      "Create text channels": [
+        "创建文本频道"
+      ],
+      "Create voice channels": [
+        "创建语音频道"
+      ],
+      "Edit other channels": [
+        "编辑其他频道"
+      ],
+      "Manage members": [
+        "管理成员"
+      ],
+      "Invite permanent users": [
+        "邀请永久用户"
+      ],
+      "Create temp links": [
+        "创建临时链接"
+      ],
+      "Manage roles": [
+        "管理角色"
+      ],
+      "Share your screen": [
+        "共享屏幕"
+      ],
+      "Pick a quality profile. Your browser will ask which window or screen to share next.": [
+        "选择画质方案。浏览器随后将询问要共享的窗口或屏幕。"
+      ],
+      "Gaming": [
+        "游戏"
+      ],
+      "High motion, 60 fps. For gameplay demos.": [
+        "高动态，60 fps。适合游戏演示。"
+      ],
+      "Standard": [
+        "标准"
+      ],
+      "Balanced quality. For general screen sharing.": [
+        "平衡画质。适合一般屏幕共享。"
+      ],
+      "Detail": [
+        "细节"
+      ],
+      "Sharp text. For documents and code.": [
+        "清晰文本。适合文档与代码。"
+      ],
+      "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only.": [
+        "在 macOS 上，系统音频只能从浏览器标签页捕获。共享整个屏幕将仅有画面。"
+      ],
+      "Start sharing": [
+        "开始共享"
+      ],
+      "Cancel": [
+        "取消"
+      ],
+      "Save": [
+        "保存"
+      ],
+      "Close": [
+        "关闭"
+      ],
+      "Loading...": [
+        "加载中..."
+      ],
+      "Error": [
+        "错误"
+      ],
+      "Today": [
+        "今天"
+      ],
+      "Yesterday": [
+        "昨天"
+      ],
+      "New": [
+        "新消息"
+      ],
+      "Unknown": [
+        "未知"
+      ],
+      "sending…": [
+        "发送中…"
+      ],
+      "failed": [
+        "失败"
+      ],
+      "retry": [
+        "重试"
+      ],
+      "(edited)": [
+        "(已编辑)"
+      ],
+      "%s is typing": [
+        "%s 正在输入"
+      ],
+      "%s and %s are typing": [
+        "%s 和 %s 正在输入"
+      ],
+      "%d people are typing": [
+        "%d 人正在输入"
+      ],
+      "Connecting...": [
+        "正在连接..."
+      ],
+      "Reconnecting...": [
+        "正在重连..."
+      ],
+      "Disconnected": [
+        "已断开"
+      ],
+      "Welcome to #%s": [
+        "欢迎来到 #%s"
+      ],
+      "This is the start of the channel.": [
+        "这是频道的开始。"
+      ],
+      "Type something... # %s": [
+        "在 #%s 中输入..."
+      ],
+      "Attach file": [
+        "附加文件"
+      ],
+      "Send on Enter": [
+        "回车发送"
+      ],
+      "Enter to send": [
+        "回车发送"
+      ],
+      "%s+Enter to send": [
+        "%s+回车发送"
+      ],
+      "Drop to attach": [
+        "拖放以附加"
+      ],
+      "Files upload to #%s": [
+        "文件上传到 #%s"
+      ],
+      "External link": [
+        "外部链接"
+      ],
+      "You are about to visit an external resource": [
+        "您即将访问外部资源"
+      ],
+      "Open link": [
+        "打开链接"
+      ],
+      "No microphone detected": [
+        "未检测到麦克风"
+      ],
+      "Mute": [
+        "静音"
+      ],
+      "Unmute": [
+        "取消静音"
+      ],
+      "No camera detected": [
+        "未检测到摄像头"
+      ],
+      "Turn off camera": [
+        "关闭摄像头"
+      ],
+      "Turn on camera": [
+        "打开摄像头"
+      ],
+      "Stop sharing": [
+        "停止共享"
+      ],
+      "Leave call": [
+        "离开通话"
+      ],
+      "Audio & video devices": [
+        "音视频设备"
+      ],
+      "Microphone": [
+        "麦克风"
+      ],
+      "No microphones found": [
+        "未找到麦克风"
+      ],
+      "Microphone %d": [
+        "麦克风 %d"
+      ],
+      "Camera": [
+        "摄像头"
+      ],
+      "No cameras found": [
+        "未找到摄像头"
+      ],
+      "Camera %d": [
+        "摄像头 %d"
+      ],
+      "Incoming call": [
+        "来电"
+      ],
+      "%s is calling": [
+        "%s 正在呼叫"
+      ],
+      "Decline call": [
+        "拒绝"
+      ],
+      "Accept call": [
+        "接听"
+      ],
+      "Never": [
+        "从未"
+      ],
+      "Just now": [
+        "刚刚"
+      ],
+      "%dm ago": [
+        "%d 分钟前"
+      ],
+      "%dh ago": [
+        "%d 小时前"
+      ],
+      "online": [
+        "在线"
+      ],
+      "Temporary": [
+        "临时"
+      ],
+      "Search groups...": [
+        "搜索小组..."
+      ],
+      "No groups found": [
+        "未找到小组"
+      ],
+      "Remove member": [
+        "移除成员"
+      ],
+      "Are you sure you want to remove %s from the hub?": [
+        "确定要将 %s 从 Hub 中移除吗？"
+      ],
+      "Removing...": [
+        "移除中..."
+      ],
+      "Remove": [
+        "移除"
+      ],
+      "in call": [
+        "通话中"
+      ],
+      "Call": [
+        "呼叫"
+      ],
+      "Collapse": [
+        "收起"
+      ],
+      "Video debug (drag to move, click to toggle)": [
+        "视频调试（拖动，点击切换）"
+      ],
+      "Toggle video debug panel": [
+        "切换视频调试面板"
+      ],
+      "Video Debug": [
+        "视频调试"
+      ],
+      "Copy JSON snapshot": [
+        "复制 JSON 快照"
+      ],
+      "Clear logs": [
+        "清空日志"
+      ],
+      "Voice Channels": [
+        "语音频道"
+      ]
+    }
+  }
+}

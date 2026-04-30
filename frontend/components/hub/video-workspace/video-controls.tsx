@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useVideoCall } from "@/contexts/video-call-context";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 interface VideoCallControlsProps {
   isMicEnabled: boolean;
@@ -69,10 +70,10 @@ export function VideoCallControls({
         onClick={onToggleMic}
         title={
           !micAvailable
-            ? "No microphone detected"
+            ? t("No microphone detected")
             : isMicEnabled
-              ? "Mute"
-              : "Unmute"
+              ? t("Mute")
+              : t("Unmute")
         }
       >
         {isMicEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
@@ -84,10 +85,10 @@ export function VideoCallControls({
         onClick={onToggleCamera}
         title={
           !cameraAvailable
-            ? "No camera detected"
+            ? t("No camera detected")
             : isCamEnabled
-              ? "Turn off camera"
-              : "Turn on camera"
+              ? t("Turn off camera")
+              : t("Turn on camera")
         }
       >
         {isCamEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
@@ -96,7 +97,7 @@ export function VideoCallControls({
       <ControlBtn
         active={isScreenSharing}
         onClick={isScreenSharing ? onStopShare : onStartShare}
-        title={isScreenSharing ? "Stop sharing" : "Share screen"}
+        title={isScreenSharing ? t("Stop sharing") : t("Share screen")}
       >
         {isScreenSharing ? (
           <MonitorOff className="h-4 w-4" />
@@ -107,7 +108,7 @@ export function VideoCallControls({
 
       <DeviceMenu />
 
-      <ControlBtn danger onClick={onLeave} title="Leave call">
+      <ControlBtn danger onClick={onLeave} title={t("Leave call")}>
         <PhoneOff className="h-4 w-4" />
       </ControlBtn>
     </div>
@@ -176,8 +177,8 @@ function DeviceMenu() {
           onMouseLeave={() => setHover(false)}
           onFocus={() => setHover(true)}
           onBlur={() => setHover(false)}
-          title="Audio & video devices"
-          aria-label="Audio & video devices"
+          title={t("Audio & video devices")}
+          aria-label={t("Audio & video devices")}
           className="grid h-[42px] w-[42px] place-items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40"
           style={{
             background: hover
@@ -199,17 +200,17 @@ function DeviceMenu() {
       >
         <DropdownMenuLabel className="flex items-center gap-2 text-xs">
           <Mic className="h-3.5 w-3.5" />
-          Microphone
+          {t("Microphone")}
         </DropdownMenuLabel>
         {audioInputs.length === 0 ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            No microphones found
+            {t("No microphones found")}
           </div>
         ) : (
           audioInputs.map((d, i) => (
             <DeviceRow
               key={d.deviceId || `mic-${i}`}
-              label={d.label || `Microphone ${i + 1}`}
+              label={d.label || t("Microphone %d", i + 1)}
               selected={d.deviceId === currentMicDeviceId}
               busy={busy === `mic:${d.deviceId}`}
               onClick={() => void onMic(d.deviceId)}
@@ -221,17 +222,17 @@ function DeviceMenu() {
 
         <DropdownMenuLabel className="flex items-center gap-2 text-xs">
           <Video className="h-3.5 w-3.5" />
-          Camera
+          {t("Camera")}
         </DropdownMenuLabel>
         {videoInputs.length === 0 ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            No cameras found
+            {t("No cameras found")}
           </div>
         ) : (
           videoInputs.map((d, i) => (
             <DeviceRow
               key={d.deviceId || `cam-${i}`}
-              label={d.label || `Camera ${i + 1}`}
+              label={d.label || t("Camera %d", i + 1)}
               selected={d.deviceId === currentCameraDeviceId}
               busy={busy === `cam:${d.deviceId}`}
               onClick={() => void onCam(d.deviceId)}

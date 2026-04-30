@@ -46,6 +46,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
 import type { ChatMessage as ChatMessageT } from "@/contexts/chat-context";
+import { t } from "@/i18n";
 
 interface TextChannelViewProps {
   channelId: string;
@@ -80,8 +81,8 @@ function formatDateSeparator(d: Date): string {
   const today = startOfDay(new Date());
   const yesterday = today - 86400 * 1000;
   const day = startOfDay(d);
-  if (day === today) return "Today";
-  if (day === yesterday) return "Yesterday";
+  if (day === today) return t("Today");
+  if (day === yesterday) return t("Yesterday");
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}.${mm}.${d.getFullYear()}`;
@@ -108,7 +109,7 @@ function UnreadDivider() {
       className="my-2 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-destructive"
     >
       <div className="h-px flex-1 bg-destructive/40" />
-      <span>New</span>
+      <span>{t("New")}</span>
       <div className="h-px flex-1 bg-destructive/40" />
     </div>
   );
@@ -147,7 +148,7 @@ function renderSystemContent(
     const member = userId ? memberMap.get(userId) : undefined;
     parts.push(
       <span key={`m-${match.index}`} className="font-medium text-foreground">
-        {member?.display_name ?? member?.username ?? userId ?? "Unknown"}
+        {member?.display_name ?? member?.username ?? userId ?? t("Unknown")}
       </span>,
     );
     lastIndex = match.index + match[0].length;
@@ -237,17 +238,17 @@ function ChatMessage({
       : "";
 
   const statusBadge = pending ? (
-    <span className="text-[10px] italic text-muted-foreground">sending…</span>
+    <span className="text-[10px] italic text-muted-foreground">{t("sending…")}</span>
   ) : failed ? (
     <span className="flex items-center gap-1 text-[10px] text-destructive">
-      failed
+      {t("failed")}
       {message.client_id && onRetry && (
         <button
           type="button"
           onClick={() => onRetry(message.client_id!)}
           className="underline hover:no-underline"
         >
-          retry
+          {t("retry")}
         </button>
       )}
     </span>
@@ -283,7 +284,7 @@ function ChatMessage({
             {formatTime(message.message_id)}
           </span>
           {message.edited_at && (
-            <span className="text-[10px] text-muted-foreground">(edited)</span>
+            <span className="text-[10px] text-muted-foreground">{t("(edited)")}</span>
           )}
           {statusBadge}
         </div>
@@ -318,11 +319,11 @@ function TypingIndicator({
 
   let text: string;
   if (names.length === 1) {
-    text = `${names[0]} is typing`;
+    text = t("%s is typing", names[0]);
   } else if (names.length === 2) {
-    text = `${names[0]} and ${names[1]} are typing`;
+    text = t("%s and %s are typing", names[0], names[1]);
   } else {
-    text = `${names.length} people are typing`;
+    text = t("%d people are typing", names.length);
   }
 
   return (
@@ -629,15 +630,15 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
               {isConnecting ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Connecting...
+                  {t("Connecting...")}
                 </>
               ) : connectionState === "reconnecting" ? (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  Reconnecting...
+                  {t("Reconnecting...")}
                 </>
               ) : (
-                <span className="text-destructive">Disconnected</span>
+                <span className="text-destructive">{t("Disconnected")}</span>
               )}
             </span>
           )}
@@ -656,10 +657,10 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
             <div className="text-center text-muted-foreground">
               <Hash className="mx-auto mb-2 h-10 w-10 opacity-20" />
               <p className="text-sm font-medium">
-                Welcome to #{channelName}
+                {t("Welcome to #%s", channelName)}
               </p>
               <p className="mt-1 text-xs">
-                This is the start of the channel.
+                {t("This is the start of the channel.")}
               </p>
             </div>
           </div>
@@ -801,7 +802,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
               }}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={`Type something... # ${channelName}`}
+              placeholder={t("Type something... # %s", channelName)}
               disabled={!isConnected}
               rows={1}
               className={cn(
@@ -817,7 +818,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
             <div className="flex items-center gap-0.5">
               <button
                 className="rounded p-1 text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-                title="Attach file"
+                title={t("Attach file")}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <PaperclipIcon className="h-4 w-4" />
@@ -854,11 +855,11 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                 <PopoverContent side="top" align="end" className="w-56 p-3">
                   <div className="flex items-center justify-between">
                     <div className="text-xs">
-                      <p className="font-medium text-foreground">Send on Enter</p>
+                      <p className="font-medium text-foreground">{t("Send on Enter")}</p>
                       <p className="mt-0.5 text-muted-foreground">
                         {sendOnEnter
-                          ? "Enter to send"
-                          : `${modKey}+Enter to send`}
+                          ? t("Enter to send")
+                          : t("%s+Enter to send", modKey)}
                       </p>
                     </div>
                     <button
@@ -908,10 +909,10 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
         <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-primary/70 bg-background/80 backdrop-blur-sm">
           <UploadCloudIcon className="h-12 w-12 text-primary" />
           <span className="text-base font-medium text-primary">
-            Drop to attach
+            {t("Drop to attach")}
           </span>
           <span className="text-xs text-muted-foreground">
-            Files upload to #{channelName}
+            {t("Files upload to #%s", channelName)}
           </span>
         </div>
       )}
@@ -921,12 +922,12 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-center">
-              External link
+              {t("External link")}
             </DialogTitle>
           </DialogHeader>
           <div className="py-4 text-center">
             <p className="text-sm text-muted-foreground">
-              You are about to visit an external resource
+              {t("You are about to visit an external resource")}
             </p>
             <p className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs font-mono break-all text-foreground">
               {externalLink}
@@ -937,7 +938,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
               variant="outline"
               onClick={() => setExternalLink(null)}
             >
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -945,7 +946,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                 setExternalLink(null);
               }}
             >
-              Open link
+              {t("Open link")}
             </Button>
           </DialogFooter>
         </DialogContent>

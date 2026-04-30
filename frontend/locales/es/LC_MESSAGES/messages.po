@@ -1,0 +1,605 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: matehub 0.1\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Sign in"
+msgstr "Iniciar sesión"
+
+msgid "Username"
+msgstr "Nombre de usuario"
+
+msgid "Password"
+msgstr "Contraseña"
+
+msgid "Remember me"
+msgstr "Recordarme"
+
+msgid "Logging in..."
+msgstr "Iniciando sesión..."
+
+msgid "Don't have an account?"
+msgstr "¿No tienes cuenta?"
+
+msgid "Create one"
+msgstr "Crear una"
+
+msgid "Link does not exist"
+msgstr "El enlace no existe"
+
+msgid "This link has already been used"
+msgstr "Este enlace ya fue utilizado"
+
+msgid "Enter your name"
+msgstr "Introduce tu nombre"
+
+msgid "Password too short (minimum 6 characters)"
+msgstr "Contraseña demasiado corta (mínimo 6 caracteres)"
+
+msgid "Passwords don't match"
+msgstr "Las contraseñas no coinciden"
+
+msgid "Login is taken"
+msgstr "El usuario ya está en uso"
+
+msgid "Could not reach the server"
+msgstr "No se pudo conectar con el servidor"
+
+msgid "Checking link..."
+msgstr "Comprobando enlace..."
+
+msgid "Link is invalid"
+msgstr "Enlace inválido"
+
+msgid "Ask the administrator to create a new one."
+msgstr "Pide al administrador que cree uno nuevo."
+
+msgid "Join %s"
+msgstr "Unirse a %s"
+
+msgid "Upload avatar"
+msgstr "Subir avatar"
+
+msgid "Your name"
+msgstr "Tu nombre"
+
+msgid "Confirm password"
+msgstr "Confirmar contraseña"
+
+msgid "Accept invitation"
+msgstr "Aceptar invitación"
+
+msgid "Link expired or revoked"
+msgstr "Enlace caducado o revocado"
+
+msgid "Server error"
+msgstr "Error del servidor"
+
+msgid "Cannot reach server"
+msgstr "No se puede conectar al servidor"
+
+msgid "Resolving invite"
+msgstr "Comprobando invitación"
+
+msgid "You are invited to"
+msgstr "Estás invitado a"
+
+msgid "Your identity"
+msgstr "Tu identidad"
+
+msgid "Enter Hub"
+msgstr "Entrar al hub"
+
+msgid "Temporary access. No account required."
+msgstr "Acceso temporal. No se requiere cuenta."
+
+msgid "Entering hub..."
+msgstr "Entrando al hub..."
+
+msgid "Contact the person who shared this link."
+msgstr "Contacta con quien te compartió este enlace."
+
+msgid "Fill in name and login"
+msgstr "Rellena nombre y usuario"
+
+msgid "Enter hub name"
+msgstr "Introduce el nombre del hub"
+
+msgid "Hub is already initialised"
+msgstr "El hub ya está inicializado"
+
+msgid "Hooray! Your hub is ready."
+msgstr "¡Hurra! Tu hub está listo."
+
+msgid "Step 1 of 2 — create the admin account"
+msgstr "Paso 1 de 2 — crea la cuenta de administrador"
+
+msgid "Step 2 of 2 — name your hub"
+msgstr "Paso 2 de 2 — pon nombre a tu hub"
+
+msgid "Continue"
+msgstr "Continuar"
+
+msgid "Upload hub icon"
+msgstr "Subir icono del hub"
+
+msgid "Hub name"
+msgstr "Nombre del hub"
+
+msgid "e.g. Acme Team"
+msgstr "p. ej. Equipo Acme"
+
+msgid "Back"
+msgstr "Atrás"
+
+msgid "Create hub"
+msgstr "Crear hub"
+
+msgid "Channels"
+msgstr "Canales"
+
+msgid "Add Channel"
+msgstr "Añadir canal"
+
+msgid "Direct Messages"
+msgstr "Mensajes directos"
+
+msgid "Add Teammates"
+msgstr "Añadir compañeros"
+
+msgid "Send Feedback"
+msgstr "Enviar comentarios"
+
+msgid "Hub Settings"
+msgstr "Ajustes del hub"
+
+msgid "General"
+msgstr "General"
+
+msgid "Invite Links"
+msgstr "Enlaces de invitación"
+
+msgid "Other Hubs"
+msgstr "Otros hubs"
+
+msgid "Thank you!"
+msgstr "¡Gracias!"
+
+msgid "Your feedback has been sent."
+msgstr "Tu comentario fue enviado."
+
+msgid "Email"
+msgstr "Correo"
+
+msgid "Message"
+msgstr "Mensaje"
+
+msgid "What's on your mind?"
+msgstr "¿Qué tienes en mente?"
+
+msgid "Sending..."
+msgstr "Enviando..."
+
+msgid "Send"
+msgstr "Enviar"
+
+msgid "Profile"
+msgstr "Perfil"
+
+msgid "Settings"
+msgstr "Ajustes"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Log out"
+msgstr "Cerrar sesión"
+
+msgid "Edit Profile"
+msgstr "Editar perfil"
+
+msgid "Click to upload avatar (max 10MB)"
+msgstr "Haz clic para subir avatar (máx. 10 MB)"
+
+msgid "Display Name"
+msgstr "Nombre visible"
+
+msgid "Your display name"
+msgstr "Tu nombre visible"
+
+msgid "Image must be under 10MB"
+msgstr "La imagen debe ocupar menos de 10 MB"
+
+msgid "Image too large (max 2MB)"
+msgstr "Imagen demasiado grande (máx. 2 MB)"
+
+msgid "Unsupported image format"
+msgstr "Formato de imagen no admitido"
+
+msgid "Saving"
+msgstr "Guardando"
+
+msgid "Members"
+msgstr "Miembros"
+
+msgid "Online"
+msgstr "En línea"
+
+msgid "Offline"
+msgstr "Desconectado"
+
+msgid "Invite participants"
+msgstr "Invitar participantes"
+
+msgid "Temporary link expires by timer. Permanent link is bound to a login."
+msgstr "El enlace temporal expira por temporizador. El enlace permanente se vincula a un inicio de sesión."
+
+msgid "Temporary link"
+msgstr "Enlace temporal"
+
+msgid "Permanent user"
+msgstr "Usuario permanente"
+
+msgid "Guest name"
+msgstr "Nombre del invitado"
+
+msgid "Valid until"
+msgstr "Válido hasta"
+
+msgid "Time"
+msgstr "Hora"
+
+msgid "Generate link"
+msgstr "Generar enlace"
+
+msgid "Creating..."
+msgstr "Creando..."
+
+msgid "Login"
+msgstr "Usuario"
+
+msgid "Email (optional)"
+msgstr "Correo (opcional)"
+
+msgid "Create invitation"
+msgstr "Crear invitación"
+
+msgid "Done — share the link with the invitee:"
+msgstr "Listo — comparte el enlace con el invitado:"
+
+msgid "Create another"
+msgstr "Crear otra"
+
+msgid "Create Text Channel"
+msgstr "Crear canal de texto"
+
+msgid "Edit Text Channel"
+msgstr "Editar canal de texto"
+
+msgid "Create Voice Channel"
+msgstr "Crear canal de voz"
+
+msgid "Edit Voice Channel"
+msgstr "Editar canal de voz"
+
+msgid "Create Stage Channel"
+msgstr "Crear canal escenario"
+
+msgid "Edit Stage Channel"
+msgstr "Editar canal escenario"
+
+msgid "Icon"
+msgstr "Icono"
+
+msgid "Color"
+msgstr "Color"
+
+msgid "Image"
+msgstr "Imagen"
+
+msgid "Change image"
+msgstr "Cambiar imagen"
+
+msgid "Upload image"
+msgstr "Subir imagen"
+
+msgid "Channel name"
+msgstr "Nombre del canal"
+
+msgid "Visible to groups"
+msgstr "Visible para los grupos"
+
+msgid "Delete"
+msgstr "Eliminar"
+
+msgid "Create"
+msgstr "Crear"
+
+msgid "Groups & Roles"
+msgstr "Grupos y roles"
+
+msgid "protected"
+msgstr "protegido"
+
+msgid "Create role"
+msgstr "Crear rol"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Permissions"
+msgstr "Permisos"
+
+msgid "This is a protected group. Only name and color can be changed."
+msgstr "Es un grupo protegido. Solo se pueden cambiar nombre y color."
+
+msgid "Delete role"
+msgstr "Eliminar rol"
+
+msgid "Create text channels"
+msgstr "Crear canales de texto"
+
+msgid "Create voice channels"
+msgstr "Crear canales de voz"
+
+msgid "Edit other channels"
+msgstr "Editar otros canales"
+
+msgid "Manage members"
+msgstr "Gestionar miembros"
+
+msgid "Invite permanent users"
+msgstr "Invitar usuarios permanentes"
+
+msgid "Create temp links"
+msgstr "Crear enlaces temporales"
+
+msgid "Manage roles"
+msgstr "Gestionar roles"
+
+msgid "Share your screen"
+msgstr "Compartir pantalla"
+
+msgid "Pick a quality profile. Your browser will ask which window or screen to share next."
+msgstr "Elige un perfil de calidad. El navegador preguntará qué ventana o pantalla compartir."
+
+msgid "Gaming"
+msgstr "Juegos"
+
+msgid "High motion, 60 fps. For gameplay demos."
+msgstr "Alto movimiento, 60 fps. Para demostraciones de juego."
+
+msgid "Standard"
+msgstr "Estándar"
+
+msgid "Balanced quality. For general screen sharing."
+msgstr "Calidad equilibrada. Para compartir pantalla general."
+
+msgid "Detail"
+msgstr "Detalle"
+
+msgid "Sharp text. For documents and code."
+msgstr "Texto nítido. Para documentos y código."
+
+msgid "On macOS, game/system audio can only be captured from a browser tab. Sharing a full screen will be video-only."
+msgstr "En macOS, el audio del sistema solo puede capturarse desde una pestaña del navegador. Compartir pantalla completa será solo vídeo."
+
+msgid "Start sharing"
+msgstr "Empezar a compartir"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "Save"
+msgstr "Guardar"
+
+msgid "Close"
+msgstr "Cerrar"
+
+msgid "Loading..."
+msgstr "Cargando..."
+
+msgid "Error"
+msgstr "Error"
+
+msgid "Today"
+msgstr "Hoy"
+
+msgid "Yesterday"
+msgstr "Ayer"
+
+msgid "New"
+msgstr "Nuevo"
+
+msgid "Unknown"
+msgstr "Desconocido"
+
+msgid "sending…"
+msgstr "enviando…"
+
+msgid "failed"
+msgstr "falló"
+
+msgid "retry"
+msgstr "reintentar"
+
+msgid "(edited)"
+msgstr "(editado)"
+
+msgid "%s is typing"
+msgstr "%s está escribiendo"
+
+msgid "%s and %s are typing"
+msgstr "%s y %s están escribiendo"
+
+msgid "%d people are typing"
+msgstr "%d personas están escribiendo"
+
+msgid "Connecting..."
+msgstr "Conectando..."
+
+msgid "Reconnecting..."
+msgstr "Reconectando..."
+
+msgid "Disconnected"
+msgstr "Desconectado"
+
+msgid "Welcome to #%s"
+msgstr "Bienvenido a #%s"
+
+msgid "This is the start of the channel."
+msgstr "Este es el comienzo del canal."
+
+msgid "Type something... # %s"
+msgstr "Escribe algo... # %s"
+
+msgid "Attach file"
+msgstr "Adjuntar archivo"
+
+msgid "Send on Enter"
+msgstr "Enviar con Enter"
+
+msgid "Enter to send"
+msgstr "Enter para enviar"
+
+msgid "%s+Enter to send"
+msgstr "%s+Enter para enviar"
+
+msgid "Drop to attach"
+msgstr "Suelta para adjuntar"
+
+msgid "Files upload to #%s"
+msgstr "Archivos a #%s"
+
+msgid "External link"
+msgstr "Enlace externo"
+
+msgid "You are about to visit an external resource"
+msgstr "Estás a punto de visitar un recurso externo"
+
+msgid "Open link"
+msgstr "Abrir enlace"
+
+msgid "No microphone detected"
+msgstr "No se detectó micrófono"
+
+msgid "Mute"
+msgstr "Silenciar"
+
+msgid "Unmute"
+msgstr "Activar micrófono"
+
+msgid "No camera detected"
+msgstr "No se detectó cámara"
+
+msgid "Turn off camera"
+msgstr "Apagar cámara"
+
+msgid "Turn on camera"
+msgstr "Encender cámara"
+
+msgid "Stop sharing"
+msgstr "Detener compartir"
+
+msgid "Leave call"
+msgstr "Salir de la llamada"
+
+msgid "Audio & video devices"
+msgstr "Dispositivos de audio y vídeo"
+
+msgid "Microphone"
+msgstr "Micrófono"
+
+msgid "No microphones found"
+msgstr "No se encontraron micrófonos"
+
+msgid "Microphone %d"
+msgstr "Micrófono %d"
+
+msgid "Camera"
+msgstr "Cámara"
+
+msgid "No cameras found"
+msgstr "No se encontraron cámaras"
+
+msgid "Camera %d"
+msgstr "Cámara %d"
+
+msgid "Incoming call"
+msgstr "Llamada entrante"
+
+msgid "%s is calling"
+msgstr "%s está llamando"
+
+msgid "Decline call"
+msgstr "Rechazar"
+
+msgid "Accept call"
+msgstr "Aceptar"
+
+msgid "Never"
+msgstr "Nunca"
+
+msgid "Just now"
+msgstr "Ahora mismo"
+
+msgid "%dm ago"
+msgstr "hace %d min"
+
+msgid "%dh ago"
+msgstr "hace %d h"
+
+msgid "online"
+msgstr "en línea"
+
+msgid "Temporary"
+msgstr "Temporal"
+
+msgid "Search groups..."
+msgstr "Buscar grupos..."
+
+msgid "No groups found"
+msgstr "No se encontraron grupos"
+
+msgid "Remove member"
+msgstr "Eliminar miembro"
+
+msgid "Are you sure you want to remove %s from the hub?"
+msgstr "¿Seguro que quieres eliminar a %s del hub?"
+
+msgid "Removing..."
+msgstr "Eliminando..."
+
+msgid "Remove"
+msgstr "Eliminar"
+
+msgid "in call"
+msgstr "en llamada"
+
+msgid "Call"
+msgstr "Llamar"
+
+msgid "Collapse"
+msgstr "Plegar"
+
+msgid "Video debug (drag to move, click to toggle)"
+msgstr "Depuración de vídeo (arrastra, clic)"
+
+msgid "Toggle video debug panel"
+msgstr "Alternar panel de depuración"
+
+msgid "Video Debug"
+msgstr "Depuración de vídeo"
+
+msgid "Copy JSON snapshot"
+msgstr "Copiar JSON"
+
+msgid "Clear logs"
+msgstr "Borrar registros"
+
+msgid "Voice Channels"
+msgstr "Canales de voz"

@@ -8,6 +8,7 @@ import { useMembers } from "@/hooks/use-members";
 import { useIncomingCall } from "@/contexts/incoming-call-context";
 import { useVideoCall } from "@/contexts/video-call-context";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 // ── Icon-only square button in the header ──────────────────────────────────
 
@@ -61,7 +62,7 @@ function DmHeaderInner({
   const peer = useDmPeer(channel);
   const { startCall } = useIncomingCall();
   const { activeVoiceChannelId } = useVideoCall();
-  const displayName = peer?.member?.display_name ?? peer?.peerId ?? "Unknown";
+  const displayName = peer?.member?.display_name ?? peer?.peerId ?? t("Unknown");
   // Once we're already in this DM's SFU session the workspace splits in two
   // (VideoWorkspace on top, ChatWorkspace on bottom). The Call button on the
   // bottom header would re-trigger ringing — replace it with a passive badge.
@@ -98,10 +99,10 @@ function DmHeaderInner({
         {inThisCall ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-500">
             <PhoneIcon className="h-3 w-3" />
-            in call
+            {t("in call")}
           </span>
         ) : (
-          <HeaderIconButton title="Call" onClick={() => void startCall(channel.id)}>
+          <HeaderIconButton title={t("Call")} onClick={() => void startCall(channel.id)}>
             <PhoneIcon className="h-3.5 w-3.5" />
           </HeaderIconButton>
         )}
@@ -162,7 +163,7 @@ export function ChatWorkspace({ channel, standalone }: ChatWorkspaceProps) {
   }
 
   const collapseBtn = (
-    <HeaderIconButton title="Collapse" onClick={collapse}>
+    <HeaderIconButton title={t("Collapse")} onClick={collapse}>
       <ChevronUpIcon className="h-3.5 w-3.5" />
     </HeaderIconButton>
   );

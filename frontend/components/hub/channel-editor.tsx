@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MemberGroup } from "@/hooks/use-members";
+import { t } from "@/i18n";
 
 type ChannelType = "text" | "voice" | "stage";
 
@@ -109,10 +110,15 @@ export function ChannelEditor({
   const [cropSource, setCropSource] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const typeLabel = channelType === "text" ? "Text" : channelType === "voice" ? "Voice" : "Stage";
-  const title = mode === "create"
-    ? `Create ${typeLabel} Channel`
-    : `Edit ${typeLabel} Channel`;
+  const title = (() => {
+    if (channelType === "text") {
+      return mode === "create" ? t("Create Text Channel") : t("Edit Text Channel");
+    }
+    if (channelType === "voice") {
+      return mode === "create" ? t("Create Voice Channel") : t("Edit Voice Channel");
+    }
+    return mode === "create" ? t("Create Stage Channel") : t("Edit Stage Channel");
+  })();
 
   // Filter icons: text channels hide voice icons, voice channels hide text icons
   const availableIcons = allIcons.filter((i) => {
@@ -254,7 +260,7 @@ export function ChannelEditor({
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {m === "icon" ? "Icon" : m === "color" ? "Color" : "Image"}
+                    {m === "icon" ? t("Icon") : m === "color" ? t("Color") : t("Image")}
                   </button>
                 ))}
               </div>
@@ -318,7 +324,7 @@ export function ChannelEditor({
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <ImageIcon className="mr-1.5 h-3.5 w-3.5" />
-                    {iconImage ? "Change image" : "Upload image"}
+                    {iconImage ? t("Change image") : t("Upload image")}
                   </Button>
                   <input
                     ref={fileInputRef}
@@ -334,7 +340,7 @@ export function ChannelEditor({
 
           {/* Channel name */}
           <div className="w-full space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Channel name</label>
+            <label className="text-xs font-medium text-muted-foreground">{t("Channel name")}</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -345,7 +351,7 @@ export function ChannelEditor({
 
           {/* Group access (hidden for default channel) */}
           {!isDefault && <div className="w-full space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Visible to groups</label>
+            <label className="text-xs font-medium text-muted-foreground">{t("Visible to groups")}</label>
             <div className="flex flex-wrap gap-1.5">
               {allGroups.map((g) => {
                 const selected = selectedGroups.has(g.id);
@@ -398,14 +404,14 @@ export function ChannelEditor({
               }}
             >
               <Trash2Icon className="h-3.5 w-3.5" />
-              Delete
+              {t("Delete")}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button onClick={handleSave} disabled={!name.trim()}>
-            {mode === "create" ? "Create" : "Save"}
+            {mode === "create" ? t("Create") : t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>

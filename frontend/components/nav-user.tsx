@@ -19,7 +19,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -36,7 +41,9 @@ import {
   LogOutIcon,
   CameraIcon,
   LoaderIcon,
+  LanguagesIcon,
 } from "lucide-react"
+import { t, useLocale, LOCALES } from "@/i18n"
 
 const HUB_API = "/api/hub"
 
@@ -73,7 +80,7 @@ export function NavUser({
       // Pre-crop limit: 10MB, generous enough for phone photos.
       // The cropped output is ~50KB webp, well under the 2MB server limit.
       if (file.size > 10 * 1024 * 1024) {
-        setError("Image must be under 10MB")
+        setError(t("Image must be under 10MB"))
         return
       }
 
@@ -119,8 +126,8 @@ export function NavUser({
 
         if (!res.ok) {
           const status = res.status
-          if (status === 413) setError("Image too large (max 2MB)")
-          else if (status === 415) setError("Unsupported image format")
+          if (status === 413) setError(t("Image too large (max 2MB)"))
+          else if (status === 415) setError(t("Unsupported image format"))
           else setError(`Upload failed (${status})`)
           setSaving(false)
           return
@@ -162,7 +169,7 @@ export function NavUser({
 
       setEditOpen(false)
     } catch {
-      setError("Cannot reach server")
+      setError(t("Cannot reach server"))
     } finally {
       setSaving(false)
     }
@@ -226,8 +233,9 @@ export function NavUser({
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setEditOpen(true)}>
                 <UserIcon />
-                Edit Profile
+                {t("Profile")}
               </DropdownMenuItem>
+              <LanguageMenu />
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
@@ -237,7 +245,7 @@ export function NavUser({
                 }}
               >
                 <LogOutIcon />
-                Log out
+                {t("Log out")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -258,7 +266,7 @@ export function NavUser({
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogTitle>{t("Edit Profile")}</DialogTitle>
           </DialogHeader>
 
           <div className="flex flex-col items-center gap-4 py-4">
@@ -287,23 +295,23 @@ export function NavUser({
             </button>
 
             <p className="text-xs text-muted-foreground">
-              Click to upload avatar (max 10MB)
+              {t("Click to upload avatar (max 10MB)")}
             </p>
 
             {/* Display name */}
             <div className="w-full space-y-2">
-              <label className="text-sm font-medium">Display Name</label>
+              <label className="text-sm font-medium">{t("Display Name")}</label>
               <Input
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                placeholder="Your display name"
+                placeholder={t("Your display name")}
               />
             </div>
 
             {/* Username (read-only) */}
             <div className="w-full space-y-2">
               <label className="text-sm font-medium text-muted-foreground">
-                Username
+                {t("Username")}
               </label>
               <Input value={`@${user.username}`} disabled />
             </div>
@@ -317,16 +325,16 @@ export function NavUser({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>
-              Cancel
+              {t("Cancel")}
             </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? (
                 <span className="flex items-center gap-2">
                   <LoaderIcon className="h-3.5 w-3.5 animate-spin" />
-                  Saving
+                  {t("Saving")}
                 </span>
               ) : (
-                "Save"
+                t("Save")
               )}
             </Button>
           </DialogFooter>
@@ -340,5 +348,33 @@ export function NavUser({
         onConfirm={handleCropConfirm}
       />
     </>
+  )
+}
+
+// ── Language picker ───────────────────────────────────────────
+// Submenu with one radio item per supported locale. Selection writes to
+// localStorage and reloads the page (same flow Superset uses) so the
+// translator hydrates with the chosen pack before any t() runs again.
+function LanguageMenu() {
+  const { locale, setLocale } = useLocale()
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <LanguagesIcon />
+        {t("Language")}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuRadioGroup
+          value={locale}
+          onValueChange={(v) => setLocale(v as typeof locale)}
+        >
+          {LOCALES.map((l) => (
+            <DropdownMenuRadioItem key={l.code} value={l.code}>
+              {l.nativeLabel}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
