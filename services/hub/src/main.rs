@@ -2,6 +2,7 @@ mod acl_publish;
 mod api;
 mod auth;
 mod db;
+mod member_events;
 mod models;
 mod presence;
 mod storage;
@@ -65,6 +66,11 @@ async fn main() -> Result<()> {
     // the hub still comes up when NATS is down in a dev box.
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     voice_occupancy_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
+
+    // Hub-local member-event publisher: write-paths in invitations/groups
+    // call into this; presence WS clients receive the events on the same
+    // broadcast channel as voice_occupancy.
+    member_events::init(events_tx.clone());
 
     // Single NATS client for outbound ACL invalidations. None means publishes
     // become no-ops; the hub still works, just without cache-busting.

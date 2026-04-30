@@ -164,7 +164,7 @@ async fn sso_login(
     // Hub membership. General already validated the account is a member of
     // this hub at /api/hubs/{slug}/enter (it checks general.hub_members), so
     // we mirror that as a local hub_members row on first entry.
-    sqlx::query(
+    let membership_result = sqlx::query(
         r#"
         INSERT INTO hub_members (hub_id, user_id, role)
         VALUES ($1, $2, 'member')
@@ -176,6 +176,12 @@ async fn sso_login(
     .execute(&state.pool)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Only fire member_joined when we actually inserted a new row -- repeated
+    // SSO logins for an existing member shouldn't notify everyone every time.
+    if membership_result.rows_affected() > 0 {
+        crate::member_events::member_joined(state.hub_id, user.id);
+    }
 
     // Assign to the hub's default group (typically "everyone") so the new
     // user gets baseline READ/WRITE permissions straight away.

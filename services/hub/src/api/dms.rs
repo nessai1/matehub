@@ -156,7 +156,10 @@ async fn list_dms(
     let me = auth.0.sub;
     let mut conn = hub_connection(&pool, hub_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, "hub_connection failed in list_dms");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let channels = sqlx::query_as::<_, Channel>(
         "SELECT c.* FROM channels c
@@ -168,7 +171,10 @@ async fn list_dms(
     .bind(me)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        tracing::error!(?e, %hub_id, user_id = %me, "list_dms channel SELECT failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     if channels.is_empty() {
         return Ok(Json(vec![]));

@@ -13,7 +13,6 @@ pub async fn connect(database_url: &str) -> Result<PgPool> {
 
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001_init", include_str!("../../migrations/001_init.sql")),
-    ("002_invites_setup", include_str!("../../migrations/002_invites_setup.sql")),
 ];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {

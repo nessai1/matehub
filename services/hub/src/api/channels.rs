@@ -50,7 +50,10 @@ async fn list_channels(
 ) -> Result<Json<Vec<Channel>>, StatusCode> {
     let mut conn = hub_connection(&state.pool, hub_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, "hub_connection failed in list_channels");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Generic listing: text/voice/stage only. DM channels live behind
     // /v1/hubs/{id}/dms and are scoped to their participants — leaking their
@@ -61,7 +64,10 @@ async fn list_channels(
     .bind(hub_id)
     .fetch_all(&mut *conn)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        tracing::error!(?e, %hub_id, "list_channels SELECT failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(Json(channels))
 }
@@ -111,7 +117,10 @@ async fn create_channel(
 
     let perms = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, user_id = %auth.0.sub, "resolve_user_perms failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let required = match body.channel_type.as_str() {
         "text" => bits::CREATE_TEXT_CHANNELS,
@@ -123,14 +132,20 @@ async fn create_channel(
 
     let mut conn = hub_connection(&state.pool, hub_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, "hub_connection failed in create_channel");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let max_pos: Option<i32> =
         sqlx::query_scalar("SELECT MAX(position) FROM channels WHERE hub_id = $1")
             .bind(hub_id)
             .fetch_one(&mut *conn)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|e| {
+                tracing::error!(?e, %hub_id, "SELECT MAX(position) failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     let channel = sqlx::query_as::<_, Channel>(
         "INSERT INTO channels (id, hub_id, name, type, position, icon_id, icon_color)
@@ -146,7 +161,16 @@ async fn create_channel(
     .bind(&body.icon_color)
     .fetch_one(&mut *conn)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        tracing::error!(
+            ?e,
+            %hub_id,
+            name = %body.name,
+            channel_type = %body.channel_type,
+            "INSERT INTO channels failed"
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Grant the hub's default group (everyone) the standard member bits on
     // this channel. Without it new channels are invisible to non-admins —
@@ -159,7 +183,10 @@ async fn create_channel(
     .bind(hub_id)
     .fetch_optional(&mut *conn)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        tracing::error!(?e, %hub_id, "SELECT default group_id failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     if let Some(group_id) = default_group_id {
         sqlx::query(
@@ -172,7 +199,10 @@ async fn create_channel(
         .bind(bits::MEMBER_CHANNEL)
         .execute(&mut *conn)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, channel_id = %channel.id, "INSERT channel_permissions failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     } else {
         tracing::warn!(%hub_id, channel_id = %channel.id, "no default group for hub — non-admins will be denied access");
     }

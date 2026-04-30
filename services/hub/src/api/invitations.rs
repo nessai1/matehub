@@ -240,6 +240,10 @@ async fn accept_invitation(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // Notify already-connected presence WS clients that the roster grew.
+    // Their SWR cache for `members-full` will be invalidated and re-fetched.
+    crate::member_events::member_joined(hub_id, user_id);
+
     let hub_slug: String = sqlx::query_scalar("SELECT slug FROM hubs WHERE id = $1")
         .bind(hub_id)
         .fetch_one(&pool)

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
 import { useAuth } from "@/lib/auth";
 import {
   seedVoiceOccupancy,
@@ -27,59 +28,75 @@ export interface Member {
   current_voice_channel_id: string | null;
 }
 
-export function useMembers() {
-  const { session } = useAuth();
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchMembers = useCallback(async () => {
-    if (!session?.token) return;
-    try {
-      const res = await fetch(
-        `${HUB_API}/v1/hubs/${session.hubId}/members-full`,
-        {
-          headers: { Authorization: `Bearer ${session.token}` },
-        },
-      );
-      if (res.status === 401) {
-        // Token expired -- force re-login
-        window.location.href = "/login";
-        return;
-      }
-      if (res.ok) {
-        const fetched: Member[] = await res.json();
-        setMembers(fetched);
-        // Seed the occupancy store from the authoritative snapshot. Live WS
-        // events take over from here.
-        seedVoiceOccupancy(
-          fetched.map(
-            (m) => [m.user_id, m.current_voice_channel_id] as [string, string | null],
-          ),
-        );
-      }
-    } catch {
-      // silent fail -- will retry on next poll
-    } finally {
-      setLoading(false);
-    }
-  }, [session]);
-
-  // Fetch immediately (show member list fast), then refetch after 2s
-  // (by then presence WS is connected and Redis has online status)
-  useEffect(() => {
-    fetchMembers();
-    const presenceDelay = setTimeout(fetchMembers, 2000);
-    const iv = setInterval(fetchMembers, 10_000);
-    return () => {
-      clearTimeout(presenceDelay);
-      clearInterval(iv);
-    };
-  }, [fetchMembers]);
-
-  return { members, loading, refetch: fetchMembers };
+/** SWR cache key. Exported so usePresence can target it via mutate(). */
+export function membersKey(hubId: string | undefined) {
+  return hubId ? (["members", hubId] as const) : null;
 }
 
-/** Connect presence WebSocket to keep current user online */
+async function fetchMembers([, hubId]: readonly [
+  "members",
+  string,
+]): Promise<Member[]> {
+  const { token } = currentSession();
+  if (!token) return [];
+
+  const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/members-full`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 401) {
+    window.location.href = "/login";
+    return [];
+  }
+  if (!res.ok) throw new Error(`members-full ${res.status}`);
+  return (await res.json()) as Member[];
+}
+
+// SWR's fetcher receives the key but not the auth context. We read it from a
+// module-level slot that useMembers keeps in sync below — cleaner than passing
+// the token through the cache key (where it would needlessly partition the
+// cache per-token rotation).
+let _session: { token?: string } = {};
+function currentSession() {
+  return _session;
+}
+
+export function useMembers() {
+  const { session } = useAuth();
+  _session = session ?? {};
+
+  const { data, isLoading, mutate } = useSWR<Member[]>(
+    membersKey(session?.hubId),
+    fetchMembers,
+    {
+      // No polling. Live updates come via the presence WS (member_joined,
+      // member_left, member_groups_changed → see usePresence below) which
+      // calls mutate() on the same key.
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+      dedupingInterval: 2000,
+      onSuccess: (members) => {
+        seedVoiceOccupancy(
+          members.map(
+            (m) =>
+              [m.user_id, m.current_voice_channel_id] as [
+                string,
+                string | null,
+              ],
+          ),
+        );
+      },
+    },
+  );
+
+  return {
+    members: data ?? [],
+    loading: isLoading,
+    refetch: mutate,
+  };
+}
+
+/** Connect presence WebSocket: keeps the user online and listens for
+ *  server-pushed events (voice occupancy + member roster changes). */
 export function usePresence() {
   const { session } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
@@ -90,9 +107,15 @@ export function usePresence() {
     if (!session?.token) return;
     let stopped = false;
 
-    const wsProto = HUB_API.startsWith("https") ? "wss" : "ws";
-    const host = HUB_API.replace(/^https?:\/\//, "");
-    const url = `${wsProto}://${host}/ws/presence/${session.hubId}?token=${session.token}`;
+    // HUB_API is relative ("/api/hub"); resolve against window.location and
+    // swap http(s) → ws(s).
+    const u = new URL(
+      `${HUB_API}/ws/presence/${session.hubId}`,
+      window.location.href,
+    );
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    u.searchParams.set("token", session.token);
+    const url = u.toString();
 
     const connect = () => {
       if (stopped) return;
@@ -102,12 +125,12 @@ export function usePresence() {
       ws.onopen = () => {
         console.log("[Presence] connected");
         retryDelayRef.current = 5_000;
+        // Reconnect after a transient drop: roster could have changed
+        // while we were offline. One revalidate covers it.
+        globalMutate(membersKey(session.hubId));
       };
 
       ws.onmessage = (ev) => {
-        // Hub pushes server-initiated events as JSON frames (currently just
-        // voice_occupancy). Text frames we don't recognise are ignored —
-        // future event types land here too.
         if (typeof ev.data !== "string") return;
         try {
           const msg = JSON.parse(ev.data) as {
@@ -115,11 +138,20 @@ export function usePresence() {
             user_id?: string;
             channel_id?: string | null;
           };
-          if (
-            msg.type === "voice_occupancy" &&
-            typeof msg.user_id === "string"
-          ) {
-            setVoiceOccupancy(msg.user_id, msg.channel_id ?? null);
+          switch (msg.type) {
+            case "voice_occupancy":
+              if (typeof msg.user_id === "string") {
+                setVoiceOccupancy(msg.user_id, msg.channel_id ?? null);
+              }
+              break;
+            case "member_joined":
+            case "member_left":
+            case "member_groups_changed":
+              // Roster delta — invalidate the SWR cache, every consumer
+              // gets the fresh snapshot via the shared cache key.
+              globalMutate(membersKey(session.hubId));
+              break;
+            // Future event types fall through silently.
           }
         } catch {
           /* non-JSON frame, ignore */
@@ -129,7 +161,9 @@ export function usePresence() {
       ws.onclose = () => {
         if (stopped) return;
         const delay = retryDelayRef.current;
-        console.log(`[Presence] disconnected, reconnecting in ${delay / 1000}s`);
+        console.log(
+          `[Presence] disconnected, reconnecting in ${delay / 1000}s`,
+        );
         setTimeout(connect, delay);
         retryDelayRef.current = Math.min(delay * 2, MAX_RETRY_DELAY);
       };

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS hubs (
     name        TEXT NOT NULL,
     slug        TEXT NOT NULL UNIQUE,
     plan        TEXT NOT NULL DEFAULT 'free',   -- free, pro, enterprise
+    avatar_url  TEXT,
     creator_id  BIGINT REFERENCES users(id),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -124,6 +125,34 @@ CREATE TABLE IF NOT EXISTS temp_users (
 CREATE INDEX IF NOT EXISTS idx_temp_users_hub ON temp_users(hub_id);
 CREATE INDEX IF NOT EXISTS idx_temp_users_token ON temp_users(token);
 
+-- ── Permanent invitations ──────────────────────────
+-- One row per invite link. `username` is allocated up front (admin picks
+-- the login when creating the invite). `email` is informational only —
+-- boxed has no SMTP, so the inviter copies the link manually.
+-- Single-use: `used_at` flips from NULL to now() on acceptance, after
+-- which the link returns 410 Gone.
+--
+-- The `username` column is the future users.username, and that table has
+-- a global UNIQUE — but the invite isn't bound to a user yet. Multiple
+-- pending invites for the same username are allowed; the race-loser hits
+-- the users.username UNIQUE on accept and gets a clean error back.
+CREATE TABLE IF NOT EXISTS invitations (
+    id          BIGINT PRIMARY KEY,
+    hub_id      BIGINT NOT NULL REFERENCES hubs(id) ON DELETE CASCADE,
+    token       TEXT NOT NULL UNIQUE,
+    username    TEXT NOT NULL,
+    email       TEXT,
+    group_id    BIGINT REFERENCES groups(id) ON DELETE SET NULL,
+    created_by  BIGINT NOT NULL REFERENCES users(id),
+    used_at     TIMESTAMPTZ,
+    used_by     BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invitations_hub
+    ON invitations(hub_id) WHERE used_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_invitations_token
+    ON invitations(token);
+
 -- ── Refresh tokens ─────────────────────────────────
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id          BIGINT PRIMARY KEY,
@@ -178,6 +207,10 @@ CREATE POLICY dm_participants_hub_isolation ON dm_participants
 
 ALTER TABLE temp_users ENABLE ROW LEVEL SECURITY;
 CREATE POLICY temp_users_hub_isolation ON temp_users
+    USING (hub_id = current_setting('app.current_hub_id', true)::bigint);
+
+ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY invitations_hub_isolation ON invitations
     USING (hub_id = current_setting('app.current_hub_id', true)::bigint);
 
 -- Note: hubs and users tables are NOT under RLS.

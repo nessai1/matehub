@@ -149,12 +149,18 @@ export class VideoClient {
       return;
     }
 
-    const wsProto = this.opts.serverUrl.startsWith("https") ? "wss" : "ws";
-    const host = this.opts.serverUrl.replace(/^https?:\/\//, "");
-    const uuidParam = this.opts.userUuid
-      ? `&user_uuid=${this.opts.userUuid}`
-      : "";
-    const wsUrl = `${wsProto}://${host}/ws/${this.opts.sessionId}?user_id=${this.opts.userId}&token=${this.opts.token}${uuidParam}`;
+    // serverUrl can be absolute or relative ("/api/video"); URL constructor
+    // resolves both correctly against window.location.
+    const base =
+      typeof window !== "undefined"
+        ? window.location.href
+        : "http://localhost";
+    const u = new URL(`${this.opts.serverUrl}/ws/${this.opts.sessionId}`, base);
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    u.searchParams.set("user_id", this.opts.userId);
+    u.searchParams.set("token", this.opts.token);
+    if (this.opts.userUuid) u.searchParams.set("user_uuid", this.opts.userUuid);
+    const wsUrl = u.toString();
 
     this.log("connect", { wsUrl });
 

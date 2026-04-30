@@ -1,6 +1,6 @@
 use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{delete, get}};
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::presence;
@@ -46,94 +46,109 @@ struct GroupBadge {
     color: Option<String>,
 }
 
+/// Row shape from the consolidated members+groups query. `groups` is a JSON
+/// array aggregated server-side (one round-trip instead of two), decoded
+/// directly into Vec<GroupBadgeJson> via sqlx's `json` feature.
 #[derive(sqlx::FromRow)]
-struct MemberRow {
+struct MemberWithGroupsRow {
     user_id: i64,
     username: String,
     display_name: String,
     avatar_url: Option<String>,
     last_seen_at: Option<DateTime<Utc>>,
+    #[sqlx(json)]
+    groups: Vec<GroupBadgeJson>,
 }
 
-#[derive(sqlx::FromRow)]
-struct MemberGroupRow {
-    user_id: i64,
-    group_id: i64,
-    group_name: String,
-    group_color: Option<String>,
+#[derive(Deserialize)]
+struct GroupBadgeJson {
+    id: i64,
+    name: String,
+    color: Option<String>,
 }
 
 async fn get_members_full(
-    State(mut state): State<MembersState>,
+    State(state): State<MembersState>,
     Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<MemberResponse>>, StatusCode> {
     let mut conn = crate::db::rls::hub_connection(&state.pool, hub_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(?e, %hub_id, "hub_connection failed in members-full");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
-    let members = sqlx::query_as::<_, MemberRow>(
-        "SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url, hm.last_seen_at
+    // One query: members + their groups aggregated server-side. LEFT JOIN
+    // covers users with zero groups; FILTER (WHERE g.id IS NOT NULL) keeps
+    // the resulting array empty rather than [{null}].
+    let members_fut = sqlx::query_as::<_, MemberWithGroupsRow>(
+        "SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
+                hm.last_seen_at,
+                COALESCE(
+                    json_agg(
+                        json_build_object('id', g.id, 'name', g.name, 'color', g.color)
+                        ORDER BY g.position
+                    ) FILTER (WHERE g.id IS NOT NULL),
+                    '[]'::json
+                ) AS groups
          FROM users u
          JOIN hub_members hm ON hm.user_id = u.id
+         LEFT JOIN member_groups mg ON mg.user_id = u.id AND mg.hub_id = hm.hub_id
+         LEFT JOIN groups g ON g.id = mg.group_id
          WHERE hm.hub_id = $1
+         GROUP BY u.id, u.username, u.display_name, u.avatar_url,
+                  hm.last_seen_at, hm.joined_at
          ORDER BY hm.joined_at",
     )
     .bind(hub_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .fetch_all(&mut *conn);
 
-    let member_groups = sqlx::query_as::<_, MemberGroupRow>(
-        "SELECT mg.user_id, mg.group_id, g.name AS group_name, g.color AS group_color
-         FROM member_groups mg
-         JOIN groups g ON g.id = mg.group_id
-         WHERE mg.hub_id = $1
-         ORDER BY g.position",
-    )
-    .bind(hub_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Voice snapshot doesn't depend on user_ids — kick it off in parallel.
+    // Online set DOES depend on user_ids, so we await it after SQL completes.
+    let voice_fut = async {
+        if let Some(mut redis) = state.redis.clone() {
+            presence::voice_occupancy_snapshot(&mut redis, hub_id).await
+        } else {
+            std::collections::HashMap::new()
+        }
+    };
+
+    let (members_result, voice_map) = tokio::join!(members_fut, voice_fut);
+    let members = members_result.map_err(|e| {
+        tracing::error!(?e, %hub_id, "members-full SQL failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let user_ids: Vec<i64> = members.iter().map(|m| m.user_id).collect();
-    let (online_set, voice_map) = if let Some(ref mut redis) = state.redis {
-        let online = presence::get_online_set(redis, hub_id, &user_ids).await;
-        let voice = presence::voice_occupancy_snapshot(redis, hub_id).await;
-        (online, voice)
+    let online_set = if let Some(mut redis) = state.redis.clone() {
+        presence::get_online_set(&mut redis, hub_id, &user_ids).await
     } else {
-        (
-            std::collections::HashSet::new(),
-            std::collections::HashMap::new(),
-        )
+        std::collections::HashSet::new()
     };
 
     tracing::debug!(%hub_id, online_count = online_set.len(), voice_count = voice_map.len(), total = user_ids.len(), "presence check");
 
     let mut result: Vec<MemberResponse> = members
         .into_iter()
-        .map(|m| {
-            let groups: Vec<GroupBadge> = member_groups
-                .iter()
-                .filter(|mg| mg.user_id == m.user_id)
-                .map(|mg| GroupBadge {
-                    id: mg.group_id,
-                    name: mg.group_name.clone(),
-                    color: mg.group_color.clone(),
+        .map(|m| MemberResponse {
+            is_online: online_set.contains(&m.user_id),
+            current_voice_channel_id: voice_map.get(&m.user_id).copied(),
+            user_id: m.user_id,
+            username: m.username,
+            display_name: m.display_name,
+            avatar_url: m.avatar_url,
+            last_seen_at: m.last_seen_at,
+            groups: m
+                .groups
+                .into_iter()
+                .map(|g| GroupBadge {
+                    id: g.id,
+                    name: g.name,
+                    color: g.color,
                 })
-                .collect();
-
-            MemberResponse {
-                is_online: online_set.contains(&m.user_id),
-                current_voice_channel_id: voice_map.get(&m.user_id).copied(),
-                user_id: m.user_id,
-                username: m.username,
-                display_name: m.display_name,
-                avatar_url: m.avatar_url,
-                last_seen_at: m.last_seen_at,
-                groups,
-                user_type: "permanent".into(),
-                expires_at: None,
-            }
+                .collect(),
+            user_type: "permanent".into(),
+            expires_at: None,
         })
         .collect();
 
@@ -230,6 +245,7 @@ async fn kick_member(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     crate::acl_publish::invalidate_user(hub_id, user_id).await;
+    crate::member_events::member_left(hub_id, user_id);
 
     tracing::info!(%hub_id, %user_id, caller = auth.0.sub, "member kicked");
 

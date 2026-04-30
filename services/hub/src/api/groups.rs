@@ -258,6 +258,7 @@ async fn add_member_to_group(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     crate::acl_publish::invalidate_user(hub_id, user_id).await;
+    crate::member_events::member_groups_changed(hub_id, user_id);
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -318,6 +319,7 @@ async fn remove_member_from_group(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     crate::acl_publish::invalidate_user(hub_id, user_id).await;
+    crate::member_events::member_groups_changed(hub_id, user_id);
 
     Ok(StatusCode::NO_CONTENT)
 }

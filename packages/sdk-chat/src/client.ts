@@ -142,14 +142,22 @@ export class ChatClient {
   }
 
   private openWebSocket() {
-    const proto = this.opts.baseUrl.startsWith("https") ? "wss" : "ws";
-    const host = this.opts.baseUrl.replace(/^https?:\/\//, "");
-    const url = `${proto}://${host}/gateway`;
+    // baseUrl can be absolute ("https://chat.example.com") or relative
+    // ("/api/chat" for same-origin). The URL constructor handles both: a
+    // relative second arg gets resolved against the first; an absolute one
+    // overrides it. Then we just swap http(s) → ws(s).
+    const base =
+      typeof window !== "undefined"
+        ? window.location.href
+        : "http://localhost";
+    const url = new URL(`${this.opts.baseUrl}/gateway`, base);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = url.toString();
 
-    this.log("opening WS", url);
+    this.log("opening WS", wsUrl);
     this.setState(this.sessionId ? "resuming" : "connecting");
 
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(wsUrl);
     this.ws = ws;
 
     ws.onopen = () => {
