@@ -196,10 +196,16 @@ export function MemberCard({
             {/* Groups */}
             <div className="flex flex-wrap items-center gap-1.5">
               {member.groups.map((g) => {
-                // Can't remove: everyone (is_default), admin on creator
+                // Can't remove:
+                //   - "everyone" (the default group) on anyone
+                //   - "admin" on a non-creator (only creator can demote admins)
+                //   - any group on yourself (use the profile dialog instead;
+                //     also prevents the creator from demoting themselves and
+                //     orphaning the hub)
                 const isProtected =
                   g.name.toLowerCase() === "everyone" ||
-                  (g.name.toLowerCase() === "admin" && perms?.is_creator === false);
+                  (g.name.toLowerCase() === "admin" && perms?.is_creator === false) ||
+                  isSelf;
                 const canRemove = canManageRoles && !isProtected;
                 return (
                   <Badge
@@ -231,7 +237,7 @@ export function MemberCard({
                   </Badge>
                 );
               })}
-              {canManageRoles && (
+              {canManageRoles && !isSelf && (
                 <Popover open={groupPickerOpen} onOpenChange={setGroupPickerOpen}>
                   <PopoverTrigger asChild>
                     <button className="flex h-5 w-5 items-center justify-center rounded border border-border text-muted-foreground hover:text-foreground">
