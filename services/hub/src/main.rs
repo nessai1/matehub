@@ -112,6 +112,7 @@ async fn main() -> Result<()> {
         tracing::warn!(%static_dir, "STATIC_DIR not present, SPA fallback will 404");
     }
 
+    // /health is already registered inside api::routes(); don't duplicate it.
     let app = api::routes(pool, s3, redis, events_tx, dev_mode, sso_state)
         .route(
             "/metrics",
@@ -120,7 +121,6 @@ async fn main() -> Result<()> {
                 move || async move { h.render() }
             }),
         )
-        .route("/health", axum::routing::get(|| async { "ok" }))
         .fallback_service(spa_fallback)
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
