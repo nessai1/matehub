@@ -122,7 +122,7 @@ export default function JoinPage() {
             </div>
 
             <div className="text-center">
-              <p className="font-mono text-[10px] tracking-widest text-indigo-400/80 uppercase">
+              <p className="font-mono text-[10px] tracking-widest text-blue-400/80 uppercase">
                 You are invited to
               </p>
               <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-100">
@@ -134,7 +134,7 @@ export default function JoinPage() {
 
             {/* Identity assignment */}
             <div className="flex w-full items-center gap-3 rounded-md border border-zinc-800 bg-zinc-950/50 px-4 py-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 text-sm font-bold text-indigo-400">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-sm font-bold text-blue-400">
                 {data.nickname.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
@@ -149,7 +149,7 @@ export default function JoinPage() {
 
             <Button
               onClick={enter}
-              className="w-full bg-indigo-600 font-mono text-sm tracking-wide text-white hover:bg-indigo-500 transition-colors"
+              className="w-full bg-blue-600 font-mono text-sm tracking-wide text-white hover:bg-blue-500 transition-colors"
               size="lg"
             >
               Enter Hub
@@ -163,8 +163,8 @@ export default function JoinPage() {
 
         {phase === "entering" && (
           <div className="flex flex-col items-center gap-4 animate-in fade-in duration-300">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-            <p className="font-mono text-sm text-indigo-400">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <p className="font-mono text-sm text-blue-400">
               Entering hub...
             </p>
           </div>

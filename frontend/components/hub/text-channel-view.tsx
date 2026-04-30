@@ -3,11 +3,11 @@ import {
   Hash,
   SendHorizontal,
   Loader2,
-  PlusIcon,
-  SmileIcon,
-  AtSignIcon,
+  // PlusIcon,    -- non-functional, hidden in input bar
+  // SmileIcon,   -- non-functional, hidden in input bar
+  // AtSignIcon,  -- non-functional, hidden in input bar
+  // MicIcon,     -- non-functional, hidden in input bar
   PaperclipIcon,
-  MicIcon,
   BoldIcon,
   ItalicIcon,
   UnderlineIcon,
@@ -832,6 +832,9 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                   e.target.value = ""; // allow re-selecting same file
                 }}
               />
+              {/* Plus / Smile / AtSign / Mic hidden until they have real
+                  handlers. File upload (paperclip above) is the only wired
+                  non-text input action right now.
               {[PlusIcon, SmileIcon, AtSignIcon, MicIcon].map((Icon, i) => (
                 <button
                   key={i}
@@ -839,7 +842,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                 >
                   <Icon className="h-4 w-4" />
                 </button>
-              ))}
+              ))} */}
             </div>
             <div className="flex items-center gap-0.5">
               <Popover>

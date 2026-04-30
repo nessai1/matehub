@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 
@@ -82,7 +83,7 @@ export default function LoginPage() {
               placeholder="alice or alice@matehub.dev"
               required
               autoFocus
-              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-indigo-500/30"
+              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-blue-500/30"
             />
           </div>
 
@@ -96,16 +97,15 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="--------"
               required
-              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-indigo-500/30"
+              className="border-zinc-800 bg-zinc-950/50 font-mono text-sm text-zinc-200 placeholder:text-zinc-700 focus-visible:ring-blue-500/30"
             />
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-950 text-indigo-500 focus:ring-indigo-500/30"
+              onCheckedChange={(checked) => setRememberMe(checked === true)}
+              className="border-zinc-700 bg-zinc-950 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
             />
             <span className="font-mono text-xs text-zinc-400">Remember me</span>
           </label>
@@ -119,7 +119,7 @@ export default function LoginPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="mt-1 w-full bg-indigo-600 font-mono text-sm tracking-wide text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
+            className="mt-1 w-full bg-blue-600 font-mono text-sm tracking-wide text-white hover:bg-blue-500 disabled:opacity-40 transition-colors"
             size="lg"
           >
             {loading ? (

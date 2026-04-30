@@ -13,8 +13,13 @@ export function AuthLayout() {
         }}
       />
 
-      {/* Subtle radial glow */}
-      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/5 blur-[120px]" />
+      {/* Layered radial glow — three concentric blobs at the same point so
+          the light has a hot core and a diffuse halo, not a single flat
+          gradient. Sizes/blurs/opacities are tuned so the form sits inside
+          the brightest zone without any halo edges being visible. */}
+      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[900px] w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500/8 blur-[160px]" />
+      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-500/15 blur-[100px]" />
+      <div className="pointer-events-none absolute top-1/2 left-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-400/12 blur-[60px]" />
 
       <div className="relative z-10 w-full max-w-md px-6">
         <Outlet />
