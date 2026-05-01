@@ -86,8 +86,11 @@ jobs:
           # SERVICE arg tells the Rust builder which crate to compile.
           # Must match `target` -- mismatched values fail loudly at copy
           # time ("matehub-X not found"), which is desired.
+          # VERSION flows into MATEHUB_VERSION env so /version reports
+          # the same tag the image was published under.
           build-args: |
             SERVICE=${{ steps.parse.outputs.service }}
+            VERSION=${{ steps.parse.outputs.version }}
           push: true
           tags: ${{ steps.parse.outputs.image }}
           # Cache scoped per service so video's cache doesn't evict hub's.

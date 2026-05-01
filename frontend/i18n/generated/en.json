@@ -669,6 +669,57 @@
       ],
       "Toggle members": [
         "Toggle members"
+      ],
+      "Deleted user": [
+        "Deleted user"
+      ],
+      "Guest session expired": [
+        "Guest session expired"
+      ],
+      "No longer in hub": [
+        "No longer in hub"
+      ],
+      "Your session has ended": [
+        "Your session has ended"
+      ],
+      "Your guest access has expired. Contact the person who invited you to get a new link.": [
+        "Your guest access has expired. Contact the person who invited you to get a new link."
+      ],
+      "OK": [
+        "OK"
+      ],
+      "until %s": [
+        "until %s"
+      ],
+      "Guest until %s": [
+        "Guest until %s"
+      ],
+      "Description": [
+        "Description"
+      ],
+      "Services": [
+        "Services"
+      ],
+      "No services reachable": [
+        "No services reachable"
+      ],
+      "What's this hub about?": [
+        "What's this hub about?"
+      ],
+      "Click to upload icon (max 10MB)": [
+        "Click to upload icon (max 10MB)"
+      ],
+      "Hub name is required": [
+        "Hub name is required"
+      ],
+      "Avatar upload failed": [
+        "Avatar upload failed"
+      ],
+      "Save failed": [
+        "Save failed"
+      ],
+      "Only hub admins can change settings": [
+        "Only hub admins can change settings"
       ]
     }
   }

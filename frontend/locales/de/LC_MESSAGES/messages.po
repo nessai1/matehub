@@ -669,3 +669,54 @@ msgstr "Kanäle ein-/ausblenden"
 
 msgid "Toggle members"
 msgstr "Mitglieder ein-/ausblenden"
+
+msgid "Deleted user"
+msgstr "Gelöschter Benutzer"
+
+msgid "Guest session expired"
+msgstr "Gastsitzung abgelaufen"
+
+msgid "No longer in hub"
+msgstr "Nicht mehr im Hub"
+
+msgid "Your session has ended"
+msgstr "Ihre Sitzung ist beendet"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "Ihr Gastzugang ist abgelaufen. Wenden Sie sich an die Person, die Sie eingeladen hat, um einen neuen Link zu erhalten."
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "bis %s"
+
+msgid "Guest until %s"
+msgstr "Gast bis %s"
+
+msgid "Description"
+msgstr "Beschreibung"
+
+msgid "Services"
+msgstr "Dienste"
+
+msgid "No services reachable"
+msgstr "Keine Dienste erreichbar"
+
+msgid "What's this hub about?"
+msgstr "Worum geht es in diesem Hub?"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "Klicken zum Hochladen des Icons (max. 10MB)"
+
+msgid "Hub name is required"
+msgstr "Hub-Name ist erforderlich"
+
+msgid "Avatar upload failed"
+msgstr "Avatar-Upload fehlgeschlagen"
+
+msgid "Save failed"
+msgstr "Speichern fehlgeschlagen"
+
+msgid "Only hub admins can change settings"
+msgstr "Nur Hub-Admins können die Einstellungen ändern"

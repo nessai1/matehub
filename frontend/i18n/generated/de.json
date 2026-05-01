@@ -669,6 +669,57 @@
       ],
       "Toggle members": [
         "Mitglieder ein-/ausblenden"
+      ],
+      "Deleted user": [
+        "Gelöschter Benutzer"
+      ],
+      "Guest session expired": [
+        "Gastsitzung abgelaufen"
+      ],
+      "No longer in hub": [
+        "Nicht mehr im Hub"
+      ],
+      "Your session has ended": [
+        "Ihre Sitzung ist beendet"
+      ],
+      "Your guest access has expired. Contact the person who invited you to get a new link.": [
+        "Ihr Gastzugang ist abgelaufen. Wenden Sie sich an die Person, die Sie eingeladen hat, um einen neuen Link zu erhalten."
+      ],
+      "OK": [
+        "OK"
+      ],
+      "until %s": [
+        "bis %s"
+      ],
+      "Guest until %s": [
+        "Gast bis %s"
+      ],
+      "Description": [
+        "Beschreibung"
+      ],
+      "Services": [
+        "Dienste"
+      ],
+      "No services reachable": [
+        "Keine Dienste erreichbar"
+      ],
+      "What's this hub about?": [
+        "Worum geht es in diesem Hub?"
+      ],
+      "Click to upload icon (max 10MB)": [
+        "Klicken zum Hochladen des Icons (max. 10MB)"
+      ],
+      "Hub name is required": [
+        "Hub-Name ist erforderlich"
+      ],
+      "Avatar upload failed": [
+        "Avatar-Upload fehlgeschlagen"
+      ],
+      "Save failed": [
+        "Speichern fehlgeschlagen"
+      ],
+      "Only hub admins can change settings": [
+        "Nur Hub-Admins können die Einstellungen ändern"
       ]
     }
   }

@@ -40,7 +40,15 @@ pub fn routes(state: AppState) -> Router {
         .merge(crate::attachments::routes())
         .merge(crate::dm_calls::routes())
         .route("/health", get(|| async { "ok" }))
+        .route("/version", get(version_handler))
         .with_state(state)
+}
+
+async fn version_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "service": "chat",
+        "version": option_env!("MATEHUB_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
+    }))
 }
 
 // ── Send Message ────────────────────────────────

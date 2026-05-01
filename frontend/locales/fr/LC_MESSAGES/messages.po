@@ -669,3 +669,54 @@ msgstr "Basculer les canaux"
 
 msgid "Toggle members"
 msgstr "Basculer les membres"
+
+msgid "Deleted user"
+msgstr "Utilisateur supprimé"
+
+msgid "Guest session expired"
+msgstr "Session invité expirée"
+
+msgid "No longer in hub"
+msgstr "N'est plus dans le hub"
+
+msgid "Your session has ended"
+msgstr "Votre session est terminée"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "Votre accès invité a expiré. Contactez la personne qui vous a invité pour obtenir un nouveau lien."
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "jusqu'à %s"
+
+msgid "Guest until %s"
+msgstr "Invité jusqu'à %s"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Services"
+msgstr "Services"
+
+msgid "No services reachable"
+msgstr "Aucun service joignable"
+
+msgid "What's this hub about?"
+msgstr "À propos de ce hub ?"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "Cliquez pour téléverser une icône (max 10 Mo)"
+
+msgid "Hub name is required"
+msgstr "Le nom du hub est requis"
+
+msgid "Avatar upload failed"
+msgstr "Échec du téléversement"
+
+msgid "Save failed"
+msgstr "Échec de l'enregistrement"
+
+msgid "Only hub admins can change settings"
+msgstr "Seuls les admins peuvent modifier les paramètres"

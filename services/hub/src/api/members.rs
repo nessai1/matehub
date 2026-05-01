@@ -40,7 +40,10 @@ struct MemberResponse {
     last_seen_at: Option<DateTime<Utc>>,
     groups: Vec<GroupBadge>,
     user_type: String,
+    /// For temp users: when the magic-link dies. NULL for permanent users.
     expires_at: Option<DateTime<Utc>>,
+    /// For users whose account was wiped (GDPR-style). NULL = alive.
+    deleted_at: Option<DateTime<Utc>>,
     /// Voice channel the user is currently connected to (if any). Populated
     /// from Redis voice_occupancy:<hub_id>, which the video service keeps in
     /// sync via NATS.
@@ -67,6 +70,7 @@ struct MemberWithGroupsRow {
     avatar_url: Option<String>,
     user_type: String,
     expires_at: Option<DateTime<Utc>>,
+    deleted_at: Option<DateTime<Utc>>,
     last_seen_at: Option<DateTime<Utc>>,
     #[sqlx(json)]
     groups: Vec<GroupBadgeJson>,
@@ -94,13 +98,13 @@ async fn get_members_full(
     // covers users with zero groups; FILTER (WHERE g.id IS NOT NULL) keeps
     // the resulting array empty rather than [{null}].
     //
-    // Filter rules:
-    //   * deleted_at IS NULL          → don't list scrubbed accounts
-    //   * (expires_at IS NULL         → permanent users always pass
-    //      OR expires_at > now())     → temp users only while their link is alive
+    // Note: NO active/expired/deleted filter here. We need expired guests
+    // and (future) scrubbed accounts in the response so the chat client can
+    // resolve their display_name when rendering historic messages. The
+    // sidebar hides them client-side; MemberCard labels them appropriately.
     let members_fut = sqlx::query_as::<_, MemberWithGroupsRow>(
         "SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
-                u.user_type, u.expires_at,
+                u.user_type, u.expires_at, u.deleted_at,
                 hm.last_seen_at,
                 COALESCE(
                     json_agg(
@@ -114,10 +118,8 @@ async fn get_members_full(
          LEFT JOIN member_groups mg ON mg.user_id = u.id AND mg.hub_id = hm.hub_id
          LEFT JOIN groups g ON g.id = mg.group_id
          WHERE hm.hub_id = $1
-           AND u.deleted_at IS NULL
-           AND (u.expires_at IS NULL OR u.expires_at > now())
          GROUP BY u.id, u.username, u.display_name, u.avatar_url,
-                  u.user_type, u.expires_at,
+                  u.user_type, u.expires_at, u.deleted_at,
                   hm.last_seen_at, hm.joined_at
          ORDER BY hm.joined_at",
     )
@@ -170,6 +172,7 @@ async fn get_members_full(
                 .collect(),
             user_type: m.user_type,
             expires_at: m.expires_at,
+            deleted_at: m.deleted_at,
         })
         .collect();
 

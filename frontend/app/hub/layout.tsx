@@ -13,6 +13,7 @@ import { IncomingCallProvider } from "@/contexts/incoming-call-context";
 import { AddTeammatesProvider } from "@/contexts/add-teammates-context";
 import { MemberSidebarProvider } from "@/contexts/member-sidebar-context";
 import { IncomingCallDialog } from "@/components/hub/incoming-call-dialog";
+import { SessionExpiredDialog } from "@/components/session-expired-dialog";
 
 // Mirror member-sidebar-context's COLLAPSE_BREAKPOINT so both sidebars react
 // to the same threshold. Media query wins on every resize event — manual
@@ -81,6 +82,7 @@ export function HubLayout() {
                           </SidebarInset>
                         </SidebarProvider>
                         <IncomingCallDialog />
+                        <SessionExpiredDialog />
                       </MemberSidebarProvider>
                     </AddTeammatesProvider>
                   </IncomingCallProvider>

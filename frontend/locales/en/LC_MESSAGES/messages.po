@@ -694,3 +694,54 @@ msgstr "Toggle channels"
 
 msgid "Toggle members"
 msgstr "Toggle members"
+
+msgid "Deleted user"
+msgstr "Deleted user"
+
+msgid "Guest session expired"
+msgstr "Guest session expired"
+
+msgid "No longer in hub"
+msgstr "No longer in hub"
+
+msgid "Your session has ended"
+msgstr "Your session has ended"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "Your guest access has expired. Contact the person who invited you to get a new link."
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "until %s"
+
+msgid "Guest until %s"
+msgstr "Guest until %s"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Services"
+msgstr "Services"
+
+msgid "No services reachable"
+msgstr "No services reachable"
+
+msgid "What's this hub about?"
+msgstr "What's this hub about?"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "Click to upload icon (max 10MB)"
+
+msgid "Hub name is required"
+msgstr "Hub name is required"
+
+msgid "Avatar upload failed"
+msgstr "Avatar upload failed"
+
+msgid "Save failed"
+msgstr "Save failed"
+
+msgid "Only hub admins can change settings"
+msgstr "Only hub admins can change settings"

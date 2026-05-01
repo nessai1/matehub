@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,12 +16,16 @@ import {
 import {
   ChevronsUpDownIcon,
   SettingsIcon,
-  LinkIcon,
   UsersIcon,
   ShieldIcon,
   GlobeIcon,
   MessageSquareIcon,
 } from "lucide-react"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar"
 import {
   Dialog,
   DialogContent,
@@ -32,6 +36,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { GroupsRolesDialog } from "@/components/hub/groups-roles-dialog"
+import { HubSettingsDialog } from "@/components/hub/hub-settings-dialog"
 import { useMembers } from "@/hooks/use-members"
 import { usePermissions, P } from "@/hooks/use-permissions"
 import { useAuth } from "@/lib/auth"
@@ -42,6 +47,14 @@ interface Hub {
   name: string
   slug: string
   plan: string
+  avatarUrl: string | null
+  description: string | null
+}
+
+interface ServiceInfo {
+  name: string
+  version: string | null
+  status: "up" | "down"
 }
 
 export function HubSwitcher({
@@ -56,25 +69,54 @@ export function HubSwitcher({
   const { session } = useAuth()
   const { perms, has } = usePermissions()
   const [rolesOpen, setRolesOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [services, setServices] = useState<ServiceInfo[] | null>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackEmail, setFeedbackEmail] = useState("")
   const [feedbackText, setFeedbackText] = useState("")
   const [feedbackSending, setFeedbackSending] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState(false)
 
+  // Lazy-load service versions: only when the dropdown opens, and only
+  // once per session — versions don't change between page loads, and
+  // the aggregator does N HTTP calls server-side so caching matters.
+  useEffect(() => {
+    if (!menuOpen || services !== null || !session?.token) return
+    let cancelled = false
+    fetch(`/api/hub/v1/services/versions`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: ServiceInfo[]) => {
+        if (!cancelled) setServices(data)
+      })
+      .catch(() => {
+        if (!cancelled) setServices([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [menuOpen, services, session?.token])
+
   return (
     <>
       <SidebarMenu>
         <SidebarMenuItem>
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               >
-                <div className="flex aspect-square size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-                  <UsersIcon className="size-4" />
-                </div>
+                <Avatar className="aspect-square size-8 rounded-md">
+                  {currentHub.avatarUrl && (
+                    <AvatarImage src={currentHub.avatarUrl} className="object-cover" />
+                  )}
+                  <AvatarFallback className="rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+                    {currentHub.name?.charAt(0).toUpperCase() ?? <UsersIcon className="size-4" />}
+                  </AvatarFallback>
+                </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{currentHub.name}</span>
                   <span className="w-fit rounded bg-blue-600/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">
@@ -106,14 +148,17 @@ export function HubSwitcher({
                 <MessageSquareIcon className="size-4 text-muted-foreground" />
                 {t("Send Feedback")}
               </DropdownMenuItem>
-              {(perms?.is_admin || has(P.MANAGE_ROLES) || has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS)) && (
+              {(perms?.is_admin || has(P.MANAGE_ROLES)) && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel className="text-xs text-muted-foreground">
                     {t("Hub Settings")}
                   </DropdownMenuLabel>
                   {perms?.is_admin && (
-                    <DropdownMenuItem className="gap-2">
+                    <DropdownMenuItem
+                      className="gap-2"
+                      onSelect={() => setSettingsOpen(true)}
+                    >
                       <SettingsIcon className="size-4 text-muted-foreground" />
                       {t("General")}
                     </DropdownMenuItem>
@@ -124,13 +169,41 @@ export function HubSwitcher({
                       {t("Groups & Roles")}
                     </DropdownMenuItem>
                   )}
-                  {(has(P.INVITE_PERMANENT) || has(P.CREATE_TEMP_LINKS)) && (
-                    <DropdownMenuItem className="gap-2">
-                      <LinkIcon className="size-4 text-muted-foreground" />
-                      {t("Invite Links")}
-                    </DropdownMenuItem>
-                  )}
                 </>
+              )}
+
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                {t("Services")}
+              </DropdownMenuLabel>
+              {services === null ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {t("Loading...")}
+                </div>
+              ) : services.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  {t("No services reachable")}
+                </div>
+              ) : (
+                services.map((s) => (
+                  <div
+                    key={s.name}
+                    className="flex items-center gap-2 px-2 py-1 text-xs"
+                  >
+                    <span
+                      className={
+                        s.status === "up"
+                          ? "size-1.5 rounded-full bg-emerald-500"
+                          : "size-1.5 rounded-full bg-zinc-500"
+                      }
+                      aria-hidden
+                    />
+                    <span className="font-medium">{s.name}</span>
+                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                      {s.version ?? "—"}
+                    </span>
+                  </div>
+                ))
               )}
               {otherHubs.length > 0 && (
                 <>
@@ -154,6 +227,7 @@ export function HubSwitcher({
       </SidebarMenu>
 
       <GroupsRolesDialog open={rolesOpen} onOpenChange={setRolesOpen} onGroupsChanged={refetchMembers} />
+      <HubSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <Dialog open={feedbackOpen} onOpenChange={(v: boolean) => setFeedbackOpen(v)}>
         <DialogContent className="sm:max-w-sm">

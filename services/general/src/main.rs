@@ -69,6 +69,7 @@ async fn main() -> Result<()> {
                 move || async move { h.render() }
             }),
         )
+        .route("/version", axum::routing::get(version_handler))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .layer(metrics_layer);
@@ -79,4 +80,11 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+async fn version_handler() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "service": "general",
+        "version": option_env!("MATEHUB_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
+    }))
 }

@@ -669,3 +669,54 @@ msgstr "切换频道"
 
 msgid "Toggle members"
 msgstr "切换成员"
+
+msgid "Deleted user"
+msgstr "已删除用户"
+
+msgid "Guest session expired"
+msgstr "访客会话已过期"
+
+msgid "No longer in hub"
+msgstr "已离开此中心"
+
+msgid "Your session has ended"
+msgstr "您的会话已结束"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "您的访客访问已过期。请联系邀请您的人获取新链接。"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "至 %s"
+
+msgid "Guest until %s"
+msgstr "访客 至 %s"
+
+msgid "Description"
+msgstr "描述"
+
+msgid "Services"
+msgstr "服务"
+
+msgid "No services reachable"
+msgstr "无可用服务"
+
+msgid "What's this hub about?"
+msgstr "这个空间是关于什么的？"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "点击上传图标（最大10MB）"
+
+msgid "Hub name is required"
+msgstr "请填写空间名称"
+
+msgid "Avatar upload failed"
+msgstr "头像上传失败"
+
+msgid "Save failed"
+msgstr "保存失败"
+
+msgid "Only hub admins can change settings"
+msgstr "只有管理员可以修改设置"

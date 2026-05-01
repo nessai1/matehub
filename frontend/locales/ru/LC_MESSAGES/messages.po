@@ -669,3 +669,54 @@ msgstr "Переключить каналы"
 
 msgid "Toggle members"
 msgstr "Переключить участников"
+
+msgid "Deleted user"
+msgstr "Удалённый пользователь"
+
+msgid "Guest session expired"
+msgstr "Гостевая сессия истекла"
+
+msgid "No longer in hub"
+msgstr "Больше не в хабе"
+
+msgid "Your session has ended"
+msgstr "Ваша сессия завершена"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "Время гостевого доступа истекло. Обратитесь к тому, кто вас приглашал, чтобы получить новую ссылку."
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "до %s"
+
+msgid "Guest until %s"
+msgstr "Гость до %s"
+
+msgid "Description"
+msgstr "Описание"
+
+msgid "Services"
+msgstr "Сервисы"
+
+msgid "No services reachable"
+msgstr "Сервисы недоступны"
+
+msgid "What's this hub about?"
+msgstr "О чём этот хаб?"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "Нажмите, чтобы загрузить иконку (макс 10МБ)"
+
+msgid "Hub name is required"
+msgstr "Укажите название хаба"
+
+msgid "Avatar upload failed"
+msgstr "Не удалось загрузить аватар"
+
+msgid "Save failed"
+msgstr "Не удалось сохранить"
+
+msgid "Only hub admins can change settings"
+msgstr "Только админы могут менять настройки"

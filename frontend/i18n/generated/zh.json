@@ -669,6 +669,57 @@
       ],
       "Toggle members": [
         "切换成员"
+      ],
+      "Deleted user": [
+        "已删除用户"
+      ],
+      "Guest session expired": [
+        "访客会话已过期"
+      ],
+      "No longer in hub": [
+        "已离开此中心"
+      ],
+      "Your session has ended": [
+        "您的会话已结束"
+      ],
+      "Your guest access has expired. Contact the person who invited you to get a new link.": [
+        "您的访客访问已过期。请联系邀请您的人获取新链接。"
+      ],
+      "OK": [
+        "OK"
+      ],
+      "until %s": [
+        "至 %s"
+      ],
+      "Guest until %s": [
+        "访客 至 %s"
+      ],
+      "Description": [
+        "描述"
+      ],
+      "Services": [
+        "服务"
+      ],
+      "No services reachable": [
+        "无可用服务"
+      ],
+      "What's this hub about?": [
+        "这个空间是关于什么的？"
+      ],
+      "Click to upload icon (max 10MB)": [
+        "点击上传图标（最大10MB）"
+      ],
+      "Hub name is required": [
+        "请填写空间名称"
+      ],
+      "Avatar upload failed": [
+        "头像上传失败"
+      ],
+      "Save failed": [
+        "保存失败"
+      ],
+      "Only hub admins can change settings": [
+        "只有管理员可以修改设置"
       ]
     }
   }

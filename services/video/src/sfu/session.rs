@@ -1,13 +1,19 @@
 use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
 
 use str0m::Rtc;
 use str0m::change::SdpPendingOffer;
-use str0m::media::{MediaKind, Mid};
+use str0m::media::{KeyframeRequestKind, MediaKind, Mid};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::sfu::ParticipantId;
 use crate::signaling::ServerMessage;
+
+/// Minimum gap between consecutive PLI requests we send to the same
+/// (publisher, mid). Coalesces bursts; well below any reasonable encoder's
+/// own keyframe-suppression window so we never starve a real request.
+const KEYFRAME_THROTTLE: Duration = Duration::from_millis(500);
 
 pub type SessionId = Uuid;
 
@@ -22,6 +28,12 @@ pub struct SfuSession {
     /// participant leaves. Empty entries are pruned. Lives here (not on the
     /// participants) so media forwarding doesn't have to scan per packet.
     pub forwarding_map: HashMap<(ParticipantId, Mid), Vec<(ParticipantId, Mid)>>,
+    /// Timestamp of the last keyframe (PLI) we asked of (publisher, mid).
+    /// Coalesces bursts when many subscribers open a track at once, e.g.
+    /// 30 viewers acking a screen-share offer in the same RTT — without
+    /// throttling each one would fire its own PLI and the publisher's
+    /// encoder would emit multiple I-frames in a row, spiking bitrate.
+    pub last_keyframe_at: HashMap<(ParticipantId, Mid), Instant>,
 }
 
 impl SfuSession {
@@ -30,6 +42,38 @@ impl SfuSession {
             id,
             participants: HashMap::new(),
             forwarding_map: HashMap::new(),
+            last_keyframe_at: HashMap::new(),
+        }
+    }
+
+    /// Send a PLI keyframe request to (publisher, mid), coalescing bursts:
+    /// no-op if we've already requested one within KEYFRAME_THROTTLE.
+    /// Returns true if a request was actually sent. Used by both the
+    /// "subscriber just opened" path and the "browser PLI from subscriber"
+    /// path, so a 30-viewer fan-in doesn't translate to 30 I-frames.
+    pub fn request_keyframe_throttled(
+        &mut self,
+        publisher_pid: ParticipantId,
+        publisher_mid: Mid,
+    ) -> bool {
+        let now = Instant::now();
+        if let Some(t) = self.last_keyframe_at.get(&(publisher_pid, publisher_mid))
+            && now.duration_since(*t) < KEYFRAME_THROTTLE
+        {
+            return false;
+        }
+        let Some(publisher) = self.participants.get_mut(&publisher_pid) else {
+            return false;
+        };
+        let Some(mut writer) = publisher.rtc.writer(publisher_mid) else {
+            return false;
+        };
+        if writer.request_keyframe(None, KeyframeRequestKind::Pli).is_ok() {
+            self.last_keyframe_at
+                .insert((publisher_pid, publisher_mid), now);
+            true
+        } else {
+            false
         }
     }
 
@@ -42,6 +86,11 @@ impl SfuSession {
             targets.retain(|&(subscriber, _)| subscriber != gone);
         }
         self.forwarding_map.retain(|_, targets| !targets.is_empty());
+        // Throttle table is keyed by publisher; if the publisher leaves, clear
+        // the stale entries so re-joins don't see a "recent" request that was
+        // for a previous incarnation.
+        self.last_keyframe_at
+            .retain(|&(publisher, _), _| publisher != gone);
     }
 }
 
@@ -97,6 +146,14 @@ pub struct TrackIn {
     /// screen tracks are explicitly marked via a `publish_track` signal
     /// arriving before the SDP offer (§5.2 screen-share design doc).
     pub source: Source,
+    /// Has the high simulcast layer (rid="h") ever been received from the
+    /// publisher? Flips true on the first `h` packet and never goes back.
+    /// Drives the start-up fallback: while `h` hasn't shown up yet (BWE
+    /// hasn't ramped on the sender), the SFU forwards `l` so subscribers
+    /// see something instead of a black screen for the first few seconds.
+    /// Once `h` is live we drop `l` again — adaptive per-subscriber layer
+    /// pick is a separate, larger feature.
+    pub seen_high_layer: bool,
 }
 
 #[derive(Debug)]

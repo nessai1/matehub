@@ -39,6 +39,13 @@ interface AuthContextValue {
   logout: () => void;
   /** Call on any 401 response -- triggers refresh or redirect to /login */
   handleUnauthorized: () => void;
+  /** True when a temp guest's link has expired and the friendly modal should
+   *  take over (instead of the abrupt /login redirect that permanent users
+   *  get on auth failure). */
+  sessionExpired: boolean;
+  /** Called by the SessionExpiredDialog when the user has read the message
+   *  and is ready to be sent to /login. */
+  acknowledgeSessionExpired: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -47,6 +54,8 @@ const AuthContext = createContext<AuthContextValue>({
   login: () => {},
   logout: () => {},
   handleUnauthorized: () => {},
+  sessionExpired: false,
+  acknowledgeSessionExpired: () => {},
 });
 
 const STORAGE_KEY = "matehub_session";
@@ -74,6 +83,7 @@ function jwtSecondsLeft(token: string): number {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Attempt to refresh the access token using the refresh token
@@ -218,6 +228,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
     }
+    // Temp guests have no refresh token by design — their access ends when
+    // the link does. Surface that as a friendly modal instead of an abrupt
+    // bounce to /login. The acknowledge button does the actual teardown.
+    if (session?.type === "temp") {
+      setSessionExpired(true);
+      return;
+    }
     // Refresh failed or no refresh token -- kick to login
     if (refreshTimerRef.current) {
       clearTimeout(refreshTimerRef.current);
@@ -227,9 +244,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.href = "/login";
   }, [session, tryRefresh, scheduleRefresh]);
 
+  // Temp-only expiry timer. Permanent sessions go through scheduleRefresh,
+  // which renews the JWT before exp; we don't fire the modal for them. For
+  // temp guests there's no refresh path, so the JWT exp IS the end of life
+  // — flip into expired state at that exact moment so the modal beats any
+  // 401 racing in from open WS clients.
+  useEffect(() => {
+    if (!session || session.type !== "temp") return;
+    const secs = jwtSecondsLeft(session.token);
+    if (secs <= 0) {
+      setSessionExpired(true);
+      return;
+    }
+    const t = setTimeout(() => setSessionExpired(true), secs * 1000);
+    return () => clearTimeout(t);
+  }, [session]);
+
+  const acknowledgeSessionExpired = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+    setSessionExpired(false);
+    setSession(null);
+    localStorage.removeItem(STORAGE_KEY);
+    window.location.href = "/login";
+  }, []);
+
   const value = useMemo(
-    () => ({ session, isLoading, login, logout, handleUnauthorized }),
-    [session, isLoading, login, logout, handleUnauthorized],
+    () => ({
+      session,
+      isLoading,
+      login,
+      logout,
+      handleUnauthorized,
+      sessionExpired,
+      acknowledgeSessionExpired,
+    }),
+    [
+      session,
+      isLoading,
+      login,
+      logout,
+      handleUnauthorized,
+      sessionExpired,
+      acknowledgeSessionExpired,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

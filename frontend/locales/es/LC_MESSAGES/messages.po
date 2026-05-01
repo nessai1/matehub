@@ -669,3 +669,54 @@ msgstr "Mostrar/ocultar canales"
 
 msgid "Toggle members"
 msgstr "Mostrar/ocultar miembros"
+
+msgid "Deleted user"
+msgstr "Usuario eliminado"
+
+msgid "Guest session expired"
+msgstr "Sesión de invitado expirada"
+
+msgid "No longer in hub"
+msgstr "Ya no está en el hub"
+
+msgid "Your session has ended"
+msgstr "Tu sesión ha terminado"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "Tu acceso de invitado ha expirado. Contacta con quien te invitó para obtener un nuevo enlace."
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "hasta %s"
+
+msgid "Guest until %s"
+msgstr "Invitado hasta %s"
+
+msgid "Description"
+msgstr "Descripción"
+
+msgid "Services"
+msgstr "Servicios"
+
+msgid "No services reachable"
+msgstr "Servicios no disponibles"
+
+msgid "What's this hub about?"
+msgstr "¿De qué trata este hub?"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "Haz clic para subir el icono (máx. 10MB)"
+
+msgid "Hub name is required"
+msgstr "El nombre del hub es obligatorio"
+
+msgid "Avatar upload failed"
+msgstr "Error al subir el avatar"
+
+msgid "Save failed"
+msgstr "Error al guardar"
+
+msgid "Only hub admins can change settings"
+msgstr "Solo los administradores pueden cambiar la configuración"

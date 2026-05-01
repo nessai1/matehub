@@ -2,6 +2,7 @@ import { HubSwitcher } from "@/components/hub-switcher"
 import { NavChannels } from "@/components/nav-channels"
 import { NavUser } from "@/components/nav-user"
 import { useAuth } from "@/lib/auth"
+import { useHub } from "@/hooks/use-hub"
 import {
   Sidebar,
   SidebarContent,
@@ -12,6 +13,7 @@ import { Suspense } from "react"
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { session } = useAuth()
+  const { hub } = useHub()
 
   if (!session) return null
 
@@ -21,9 +23,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <HubSwitcher
           currentHub={{
             id: session.hubId,
-            name: "Dev Hub", // TODO: fetch from API
-            slug: session.hubSlug,
-            plan: "Pro",
+            name: hub?.name ?? session.hubSlug,
+            slug: hub?.slug ?? session.hubSlug,
+            plan: hub?.plan ?? "free",
+            avatarUrl: hub?.avatar_url ?? null,
+            description: hub?.description ?? null,
           }}
           otherHubs={[]}
         />

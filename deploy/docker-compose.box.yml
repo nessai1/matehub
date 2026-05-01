@@ -150,6 +150,11 @@ services:
       TURN_URL: ${TURN_URL}
       TURN_USERNAME: ${TURN_USERNAME}
       TURN_PASSWORD: ${TURN_PASSWORD}
+      # Peer URLs for the /v1/services/versions aggregator. Each peer
+      # exposes /version on its HTTP port; transcoder is omitted (worker,
+      # no HTTP) and shows as "down" until we wire NATS heartbeats.
+      PEER_CHAT_URL: http://chat:3003
+      PEER_VIDEO_URL: http://video:4000
     depends_on:
       postgres: { condition: service_healthy }
       redis:    { condition: service_healthy }

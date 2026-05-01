@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { usePermissions, P } from "@/hooks/use-permissions";
-import type { Member, MemberGroup } from "@/hooks/use-members";
+import { isMemberActive, type Member, type MemberGroup } from "@/hooks/use-members";
 import { useChannels } from "@/hooks/use-channels";
 import { useIncomingCall } from "@/contexts/incoming-call-context";
 import { useHubSelection } from "@/contexts/hub-selection-context";
@@ -74,6 +74,14 @@ export function MemberCard({
   const canManageRoles = has(P.MANAGE_ROLES);
   const canManageMembers = has(P.MANAGE_MEMBERS);
   const isSelf = session?.userId === member.user_id;
+  // Inactive = expired-temp or scrubbed account. They appear here only because
+  // chat history references them; you can't ping/message/kick a ghost.
+  const active = isMemberActive(member);
+  const inactiveLabel = member.deleted_at
+    ? t("Deleted user")
+    : member.user_type === "temp"
+      ? t("Guest session expired")
+      : t("No longer in hub");
 
   const handleMessage = useCallback(async () => {
     const channel = await openDm(member.user_id);
@@ -141,6 +149,33 @@ export function MemberCard({
     }
   }, [session, member.user_id, onGroupsChanged]);
 
+  /** Same-day → HH:MM, otherwise "DD MMM, HH:MM". Mirrors the helper in
+   *  member-sidebar.tsx; kept inline here so the popup is independent of
+   *  the sidebar component. */
+  const formatExpiry = (iso: string): string => {
+    try {
+      const d = new Date(iso);
+      const now = new Date();
+      const sameDay =
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate();
+      return d.toLocaleString(
+        undefined,
+        sameDay
+          ? { hour: "2-digit", minute: "2-digit" }
+          : {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            },
+      );
+    } catch {
+      return iso;
+    }
+  };
+
   const formatLastSeen = (iso: string | null) => {
     if (!iso) return t("Never");
     const d = new Date(iso);
@@ -171,7 +206,11 @@ export function MemberCard({
                 </AvatarFallback>
               </Avatar>
 
-              {member.is_online ? (
+              {!active ? (
+                <span className="mt-2 rounded-full bg-muted px-2.5 py-0.5 text-[10px] italic text-muted-foreground">
+                  {inactiveLabel}
+                </span>
+              ) : member.is_online ? (
                 <span className="mt-2 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-medium text-emerald-500">
                   {t("online")}
                 </span>
@@ -184,11 +223,15 @@ export function MemberCard({
               <h3 className="mt-2 text-base font-semibold text-foreground">
                 {member.display_name}
               </h3>
-              <p className="text-xs text-muted-foreground">@{member.username}</p>
+              {!member.deleted_at && (
+                <p className="text-xs text-muted-foreground">@{member.username}</p>
+              )}
 
-              {member.user_type === "temp" && (
+              {member.user_type === "temp" && active && (
                 <span className="mt-0.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] text-amber-500">
-                  {t("Temporary")}
+                  {member.expires_at
+                    ? t("Guest until %s", formatExpiry(member.expires_at))
+                    : t("Temporary")}
                 </span>
               )}
             </div>
@@ -206,7 +249,7 @@ export function MemberCard({
                   g.name.toLowerCase() === "everyone" ||
                   (g.name.toLowerCase() === "admin" && perms?.is_creator === false) ||
                   isSelf;
-                const canRemove = canManageRoles && !isProtected;
+                const canRemove = canManageRoles && !isProtected && active;
                 return (
                   <Badge
                     key={g.id}
@@ -237,7 +280,7 @@ export function MemberCard({
                   </Badge>
                 );
               })}
-              {canManageRoles && !isSelf && (
+              {canManageRoles && !isSelf && active && (
                 <Popover open={groupPickerOpen} onOpenChange={setGroupPickerOpen}>
                   <PopoverTrigger asChild>
                     <button className="flex h-5 w-5 items-center justify-center rounded border border-border text-muted-foreground hover:text-foreground">
@@ -280,7 +323,7 @@ export function MemberCard({
             </div>
 
             {/* Actions */}
-            {!isSelf && (
+            {!isSelf && active && (
               <div className="flex items-center justify-center gap-2">
                 <Button
                   size="sm"

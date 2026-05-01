@@ -8,6 +8,8 @@ pub struct Hub {
     pub name: String,
     pub slug: String,
     pub plan: String,
+    pub avatar_url: Option<String>,
+    pub description: Option<String>,
     #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     pub creator_id: Option<i64>,
     pub created_at: DateTime<Utc>,

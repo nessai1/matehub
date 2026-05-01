@@ -10,13 +10,15 @@ pub mod members;
 pub mod permissions;
 pub mod presence_ws;
 pub mod profile;
+pub mod services;
 pub mod setup;
 pub mod sso;
 pub mod temp_users;
 
 use std::sync::Arc;
 
-use axum::{Router, routing::get};
+use axum::{Json, Router, routing::get};
+use serde_json::json;
 use sqlx::PgPool;
 
 use tokio::sync::broadcast;
@@ -62,6 +64,7 @@ pub fn routes(
 
     let mut app = Router::new()
         .route("/health", get(|| async { "ok" }))
+        .route("/version", get(version_handler))
         .merge(config::routes())
         .merge(setup::routes(pool.clone()))
         .merge(invitations::routes(pool.clone()))
@@ -74,6 +77,7 @@ pub fn routes(
         .nest("/v1", profile::routes(profile_state))
         .nest("/v1", members::routes(members_state))
         .nest("/v1", dms::routes(pool.clone()))
+        .nest("/v1", services::routes())
         .merge(sso::routes(sso_state))
         .merge(presence_ws::routes(presence_state));
 
@@ -82,4 +86,11 @@ pub fn routes(
     }
 
     app
+}
+
+async fn version_handler() -> Json<serde_json::Value> {
+    Json(json!({
+        "service": "hub",
+        "version": option_env!("MATEHUB_VERSION").unwrap_or(env!("CARGO_PKG_VERSION")),
+    }))
 }

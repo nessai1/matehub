@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam::channel::{Receiver, TryRecvError};
 use str0m::change::SdpOffer;
-use str0m::media::{Direction, KeyframeRequestKind, MediaData, MediaKind, Mid};
+use str0m::media::{Direction, MediaData, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tokio::sync::mpsc;
@@ -562,33 +562,28 @@ impl SfuEngine {
                 // immediately. Without this, the first keyframe was likely sent
                 // BEFORE the track went Open (and got dropped), so the subscriber
                 // waits 2-10s for the next periodic keyframe.
+                //
+                // Throttled: when many subscribers ack a screen-share offer in
+                // the same RTT, only one PLI per (publisher, mid) actually goes
+                // out — the rest find a fresh entry in last_keyframe_at and
+                // skip. The single keyframe that does get generated is
+                // received by everyone newly opened.
                 for (origin_pid, origin_mid) in newly_opened {
-                    if let Some(origin) = session.participants.get_mut(&origin_pid) {
-                        if let Some(mut writer) = origin.rtc.writer(origin_mid) {
-                            match writer.request_keyframe(None, KeyframeRequestKind::Pli) {
-                                Ok(()) => {
-                                    tracing::info!(
-                                        subscriber = %participant_id,
-                                        publisher = %origin_pid,
-                                        %origin_mid,
-                                        "PLI requested after track opened"
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        subscriber = %participant_id,
-                                        publisher = %origin_pid,
-                                        %origin_mid,
-                                        "PLI request failed: {e}"
-                                    );
-                                }
-                            }
-                        } else {
-                            tracing::warn!(
-                                %origin_pid, %origin_mid,
-                                "no writer for origin (cannot request PLI)"
-                            );
-                        }
+                    let sent = session.request_keyframe_throttled(origin_pid, origin_mid);
+                    if sent {
+                        tracing::info!(
+                            subscriber = %participant_id,
+                            publisher = %origin_pid,
+                            %origin_mid,
+                            "PLI requested after track opened"
+                        );
+                    } else {
+                        tracing::debug!(
+                            subscriber = %participant_id,
+                            publisher = %origin_pid,
+                            %origin_mid,
+                            "PLI suppressed (throttle / writer unavailable)"
+                        );
                     }
                 }
             }
@@ -979,6 +974,7 @@ impl SfuEngine {
                                         mid: e.mid,
                                         kind: e.kind,
                                         source,
+                                        seen_high_layer: false,
                                     });
                                 } else {
                                     let already = p.tracks_out.iter().any(|t| {
@@ -1020,7 +1016,9 @@ impl SfuEngine {
                     Event::KeyframeRequest(req) => {
                         // Route PLI/FIR to the PUBLISHER, not the subscriber.
                         // req.mid is on the subscriber's Rtc. Find which TrackOut
-                        // it belongs to and request from the origin.
+                        // it belongs to and request from the origin — through
+                        // the throttle so a 30-viewer fan-in coalesces into
+                        // one keyframe instead of N.
                         if let Some(session) = self.sessions.get_mut(&session_id) {
                             let origin =
                                 session.participants.get(&source_pid).and_then(|p| {
@@ -1032,12 +1030,8 @@ impl SfuEngine {
                                         }
                                     })
                                 });
-                            if let Some((origin_pid, origin_mid)) = origin
-                                && let Some(origin_p) =
-                                    session.participants.get_mut(&origin_pid)
-                                && let Some(mut w) = origin_p.rtc.writer(origin_mid)
-                            {
-                                let _ = w.request_keyframe(req.rid, req.kind);
+                            if let Some((origin_pid, origin_mid)) = origin {
+                                session.request_keyframe_throttled(origin_pid, origin_mid);
                             }
                         }
                     }
@@ -1074,15 +1068,43 @@ impl SfuEngine {
         data: &MediaData,
     ) {
         // Simulcast filter: if the publisher is sending layered video
-        // (screen share, mostly), only forward the `h` layer. Adaptive
-        // per-subscriber layer selection lives in Phase 5 — for now the
-        // `l` layer is encoded and received but never leaves the SFU.
+        // (screen share, mostly), the steady state forwards the `h` layer.
+        // Adaptive per-subscriber layer selection lives in Phase 5.
+        //
+        // Start-up fallback: until the publisher's `h` encoder has produced
+        // its first packet (BWE ramp-up takes ~2-5s on a fresh PC),
+        // forward `l` so subscribers see something instead of a black
+        // screen. Once we see the first `h` packet for this (pid, mid)
+        // we flip TrackIn.seen_high_layer and never forward `l` again.
         //
         // `data.rid == None` means no simulcast on this track — always forward.
         if let Some(rid) = data.rid.as_ref() {
-            // Rid derefs to str via str0m's str_id! macro.
-            if &**rid != "h" {
-                return;
+            let rid_str: &str = &**rid;
+            if rid_str == "h" {
+                if let Some(session) = self.sessions.get_mut(&session_id)
+                    && let Some(p) = session.participants.get_mut(&source_pid)
+                    && let Some(track) =
+                        p.tracks_in.iter_mut().find(|t| t.mid == data.mid)
+                    && !track.seen_high_layer
+                {
+                    track.seen_high_layer = true;
+                    tracing::info!(
+                        publisher = %source_pid,
+                        mid = %data.mid,
+                        "high simulcast layer live — fallback retired"
+                    );
+                }
+            } else {
+                let seen_high = self
+                    .sessions
+                    .get(&session_id)
+                    .and_then(|s| s.participants.get(&source_pid))
+                    .and_then(|p| p.tracks_in.iter().find(|t| t.mid == data.mid))
+                    .map(|t| t.seen_high_layer)
+                    .unwrap_or(false);
+                if seen_high {
+                    return;
+                }
             }
         }
 

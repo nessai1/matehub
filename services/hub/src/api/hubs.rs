@@ -7,7 +7,8 @@ use axum::{
     routing::{get, post},
 };
 use axum_extra::extract::Multipart;
-use serde::Serialize;
+use matehub_common::perms::resolve_user_perms;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use crate::auth::AuthUser;
@@ -22,7 +23,7 @@ pub struct HubsState {
 
 pub fn routes(state: HubsState) -> Router {
     Router::new()
-        .route("/hubs/{hub_id}", get(get_hub))
+        .route("/hubs/{hub_id}", get(get_hub).patch(patch_hub))
         .route("/hubs/{hub_id}/members", get(get_members))
         .route("/hubs/{hub_id}/avatar", post(upload_hub_avatar))
         .with_state(state)
@@ -38,6 +39,68 @@ async fn get_hub(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(Json(hub))
+}
+
+#[derive(Deserialize)]
+struct PatchHub {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+// Admin-only. Slug, plan, avatar_url are *not* writable here:
+//   - slug: changing it invalidates outstanding invite links → separate flow
+//   - plan: billing-side concern
+//   - avatar_url: dedicated multipart upload endpoint above
+async fn patch_hub(
+    State(state): State<HubsState>,
+    Path(hub_id): Path<i64>,
+    auth: AuthUser,
+    Json(body): Json<PatchHub>,
+) -> Result<Json<Hub>, StatusCode> {
+    if auth.0.hub_id != hub_id {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let caller = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.is_admin {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if let Some(name) = body.name.as_deref() {
+        let trimmed = name.trim();
+        if trimmed.is_empty() || trimmed.chars().count() > 80 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+    if let Some(desc) = body.description.as_deref() {
+        if desc.chars().count() > 500 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // COALESCE($1, name) keeps the existing value when the field is null in
+    // the request, so PATCH semantics are partial-update without forcing the
+    // client to send the full row back.
+    let hub = sqlx::query_as::<_, Hub>(
+        "UPDATE hubs
+            SET name = COALESCE($2, name),
+                description = COALESCE($3, description),
+                updated_at = now()
+          WHERE id = $1
+          RETURNING *",
+    )
+    .bind(hub_id)
+    .bind(body.name.as_ref().map(|s| s.trim()))
+    .bind(body.description.as_deref())
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+
+    tracing::info!(%hub_id, "hub settings updated");
     Ok(Json(hub))
 }
 
@@ -70,9 +133,9 @@ async fn get_members(
 }
 
 // ── Hub icon upload ─────────────────────────────────────────────
-// Creator-only. No dedicated permission bit because this is a single-
-// owner operation in boxed (the wizard's step 2 calls it once); SaaS
-// can layer a richer ACL on top later.
+// Admin-only. Same gate as PATCH /v1/hubs/{id} so the General Settings
+// dialog works as one operation regardless of whether the caller happens
+// to be the original creator.
 
 #[derive(Serialize)]
 struct UploadResponse {
@@ -91,14 +154,10 @@ async fn upload_hub_avatar(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let creator_id: Option<i64> =
-        sqlx::query_scalar("SELECT creator_id FROM hubs WHERE id = $1")
-            .bind(hub_id)
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    if creator_id != Some(auth.0.sub) {
+    let caller = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if !caller.is_admin {
         return Err(StatusCode::FORBIDDEN);
     }
 

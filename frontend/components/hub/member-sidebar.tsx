@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth";
-import { useMembers, usePresence } from "@/hooks/use-members";
+import { isMemberActive, useMembers, usePresence } from "@/hooks/use-members";
 import {
   deletePendingInvite,
   usePendingInvites,
@@ -33,8 +33,12 @@ export function MemberSidebar() {
   const { invites: pending } = usePendingInvites();
   const showPending = canInvite && pending.length > 0;
 
-  const online = members.filter((m) => m.is_online);
-  const offline = members.filter((m) => !m.is_online);
+  // Sidebar shows only the live roster. Expired guests / scrubbed accounts
+  // stay in `members` (so chat history can resolve their display_name) but
+  // don't belong in the people-you-can-ping list.
+  const activeMembers = members.filter(isMemberActive);
+  const online = activeMembers.filter((m) => m.is_online);
+  const offline = activeMembers.filter((m) => !m.is_online);
 
   const allGroups: MemberGroup[] = [];
   const seen = new Set<string>();
@@ -51,17 +55,20 @@ export function MemberSidebar() {
     <aside
       data-state={open ? "expanded" : "collapsed"}
       className={cn(
-        "flex shrink-0 flex-col overflow-hidden rounded-2xl bg-sidebar transition-[width] duration-200 ease-linear",
+        "flex shrink-0 flex-col overflow-hidden rounded-2xl bg-sidebar transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
         open ? "w-56" : "w-14",
       )}
     >
-      {open && (
-        <div className="flex h-10 items-center px-4">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("Members")} — {members.length}
-          </span>
-        </div>
-      )}
+      <div
+        className={cn(
+          "flex h-10 items-center px-4 transition-opacity duration-150",
+          open ? "opacity-100 delay-150" : "pointer-events-none opacity-0",
+        )}
+      >
+        <span className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("Members")} — {activeMembers.length}
+        </span>
+      </div>
 
       <ScrollArea className="flex-1">
         <div className={cn("pb-2", open ? "px-2" : "px-1.5")}>
@@ -131,19 +138,25 @@ export function MemberSidebar() {
 
       {/* Add Teammates */}
       {canInvite && (
-        <div className={cn("border-t border-border/50", open ? "p-2" : "flex justify-center p-1.5")}>
+        <div className="border-t border-border/50 p-1.5">
           <Button
             variant="ghost"
-            size={open ? "sm" : "icon-sm"}
+            size="sm"
             onClick={openAddTeammates}
-            title={open ? undefined : t("Add Teammates")}
-            className={cn(
-              "text-muted-foreground hover:text-foreground",
-              open ? "w-full justify-start gap-2 text-xs" : "h-8 w-8",
-            )}
+            title={!open ? t("Add Teammates") : undefined}
+            className="h-8 w-full justify-center gap-2 overflow-hidden px-2 text-xs text-muted-foreground hover:text-foreground"
           >
-            <UserPlusIcon className="h-3.5 w-3.5" />
-            {open && t("Add Teammates")}
+            <UserPlusIcon className="h-3.5 w-3.5 shrink-0" />
+            <span
+              className={cn(
+                "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+                open
+                  ? "ml-0 max-w-[200px] opacity-100"
+                  : "-ml-2 max-w-0 opacity-0",
+              )}
+            >
+              {t("Add Teammates")}
+            </span>
           </Button>
         </div>
       )}
@@ -162,11 +175,16 @@ function MemberGroupSection({
 }) {
   return (
     <div className="mb-2">
-      {!collapsed && (
-        <div className="mb-1 px-2 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </div>
-      )}
+      <div
+        className={cn(
+          "overflow-hidden px-2 pt-1.5 text-[11px] font-semibold uppercase tracking-wider whitespace-nowrap text-muted-foreground transition-[opacity,height,margin] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
+          collapsed
+            ? "pointer-events-none mb-0 h-0 pt-0 opacity-0"
+            : "mb-1 h-[18px] opacity-100",
+        )}
+      >
+        {label}
+      </div>
       <div className="space-y-0.5">{children}</div>
     </div>
   );
@@ -218,12 +236,9 @@ function PendingInviteItem({
       <PopoverTrigger asChild>
         <button
           title={collapsed ? invite.name : undefined}
-          className={cn(
-            "flex w-full items-center rounded-md py-1.5 text-left transition-colors hover:bg-muted",
-            collapsed ? "justify-center px-0" : "gap-2 px-2",
-          )}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted"
         >
-          <div className="relative">
+          <div className="relative shrink-0">
             <Avatar className="h-7 w-7">
               <AvatarFallback className="bg-muted/40 text-[10px] font-medium text-muted-foreground">
                 <ClockIcon className="h-3.5 w-3.5" />
@@ -235,13 +250,16 @@ function PendingInviteItem({
               </span>
             )}
           </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] italic text-muted-foreground">
-                {invite.name}
-              </div>
+          <div
+            className={cn(
+              "min-w-0 flex-1 transition-opacity duration-150",
+              collapsed ? "opacity-0" : "opacity-100 delay-150",
+            )}
+          >
+            <div className="truncate whitespace-nowrap text-[13px] italic text-muted-foreground">
+              {invite.name}
             </div>
-          )}
+          </div>
         </button>
       </PopoverTrigger>
       <PopoverContent side="left" align="start" className="w-72 p-0">
@@ -319,6 +337,28 @@ function formatDateTime(iso: string): string {
   }
 }
 
+/** Compact expiry label for a temp user. Same-day → just HH:MM (the common
+ *  case for hour-scale links), otherwise drop in the date too so a 5-day
+ *  link doesn't lie. */
+function formatExpiry(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    return d.toLocaleString(
+      undefined,
+      sameDay
+        ? { hour: "2-digit", minute: "2-digit" }
+        : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" },
+    );
+  } catch {
+    return iso;
+  }
+}
+
 function MemberItem({
   member,
   allGroups,
@@ -340,12 +380,9 @@ function MemberItem({
     >
       <button
         title={collapsed ? member.display_name : undefined}
-        className={cn(
-          "flex w-full items-center rounded-md py-1.5 text-left transition-colors hover:bg-muted",
-          collapsed ? "justify-center px-0" : "gap-2 px-2",
-        )}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted"
       >
-        <div className="relative">
+        <div className="relative shrink-0">
           <Avatar className="h-7 w-7">
             {member.avatar_url && <AvatarImage src={member.avatar_url} />}
             <AvatarFallback
@@ -364,35 +401,45 @@ function MemberItem({
             }`}
           />
         </div>
-        {!collapsed && (
-          <>
-            <div className="min-w-0 flex-1">
-              <div
-                className={`truncate text-[13px] ${
-                  member.is_online ? "text-foreground" : "text-muted-foreground"
-                }`}
-              >
-                {member.display_name}
-              </div>
-            </div>
-            {topGroup && (
-              <Badge
-                variant="outline"
-                className="shrink-0 text-[10px] px-1 py-0"
-                style={
-                  topGroup.color
-                    ? {
-                        backgroundColor: `${topGroup.color}20`,
-                        borderColor: `${topGroup.color}40`,
-                        color: topGroup.color,
-                      }
-                    : undefined
-                }
-              >
-                {topGroup.name}
-              </Badge>
+        <div
+          className={cn(
+            "min-w-0 flex-1 transition-opacity duration-150",
+            collapsed ? "opacity-0" : "opacity-100 delay-150",
+          )}
+        >
+          <div
+            className={cn(
+              "truncate whitespace-nowrap text-[13px]",
+              member.is_online ? "text-foreground" : "text-muted-foreground",
             )}
-          </>
+          >
+            {member.display_name}
+          </div>
+          {member.user_type === "temp" && member.expires_at && (
+            <div className="truncate whitespace-nowrap text-[10px] text-muted-foreground/70">
+              {t("until %s", formatExpiry(member.expires_at))}
+            </div>
+          )}
+        </div>
+        {topGroup && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "shrink-0 text-[10px] px-1 py-0 transition-opacity duration-150",
+              collapsed ? "opacity-0" : "opacity-100 delay-150",
+            )}
+            style={
+              topGroup.color
+                ? {
+                    backgroundColor: `${topGroup.color}20`,
+                    borderColor: `${topGroup.color}40`,
+                    color: topGroup.color,
+                  }
+                : undefined
+            }
+          >
+            {topGroup.name}
+          </Badge>
         )}
       </button>
     </MemberCard>

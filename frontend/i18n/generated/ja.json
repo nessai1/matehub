@@ -669,6 +669,57 @@
       ],
       "Toggle members": [
         "メンバーを切り替え"
+      ],
+      "Deleted user": [
+        "削除されたユーザー"
+      ],
+      "Guest session expired": [
+        "ゲストセッション終了"
+      ],
+      "No longer in hub": [
+        "ハブから退出済み"
+      ],
+      "Your session has ended": [
+        "セッションが終了しました"
+      ],
+      "Your guest access has expired. Contact the person who invited you to get a new link.": [
+        "ゲストアクセスの有効期限が切れました。新しいリンクを取得するには、招待した方にお問い合わせください。"
+      ],
+      "OK": [
+        "OK"
+      ],
+      "until %s": [
+        "%sまで"
+      ],
+      "Guest until %s": [
+        "ゲスト：%sまで"
+      ],
+      "Description": [
+        "説明"
+      ],
+      "Services": [
+        "サービス"
+      ],
+      "No services reachable": [
+        "利用可能なサービスがありません"
+      ],
+      "What's this hub about?": [
+        "このハブについて"
+      ],
+      "Click to upload icon (max 10MB)": [
+        "クリックしてアイコンをアップロード（最大10MB）"
+      ],
+      "Hub name is required": [
+        "ハブ名を入力してください"
+      ],
+      "Avatar upload failed": [
+        "アバターのアップロードに失敗しました"
+      ],
+      "Save failed": [
+        "保存に失敗しました"
+      ],
+      "Only hub admins can change settings": [
+        "管理者のみが設定を変更できます"
       ]
     }
   }

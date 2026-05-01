@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS hubs (
     slug        TEXT NOT NULL UNIQUE,
     plan        TEXT NOT NULL DEFAULT 'free',   -- free, pro, enterprise
     avatar_url  TEXT,
+    description TEXT,
     creator_id  BIGINT REFERENCES users(id),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()

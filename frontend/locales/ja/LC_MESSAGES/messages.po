@@ -669,3 +669,54 @@ msgstr "チャンネルを切り替え"
 
 msgid "Toggle members"
 msgstr "メンバーを切り替え"
+
+msgid "Deleted user"
+msgstr "削除されたユーザー"
+
+msgid "Guest session expired"
+msgstr "ゲストセッション終了"
+
+msgid "No longer in hub"
+msgstr "ハブから退出済み"
+
+msgid "Your session has ended"
+msgstr "セッションが終了しました"
+
+msgid "Your guest access has expired. Contact the person who invited you to get a new link."
+msgstr "ゲストアクセスの有効期限が切れました。新しいリンクを取得するには、招待した方にお問い合わせください。"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "until %s"
+msgstr "%sまで"
+
+msgid "Guest until %s"
+msgstr "ゲスト：%sまで"
+
+msgid "Description"
+msgstr "説明"
+
+msgid "Services"
+msgstr "サービス"
+
+msgid "No services reachable"
+msgstr "利用可能なサービスがありません"
+
+msgid "What's this hub about?"
+msgstr "このハブについて"
+
+msgid "Click to upload icon (max 10MB)"
+msgstr "クリックしてアイコンをアップロード（最大10MB）"
+
+msgid "Hub name is required"
+msgstr "ハブ名を入力してください"
+
+msgid "Avatar upload failed"
+msgstr "アバターのアップロードに失敗しました"
+
+msgid "Save failed"
+msgstr "保存に失敗しました"
+
+msgid "Only hub admins can change settings"
+msgstr "管理者のみが設定を変更できます"

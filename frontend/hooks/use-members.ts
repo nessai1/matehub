@@ -24,9 +24,22 @@ export interface Member {
   last_seen_at: string | null;
   groups: MemberGroup[];
   user_type: "permanent" | "temp";
+  /** For temp users: when their magic-link dies. NULL for permanent users. */
   expires_at: string | null;
+  /** Set if the account was scrubbed. NULL = alive. */
+  deleted_at: string | null;
   /** Voice channel the member is currently in (null = not in voice). */
   current_voice_channel_id: string | null;
+}
+
+/** True if the member should appear in the live roster (sidebar) and be
+ *  pingable. Inactive members stay in the lookup map so chat history can
+ *  still resolve their display_name — they just don't show up as people
+ *  you can interact with. */
+export function isMemberActive(m: Member): boolean {
+  if (m.deleted_at) return false;
+  if (m.expires_at && new Date(m.expires_at) <= new Date()) return false;
+  return true;
 }
 
 /** SWR cache key. Exported so usePresence can target it via mutate(). */

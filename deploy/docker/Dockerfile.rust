@@ -55,6 +55,11 @@ RUN npm run build
 # ── Rust builder ─────────────────────────────────────────────────────
 FROM rust:1.87-bookworm AS builder
 ARG SERVICE
+# Release tag like "0.1.2", baked into the binary via option_env!() so
+# /version reports the same string the image is tagged with. Falls back
+# to CARGO_PKG_VERSION when unset (local builds, dev compose).
+ARG VERSION
+ENV MATEHUB_VERSION=${VERSION}
 
 WORKDIR /app
 
