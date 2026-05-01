@@ -151,21 +151,17 @@ fn shard_for_session(sid: SessionId, num_shards: usize) -> usize {
 
 /// External handle to the SFU. Replaces the single-engine `Sender<SfuCommand>`
 /// — this owns N shard senders and routes by session id.
+///
+/// Only carries what callers actually need (`shard_senders`). The UDP socket,
+/// candidate addr, and shared maps live with the dispatcher / shard threads
+/// after construction — keeping them on the pool would just be dead weight.
 #[derive(Clone)]
 pub struct SfuPool {
-    udp_socket: Arc<UdpSocket>,
-    primary_candidate_addr: SocketAddr,
     /// One sender per shard. Index = shard number.
     shard_senders: Arc<Vec<Sender<SfuCommand>>>,
-    shared_maps: Arc<SharedMaps>,
 }
 
 impl SfuPool {
-    /// How many shards the pool was constructed with.
-    pub fn num_shards(&self) -> usize {
-        self.shard_senders.len()
-    }
-
     /// Route a command to the shard owning this session. On full channel
     /// the command is dropped + counter — same back-pressure semantics as
     /// the single-engine version.
@@ -176,28 +172,16 @@ impl SfuPool {
         }
     }
 
-    pub fn primary_candidate_addr(&self) -> SocketAddr {
-        self.primary_candidate_addr
-    }
-
-    pub fn udp_socket(&self) -> &Arc<UdpSocket> {
-        &self.udp_socket
-    }
-
     /// Test-only: build a pool wrapping externally-supplied senders, skipping
     /// the real media thread + dispatcher spawn. Caller is responsible for
     /// draining the receivers (typically with a mock that responds to Join).
-    /// Binds an ephemeral UDP socket so shard `send_to` calls don't NPE; no
-    /// packets are read off it.
+    /// Lib-time dead-code analysis can't see integration tests in `tests/`,
+    /// hence the explicit allow.
     #[doc(hidden)]
+    #[allow(dead_code)]
     pub fn for_test(senders: Vec<Sender<SfuCommand>>) -> Self {
-        let socket = std::net::UdpSocket::bind("127.0.0.1:0").expect("bind ephemeral");
-        let primary = socket.local_addr().unwrap();
         Self {
-            udp_socket: Arc::new(socket),
-            primary_candidate_addr: primary,
             shard_senders: Arc::new(senders),
-            shared_maps: Arc::new(SharedMaps::new()),
         }
     }
 
@@ -225,7 +209,6 @@ impl SfuPool {
             !candidate_addrs.is_empty(),
             "SfuPool needs at least one public IP for host candidates"
         );
-        let primary_candidate_addr = candidate_addrs[0];
 
         let shared_maps = Arc::new(SharedMaps::new());
         let mut senders = Vec::with_capacity(num_shards);
@@ -249,20 +232,15 @@ impl SfuPool {
             std::mem::forget(handle);
         }
 
-        let dispatcher_socket = Arc::clone(&udp_socket);
         let dispatcher_senders = senders.clone();
-        let dispatcher_maps = Arc::clone(&shared_maps);
         let dispatcher = std::thread::Builder::new()
             .name("sfu-dispatcher".into())
-            .spawn(move || dispatcher_loop(dispatcher_socket, dispatcher_senders, dispatcher_maps))
+            .spawn(move || dispatcher_loop(udp_socket, dispatcher_senders, shared_maps))
             .expect("spawn dispatcher thread");
         std::mem::forget(dispatcher);
 
         Self {
-            udp_socket,
-            primary_candidate_addr,
             shard_senders: Arc::new(senders),
-            shared_maps,
         }
     }
 }

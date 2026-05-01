@@ -9,14 +9,14 @@ use axum::{Json, Router};
 use crate::state::AppState;
 
 pub fn routes(state: AppState) -> Router {
-    let mut router = Router::new()
+    let router = Router::new()
         .merge(sessions::routes())
         .merge(ws::routes());
 
+    // The `mut` is conditional — keeps cargo from warning when the
+    // profiling feature is off and nothing else mutates `router`.
     #[cfg(feature = "profiling")]
-    {
-        router = router.merge(profiling::routes());
-    }
+    let router = router.merge(profiling::routes());
 
     router
         .route("/health", axum::routing::get(|| async { "ok" }))
