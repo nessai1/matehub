@@ -45,6 +45,11 @@ socket2.workspace = true
 # UDP writes so kernel send-buf back-pressure can't stall the media thread.
 libc = "0.2"
 
+# Optional: in-process CPU profiler exposed via /debug/pprof/profile when the
+# `profiling` feature is enabled. Off by default so production builds carry
+# no extra deps; turn on for load-test sessions.
+pprof = { version = "0.15", features = ["flamegraph"], optional = true }
+
 # Allocator — default glibc malloc is a noticeable tax at high packet rates
 # (str0m does allocate on hot paths). mimalloc is pure-Rust, no ffi system
 # deps, and typically 10-20% faster throughput for SFU workloads.
@@ -60,6 +65,12 @@ tokio-tungstenite.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 criterion.workspace = true
+
+[features]
+default = []
+# Enable in-process CPU profiling at /debug/pprof/profile. Adds the `pprof`
+# crate. Use for load-test investigations only — leave off in production.
+profiling = ["dep:pprof"]
 
 [[bench]]
 name = "sfu_forward"

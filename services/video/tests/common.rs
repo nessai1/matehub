@@ -1,17 +1,18 @@
 use tokio::net::TcpListener;
 
-use matehub_video::sfu::SfuCommand;
+use matehub_video::sfu::{SfuCommand, SfuPool};
 use matehub_video::signaling::ServerMessage;
 
 /// Spawns the video service HTTP+WS on a random port.
 /// SFU commands are handled by a mock that responds to Join with an error
 /// (no real str0m in test mode).
 pub async fn spawn_app() -> String {
-    // Match production: crossbeam bounded for SFU commands.
+    // Mock single-shard pool: tests don't need real media threads, just a
+    // sender we can feed into the AppState and a receiver to drain.
     let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::bounded::<SfuCommand>(8192);
+    let pool = SfuPool::for_test(vec![sfu_cmd_tx]);
 
-    // Mock SFU: responds to Join, drains everything else. Runs in a blocking
-    // task so the crossbeam recv (sync) works.
+    // Mock SFU: responds to Join, drains everything else.
     std::thread::spawn(move || {
         while let Ok(cmd) = sfu_cmd_rx.recv() {
             if let SfuCommand::Join { reply_tx, .. } = cmd {
@@ -23,7 +24,7 @@ pub async fn spawn_app() -> String {
     });
 
     // No NATS in tests — voice-occupancy publish is a no-op.
-    let state = matehub_video::state::AppState::new(sfu_cmd_tx, None);
+    let state = matehub_video::state::AppState::new(pool, None);
     let app = matehub_video::api::routes(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

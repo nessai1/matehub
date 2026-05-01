@@ -12,7 +12,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use config::Config;
-use sfu::SfuEngine;
+use sfu::SfuPool;
 use state::AppState;
 
 // SFU allocates on hot paths (RTP buffers, NACK cache, SRTP contexts).
@@ -25,16 +25,6 @@ async fn main() -> Result<()> {
     matehub_common::observability::init_tracing("info,str0m=warn");
 
     let config = Config::from_env();
-
-    // Cross-thread SFU command channel. crossbeam so the sender can be called
-    // synchronously from tokio WebSocket handlers (no .await) and the receiver
-    // can be polled from a blocking OS thread (no async runtime needed).
-    //
-    // Bounded so that a stuck / dead media thread can't OOM us by accumulating
-    // unconsumed commands. WS handlers `try_send`; on Full we drop+counter
-    // (matehub_video_sfu_cmd_drops_total). 8192 covers the worst burst we've
-    // seen in practice (30-person join cascade × ~50 trickle ICE candidates).
-    let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::bounded(8192);
 
     // NATS connection for voice-occupancy events. Optional — if the box isn't
     // running NATS yet the video service still handles calls, just without
@@ -51,44 +41,48 @@ async fn main() -> Result<()> {
         }
     };
 
-    let state = AppState::new(sfu_cmd_tx, nats);
-
     // Bind UDP socket for media — std (blocking) socket, not tokio::net.
-    // Media path runs on its own OS thread; it uses SO_RCVTIMEO for the tick
+    // Media path runs on its own OS threads; uses SO_RCVTIMEO for the tick
     // cadence instead of sharing the tokio reactor with HTTP/WS.
     let udp_addr = format!("0.0.0.0:{}", config.udp_port);
     let udp_socket = UdpSocket::bind(&udp_addr)?;
 
-    // Increase send/recv buffers to reduce packet drops under load.
-    // Default ~200KB, set to 2MB. Covers burst of video keyframes + audio.
+    // Bigger buffers to absorb burst (video keyframes + audio fan-out).
+    // Default ~200KB, set 8MB — large calls fan out tens of MB/s and 2MB
+    // turned into the EAGAIN trigger we count via udp_send_drops_total.
     let sock_ref = socket2::SockRef::from(&udp_socket);
-    let _ = sock_ref.set_send_buffer_size(2 * 1024 * 1024);
-    let _ = sock_ref.set_recv_buffer_size(2 * 1024 * 1024);
+    let _ = sock_ref.set_send_buffer_size(8 * 1024 * 1024);
+    let _ = sock_ref.set_recv_buffer_size(8 * 1024 * 1024);
     let actual_send = sock_ref.send_buffer_size().unwrap_or(0);
     let actual_recv = sock_ref.recv_buffer_size().unwrap_or(0);
 
     let udp_socket = Arc::new(udp_socket);
     tracing::info!(addr = %udp_addr, send_buf = actual_send, recv_buf = actual_recv, "UDP media socket bound");
 
-    // SFU engine on a dedicated OS thread, OUT of the tokio runtime.
-    // Media forwarding latency no longer competes with signaling / HTTP work.
-    let engine = SfuEngine::new(
-        udp_socket,
+    // Sharded SFU: N media threads (one per shard) + one UDP dispatcher.
+    // The dispatcher reads all incoming UDP, parses STUN ufrag for new
+    // sources, and forwards pre-resolved packets to the right shard via
+    // crossbeam. Sessions live entirely on one shard each (consistent
+    // hash on session_id) — no cross-shard fan-out on the hot path.
+    let num_shards = std::env::var("MEDIA_SHARDS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(1);
+    let cmd_buffer = std::env::var("SFU_CMD_BUFFER")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(8192);
+    let sfu_pool = SfuPool::spawn(
+        num_shards,
+        Arc::clone(&udp_socket),
         config.public_ips.clone(),
-        sfu_cmd_rx,
         std::time::Duration::from_secs(config.zombie_timeout_secs),
+        cmd_buffer,
     );
-    let media_thread = std::thread::Builder::new()
-        .name("sfu-media".into())
-        // str0m keeps a fair amount of per-Rtc state on the stack during
-        // poll_output; default (2MB on macOS/Linux) is enough but pin it
-        // explicitly so it doesn't depend on host defaults.
-        .stack_size(2 * 1024 * 1024)
-        .spawn(move || engine.run_blocking())?;
-    // Hold the handle so the thread can outlive main's scope. If the thread
-    // panics, `.join()` on shutdown would surface it; we currently run until
-    // signalled so this is effectively "leak until process exit".
-    std::mem::forget(media_thread);
+    tracing::info!(shards = num_shards, cmd_buffer, "SFU pool started");
+
+    let state = AppState::new(sfu_pool, nats);
 
     let (metrics_layer, metrics_handle) =
         matehub_common::observability::metrics_layer_and_handle();

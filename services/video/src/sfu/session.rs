@@ -52,6 +52,58 @@ pub const AUDIO_TOP_K: usize = 3;
 /// Above it, the filter trims the long tail of silent participants.
 pub const AUDIO_FILTER_MIN_PUBLISHERS: usize = AUDIO_TOP_K + 1;
 
+// ── Adaptive simulcast layer pick ─────────────────────────────
+// Threshold scheme: a clear gap between "comfortably fits h" and "must
+// drop to l" prevents flapping when BWE oscillates near a single value.
+// Numbers are conservative for a typical screen-share at ~5Mbps h-layer +
+// camera/audio overhead — adjust if profile expectations change.
+
+/// Below this BWE estimate, force the subscriber to `l`.
+pub const BWE_DOWNGRADE_BPS: u64 = 800_000;
+/// Above this BWE estimate, allow the subscriber back onto `h`.
+pub const BWE_UPGRADE_BPS: u64 = 1_500_000;
+/// Minimum dwell time in a layer before we'll consider switching again.
+/// Prevents flapping on borderline BWE oscillation.
+pub const LAYER_HYSTERESIS: Duration = Duration::from_secs(5);
+
+/// Decide the next selected_rid given the current state. Pure function
+/// so it's unit-testable without standing up an Rtc.
+pub fn next_layer(
+    current: Option<&'static str>,
+    bwe_bps: u64,
+    last_change: Instant,
+    now: Instant,
+) -> Option<&'static str> {
+    if now.duration_since(last_change) < LAYER_HYSTERESIS {
+        // Still in the dwell window — don't move yet.
+        return current;
+    }
+    match current {
+        Some("h") => {
+            if bwe_bps < BWE_DOWNGRADE_BPS {
+                Some("l")
+            } else {
+                Some("h")
+            }
+        }
+        Some("l") => {
+            if bwe_bps > BWE_UPGRADE_BPS {
+                Some("h")
+            } else {
+                Some("l")
+            }
+        }
+        _ => {
+            // First decision: pick directly off the threshold without dwell.
+            if bwe_bps < BWE_DOWNGRADE_BPS {
+                Some("l")
+            } else {
+                Some("h")
+            }
+        }
+    }
+}
+
 impl SfuSession {
     pub fn new(id: SessionId) -> Self {
         Self {
@@ -160,6 +212,12 @@ pub struct SfuParticipant {
     pub tracks_in: Vec<TrackIn>,
     /// Tracks this participant is subscribing to (outgoing from SFU)
     pub tracks_out: Vec<TrackOut>,
+    /// Last reported egress bitrate estimate from str0m's BWE subsystem
+    /// (TWCC primarily, REMB fallback). Used by the layer-pick tick to
+    /// decide whether this subscriber gets `h` or `l` for video tracks.
+    /// Default is high so subscribers start on `h` until BWE proves
+    /// otherwise — matches typical client behavior on a fresh PC.
+    pub egress_bitrate_bps: u64,
     /// Pending SDP offer awaiting answer from client
     pub pending_offer: Option<SdpPendingOffer>,
     /// Client SDP offer that arrived while we still had `pending_offer` set
@@ -234,6 +292,13 @@ pub struct TrackOut {
     /// and lets the SDK render the right tile shape.
     pub source: Source,
     pub state: TrackOutState,
+    /// Adaptive simulcast: which layer (rid) this subscriber is currently
+    /// receiving. None = no decision yet (defaults to "h" with l-fallback
+    /// in the forwarder). Updated by the per-tick BWE-driven recompute;
+    /// hysteresis on `last_rid_change_at` prevents flapping on borderline
+    /// estimates.
+    pub selected_rid: Option<&'static str>,
+    pub last_rid_change_at: Instant,
 }
 
 impl TrackOut {
@@ -445,6 +510,8 @@ mod tests {
             kind: MediaKind::Audio,
             source: Source::Camera,
             state: TrackOutState::ToOpen,
+            selected_rid: None,
+            last_rid_change_at: Instant::now(),
         };
         assert_eq!(t.open_mid(), None);
 
@@ -461,5 +528,47 @@ mod tests {
             ..t
         };
         assert_eq!(t.open_mid(), Some(open_mid));
+    }
+
+    // ── Layer pick ────────────────────────────────────────────
+
+    #[test]
+    fn next_layer_first_decision_picks_h_when_bandwidth_ample() {
+        let now = Instant::now();
+        let last = now - Duration::from_secs(60);
+        assert_eq!(next_layer(None, 5_000_000, last, now), Some("h"));
+    }
+
+    #[test]
+    fn next_layer_first_decision_picks_l_when_bandwidth_low() {
+        let now = Instant::now();
+        let last = now - Duration::from_secs(60);
+        assert_eq!(next_layer(None, 500_000, last, now), Some("l"));
+    }
+
+    #[test]
+    fn next_layer_respects_hysteresis_window() {
+        let now = Instant::now();
+        // Last change just happened — within dwell window. BWE crashed but
+        // we keep the current layer.
+        let just_now = now - Duration::from_millis(100);
+        assert_eq!(next_layer(Some("h"), 100_000, just_now, now), Some("h"));
+    }
+
+    #[test]
+    fn next_layer_downgrades_when_bandwidth_falls_after_dwell() {
+        let now = Instant::now();
+        let well_past = now - Duration::from_secs(30);
+        assert_eq!(next_layer(Some("h"), 500_000, well_past, now), Some("l"));
+    }
+
+    #[test]
+    fn next_layer_upgrades_only_above_upper_threshold() {
+        let now = Instant::now();
+        let well_past = now - Duration::from_secs(30);
+        // Mid-range BWE — neither flips on nor off. Stays on l.
+        assert_eq!(next_layer(Some("l"), 1_000_000, well_past, now), Some("l"));
+        // Above upper threshold — promote.
+        assert_eq!(next_layer(Some("l"), 2_000_000, well_past, now), Some("h"));
     }
 }

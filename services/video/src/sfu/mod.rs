@@ -6,7 +6,9 @@ use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crossbeam::channel::{Receiver, TryRecvError};
+use crossbeam::channel::{Receiver, RecvTimeoutError, Sender, TryRecvError};
+use parking_lot::RwLock;
+use str0m::bwe::BweKind;
 use str0m::change::SdpOffer;
 use str0m::ice::IceCreds;
 use str0m::media::{Direction, MediaData, MediaKind, Mid};
@@ -17,7 +19,9 @@ use uuid::Uuid;
 
 use crate::signaling::ServerMessage;
 
-pub use session::{SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState};
+pub use session::{
+    next_layer, SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState,
+};
 
 /// Drop-on-full send to a per-WS channel. Same intent as the helper in
 /// api/ws.rs — slow consumers don't back-pressure the media thread. Kept
@@ -82,46 +86,291 @@ pub enum SfuCommand {
         participant_id: ParticipantId,
         sdp_offer: String,
     },
+    /// Pre-resolved UDP packet from the dispatcher thread. The dispatcher
+    /// already turned `source_addr` into `(session_id, participant_id)`
+    /// via the shared addr/ufrag maps, so the shard's only job is to feed
+    /// it to the right Rtc — no map lookups, no slow-path scan.
+    UdpInput {
+        session_id: SessionId,
+        participant_id: ParticipantId,
+        source: SocketAddr,
+        data: Vec<u8>,
+    },
 }
 
-/// The SFU engine. Runs on its own OS thread (not a tokio task) so media
-/// forwarding latency doesn't compete with signaling / HTTP work on the
-/// shared tokio runtime.
-pub struct SfuEngine {
+/// Where a UDP packet should land. Lives in the shared maps the dispatcher
+/// reads on every datagram.
+#[derive(Copy, Clone, Debug)]
+pub struct ShardTarget {
+    pub shard: usize,
+    pub sid: SessionId,
+    pub pid: ParticipantId,
+}
+
+/// Cross-thread routing tables shared between the dispatcher (reads) and
+/// the shards (writes on Join/Leave). Behind RwLock because the dispatcher
+/// reads constantly (every UDP packet) while shards write only on
+/// participant lifecycle events — RwLock keeps the read path uncontended.
+pub struct SharedMaps {
+    /// Source-addr → shard target. Dispatcher's fast path. Populated by
+    /// the dispatcher itself once a packet is successfully resolved via
+    /// STUN ufrag, so subsequent packets from the same 4-tuple route
+    /// directly without parsing.
+    pub addr_to_target: RwLock<HashMap<SocketAddr, ShardTarget>>,
+    /// Local-ICE-ufrag → shard target. Written by shards on Join, read by
+    /// the dispatcher on first contact from a new peer (STUN binding
+    /// USERNAME's `local_ufrag` half).
+    pub ufrag_to_target: RwLock<HashMap<String, ShardTarget>>,
+}
+
+impl SharedMaps {
+    pub fn new() -> Self {
+        Self {
+            addr_to_target: RwLock::new(HashMap::new()),
+            ufrag_to_target: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+impl Default for SharedMaps {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Stable shard assignment for a session id. `as_u128() % N` is the same
+/// hash on every node — sessions live entirely on one shard, so there's
+/// no cross-shard packet hop on the hot path.
+fn shard_for_session(sid: SessionId, num_shards: usize) -> usize {
+    if num_shards == 0 {
+        0
+    } else {
+        (sid.as_u128() % num_shards as u128) as usize
+    }
+}
+
+/// External handle to the SFU. Replaces the single-engine `Sender<SfuCommand>`
+/// — this owns N shard senders and routes by session id.
+#[derive(Clone)]
+pub struct SfuPool {
+    udp_socket: Arc<UdpSocket>,
+    primary_candidate_addr: SocketAddr,
+    /// One sender per shard. Index = shard number.
+    shard_senders: Arc<Vec<Sender<SfuCommand>>>,
+    shared_maps: Arc<SharedMaps>,
+}
+
+impl SfuPool {
+    /// How many shards the pool was constructed with.
+    pub fn num_shards(&self) -> usize {
+        self.shard_senders.len()
+    }
+
+    /// Route a command to the shard owning this session. On full channel
+    /// the command is dropped + counter — same back-pressure semantics as
+    /// the single-engine version.
+    pub fn send(&self, sid: SessionId, cmd: SfuCommand) {
+        let shard = shard_for_session(sid, self.shard_senders.len());
+        if self.shard_senders[shard].try_send(cmd).is_err() {
+            metrics::counter!("matehub_video_sfu_cmd_drops_total").increment(1);
+        }
+    }
+
+    pub fn primary_candidate_addr(&self) -> SocketAddr {
+        self.primary_candidate_addr
+    }
+
+    pub fn udp_socket(&self) -> &Arc<UdpSocket> {
+        &self.udp_socket
+    }
+
+    /// Test-only: build a pool wrapping externally-supplied senders, skipping
+    /// the real media thread + dispatcher spawn. Caller is responsible for
+    /// draining the receivers (typically with a mock that responds to Join).
+    /// Binds an ephemeral UDP socket so shard `send_to` calls don't NPE; no
+    /// packets are read off it.
+    #[doc(hidden)]
+    pub fn for_test(senders: Vec<Sender<SfuCommand>>) -> Self {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").expect("bind ephemeral");
+        let primary = socket.local_addr().unwrap();
+        Self {
+            udp_socket: Arc::new(socket),
+            primary_candidate_addr: primary,
+            shard_senders: Arc::new(senders),
+            shared_maps: Arc::new(SharedMaps::new()),
+        }
+    }
+
+    /// Spawn `num_shards` media threads + a single UDP dispatcher thread.
+    /// Returns a Pool wrapping the senders. Threads are leaked (not joined
+    /// on drop) — they run for the process's lifetime, mirroring the
+    /// previous single-thread engine's setup.
+    pub fn spawn(
+        num_shards: usize,
+        udp_socket: Arc<UdpSocket>,
+        public_ips: Vec<std::net::IpAddr>,
+        zombie_timeout: Duration,
+        cmd_buffer: usize,
+    ) -> Self {
+        assert!(num_shards >= 1, "need at least one media shard");
+        let local_port = udp_socket
+            .local_addr()
+            .expect("UDP socket bound")
+            .port();
+        let candidate_addrs: Vec<SocketAddr> = public_ips
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip, local_port))
+            .collect();
+        assert!(
+            !candidate_addrs.is_empty(),
+            "SfuPool needs at least one public IP for host candidates"
+        );
+        let primary_candidate_addr = candidate_addrs[0];
+
+        let shared_maps = Arc::new(SharedMaps::new());
+        let mut senders = Vec::with_capacity(num_shards);
+
+        for shard_index in 0..num_shards {
+            let (tx, rx) = crossbeam::channel::bounded::<SfuCommand>(cmd_buffer);
+            senders.push(tx);
+            let shard = SfuShard::new(
+                shard_index,
+                Arc::clone(&udp_socket),
+                candidate_addrs.clone(),
+                rx,
+                Arc::clone(&shared_maps),
+                zombie_timeout,
+            );
+            let handle = std::thread::Builder::new()
+                .name(format!("sfu-shard-{shard_index}"))
+                .stack_size(2 * 1024 * 1024)
+                .spawn(move || shard.run_blocking())
+                .expect("spawn shard thread");
+            std::mem::forget(handle);
+        }
+
+        let dispatcher_socket = Arc::clone(&udp_socket);
+        let dispatcher_senders = senders.clone();
+        let dispatcher_maps = Arc::clone(&shared_maps);
+        let dispatcher = std::thread::Builder::new()
+            .name("sfu-dispatcher".into())
+            .spawn(move || dispatcher_loop(dispatcher_socket, dispatcher_senders, dispatcher_maps))
+            .expect("spawn dispatcher thread");
+        std::mem::forget(dispatcher);
+
+        Self {
+            udp_socket,
+            primary_candidate_addr,
+            shard_senders: Arc::new(senders),
+            shared_maps,
+        }
+    }
+}
+
+/// UDP dispatcher loop. Single thread; reads every datagram, resolves it
+/// to a (shard, sid, pid) target via the shared maps, and forwards via
+/// the right shard's channel. Sub-microsecond per-packet on the hot path
+/// (HashMap lookup + try_send), so this is not a meaningful bottleneck
+/// even at hundreds of Mbps — the heavy lifting (SRTP, fan-out) happens
+/// on the shard threads.
+fn dispatcher_loop(
+    socket: Arc<UdpSocket>,
+    senders: Vec<Sender<SfuCommand>>,
+    shared_maps: Arc<SharedMaps>,
+) {
+    const TICK: Duration = Duration::from_millis(50);
+    if let Err(e) = socket.set_read_timeout(Some(TICK)) {
+        tracing::error!("dispatcher set_read_timeout failed: {e}");
+        return;
+    }
+    let mut buf = vec![0u8; 2000];
+    loop {
+        match socket.recv_from(&mut buf) {
+            Ok((n, source)) => {
+                let pkt = &buf[..n];
+                // Cache fast path: addr already known → route directly.
+                let target = shared_maps.addr_to_target.read().get(&source).copied();
+                let target = if let Some(t) = target {
+                    Some(t)
+                } else {
+                    // First contact from this addr. Must be a STUN binding
+                    // request — anything else is junk we can drop without
+                    // burning CPU.
+                    if !looks_like_stun(pkt) {
+                        metrics::counter!("matehub_video_unknown_source_drops_total")
+                            .increment(1);
+                        None
+                    } else if let Some(ufrag) = parse_stun_local_ufrag(pkt) {
+                        let resolved = shared_maps.ufrag_to_target.read().get(ufrag).copied();
+                        if let Some(t) = resolved {
+                            // Cache for subsequent packets from this 4-tuple.
+                            shared_maps.addr_to_target.write().insert(source, t);
+                        } else {
+                            metrics::counter!("matehub_video_unknown_ufrag_drops_total")
+                                .increment(1);
+                        }
+                        resolved
+                    } else {
+                        None
+                    }
+                };
+                let Some(target) = target else { continue };
+                let cmd = SfuCommand::UdpInput {
+                    session_id: target.sid,
+                    participant_id: target.pid,
+                    source,
+                    data: pkt.to_vec(),
+                };
+                if senders[target.shard].try_send(cmd).is_err() {
+                    metrics::counter!("matehub_video_udp_dispatch_drops_total").increment(1);
+                }
+            }
+            Err(e)
+                if e.kind() == ErrorKind::WouldBlock
+                    || e.kind() == ErrorKind::TimedOut =>
+            {
+                // Periodic wake-up so the kernel timer drives this thread —
+                // there's no other tick mechanism.
+            }
+            Err(e) => {
+                tracing::error!("dispatcher recv error: {e}");
+            }
+        }
+    }
+}
+
+/// One media-thread shard. Owns a disjoint set of sessions (assigned via
+/// `shard_for_session`); never sees packets for sessions on other shards
+/// because the dispatcher routes by session id. Ergo no inter-shard
+/// locking on the hot path — each shard runs single-threaded over its own
+/// state, like the pre-shard engine did over everything.
+pub struct SfuShard {
+    /// 0..N-1 — used so this shard can stamp `ShardTarget.shard` into the
+    /// shared maps without consulting the pool.
+    shard_index: usize,
     /// How long an ICE-disconnected participant can be silent before we
     /// declare them dead. Configurable from main; see config::Config.
     zombie_timeout: Duration,
     sessions: HashMap<SessionId, SfuSession>,
-    /// Blocking std socket. `set_read_timeout` gives us the tick cadence;
-    /// send_to is blocking but kernel UDP send buffer (tuned to 2MB in main)
-    /// makes the blocking window negligible in practice.
+    /// Shared write end of the UDP socket. Sends are atomic at the kernel
+    /// level so multiple shards writing concurrently is fine; we still go
+    /// through `udp_send_one` for the MSG_DONTWAIT non-blocking semantics.
     udp_socket: Arc<UdpSocket>,
-    local_addr: SocketAddr,
     /// Host candidate addresses advertised to every peer.
     /// Multiple IPs (wifi, ethernet, vpn) so ICE can pick whichever
     /// actually routes back to the server — avoids peer-reflexive
     /// fallback when the server is bound on 0.0.0.0 across interfaces.
     candidate_addrs: Vec<SocketAddr>,
-    /// crossbeam channel: tokio WS handlers (multi-producer) → media thread.
-    /// tokio::sync::mpsc is async-only, can't be polled from a blocking thread.
+    /// Per-shard command channel. UDP packets pre-resolved by the
+    /// dispatcher arrive as `SfuCommand::UdpInput`; lifecycle events
+    /// (Join/Leave/Answer/etc.) come from WS handlers via `SfuPool::send`.
     cmd_rx: Receiver<SfuCommand>,
-    /// Remote-addr → participant cache for O(1) UDP demux.
-    /// Populated after the first successful accept() from a given source addr.
-    /// Invalidated on leave / session destroy / stale mapping detection.
-    addr_to_participant: HashMap<SocketAddr, (SessionId, ParticipantId)>,
-    /// Local-ICE-ufrag → participant. Populated on Join, removed on Leave.
-    /// First UDP packet from a peer is a STUN binding request whose
-    /// USERNAME attribute is `{remote_ufrag}:{local_ufrag}`. We parse the
-    /// local half and route to that exact participant — replaces an O(N)
-    /// linear scan over every Rtc that turned the slow path into a DoS
-    /// vector (anyone who knew the port could feed mostly-junk and burn
-    /// CPU on `rtc.accepts()` calls).
-    ufrag_to_participant: HashMap<String, (SessionId, ParticipantId)>,
+    /// Routing tables shared with the dispatcher and (read-only) other
+    /// shards. This shard writes its own (sid, pid) into them on Join,
+    /// removes on Leave / session destroy.
+    shared_maps: Arc<SharedMaps>,
     /// (session, participant) pairs that have at least one TrackOut in ToOpen
-    /// state and need a server-initiated offer. Replaces a boolean+sweep:
-    /// negotiate_pending_tracks() now iterates only the entries here, so a
-    /// 500-participant session with two pending joins runs O(2) instead of
-    /// O(500) per pass.
+    /// state and need a server-initiated offer.
     pending_negotiation: HashSet<(SessionId, ParticipantId)>,
     /// Media forwarding stats (logged periodically)
     stats_audio_fwd: u64,
@@ -215,31 +464,23 @@ enum PollTarget {
     Session(SessionId),
 }
 
-impl SfuEngine {
-    pub fn new(
+impl SfuShard {
+    fn new(
+        shard_index: usize,
         udp_socket: Arc<UdpSocket>,
-        public_ips: Vec<std::net::IpAddr>,
+        candidate_addrs: Vec<SocketAddr>,
         cmd_rx: Receiver<SfuCommand>,
+        shared_maps: Arc<SharedMaps>,
         zombie_timeout: Duration,
     ) -> Self {
-        let local_addr = udp_socket.local_addr().expect("UDP local addr");
-        let candidate_addrs: Vec<SocketAddr> = public_ips
-            .into_iter()
-            .map(|ip| SocketAddr::new(ip, local_addr.port()))
-            .collect();
-        assert!(
-            !candidate_addrs.is_empty(),
-            "SfuEngine needs at least one public IP for host candidates"
-        );
         Self {
+            shard_index,
             zombie_timeout,
             sessions: HashMap::new(),
             udp_socket,
-            local_addr,
             candidate_addrs,
             cmd_rx,
-            addr_to_participant: HashMap::new(),
-            ufrag_to_participant: HashMap::new(),
+            shared_maps,
             pending_negotiation: HashSet::new(),
             stats_audio_fwd: 0,
             stats_video_fwd: 0,
@@ -287,72 +528,59 @@ impl SfuEngine {
         self.candidate_addrs[0]
     }
 
-    /// Main SFU event loop. Call this from a dedicated `std::thread` — NOT
-    /// a tokio task.
-    ///
-    /// The event loop is a single blocking thread:
-    /// 1. `recv_from` with `SO_RCVTIMEO` = 20ms — returns either a datagram
-    ///    or `TimedOut`/`WouldBlock`.
-    /// 2. Drain all pending commands from the crossbeam channel (non-blocking).
-    /// 3. If the tick deadline is due, fire `tick() + poll_all()`.
-    /// 4. Run pending negotiations.
-    ///
-    /// Why this over `tokio::select!`:
-    /// - Media forwarding runs on its own OS thread so signaling / HTTP / WS
-    ///   activity on the tokio runtime can't preempt a packet forward.
-    /// - `poll_output` → `send_to` is a synchronous sequence; no `.await`
-    ///   yield points between "read RTP" and "write RTP", which removes a
-    ///   whole class of latency jitter.
+    /// Per-shard event loop on a dedicated OS thread. Without UDP recv —
+    /// the dispatcher does that and forwards pre-resolved packets via
+    /// `SfuCommand::UdpInput`. Tick cadence comes from
+    /// `cmd_rx.recv_timeout(TICK)` instead of socket SO_RCVTIMEO.
     pub fn run_blocking(mut self) {
-        let mut buf = vec![0u8; 2000];
         const TICK: Duration = Duration::from_millis(20);
-
-        // SO_RCVTIMEO: recv_from returns TimedOut after 20ms of silence. That
-        // gives us a deterministic tick cadence without an extra timer thread.
-        // Using 20ms once (not per-iteration) so we don't hammer setsockopt.
-        if let Err(e) = self.udp_socket.set_read_timeout(Some(TICK)) {
-            tracing::error!("failed to set UDP read timeout: {e}");
-            return;
-        }
-
         let mut next_tick = Instant::now() + TICK;
-        tracing::info!(local_addr = %self.local_addr, "SFU engine started (dedicated thread)");
+        tracing::info!(shard = self.shard_index, "SFU shard started");
 
         loop {
-            // --- 1. UDP receive (blocking up to TICK) -----------------------
-            match self.udp_socket.recv_from(&mut buf) {
-                Ok((n, source)) => {
-                    if let Some((sid, pid)) = self.handle_udp_packet(&buf[..n], source) {
-                        self.poll_participant(sid, pid);
+            let now = Instant::now();
+            // recv_timeout returns Timeout when the deadline expires —
+            // that's our tick driver. Saturating gives 0 if we're already
+            // past next_tick so we don't block when behind.
+            let timeout = next_tick.saturating_duration_since(now);
+
+            let first = self.cmd_rx.recv_timeout(timeout);
+            let mut targets: Vec<PollTarget> = Vec::new();
+            match first {
+                Ok(cmd) => {
+                    if let Some(t) = self.handle_command(cmd) {
+                        targets.push(t);
+                    }
+                    // Drain the rest non-blocking — better than waking
+                    // up 50 times in a burst.
+                    loop {
+                        match self.cmd_rx.try_recv() {
+                            Ok(cmd) => {
+                                if let Some(t) = self.handle_command(cmd) {
+                                    targets.push(t);
+                                }
+                            }
+                            Err(TryRecvError::Empty) => break,
+                            Err(TryRecvError::Disconnected) => {
+                                tracing::info!(
+                                    shard = self.shard_index,
+                                    "shard cmd channel closed, exiting"
+                                );
+                                return;
+                            }
+                        }
                     }
                 }
-                Err(e)
-                    if e.kind() == ErrorKind::WouldBlock
-                        || e.kind() == ErrorKind::TimedOut =>
-                {
-                    // Tick fires below.
-                }
-                Err(e) => {
-                    tracing::error!("UDP recv error: {e}");
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    tracing::info!(
+                        shard = self.shard_index,
+                        "shard cmd channel closed, exiting"
+                    );
+                    return;
                 }
             }
 
-            // --- 2. Drain pending commands ---------------------------------
-            let mut targets: Vec<PollTarget> = Vec::new();
-            loop {
-                match self.cmd_rx.try_recv() {
-                    Ok(cmd) => {
-                        if let Some(t) = self.handle_command(cmd) {
-                            targets.push(t);
-                        }
-                    }
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        tracing::info!("SFU command channel closed, shutting down");
-                        return;
-                    }
-                }
-            }
             for target in targets {
                 match target {
                     PollTarget::One(sid, pid) => self.poll_participant(sid, pid),
@@ -360,7 +588,6 @@ impl SfuEngine {
                 }
             }
 
-            // --- 3. Tick ----------------------------------------------------
             let now = Instant::now();
             if now >= next_tick {
                 self.tick();
@@ -368,7 +595,6 @@ impl SfuEngine {
                 // any pending Transmit/Event.
                 self.poll_all();
 
-                // Stats log every 5s.
                 if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
                     let elapsed = self.stats_last_log.elapsed().as_secs_f32();
                     if self.stats_audio_fwd > 0
@@ -376,14 +602,13 @@ impl SfuEngine {
                         || self.stats_udp_drops > 0
                     {
                         tracing::info!(
+                            shard = self.shard_index,
                             audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
                             video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
                             udp_drops = self.stats_udp_drops,
                             "media forwarding stats"
                         );
                     }
-                    // Surface drop volume to Prometheus too — the warn-on-each
-                    // log line is gone, this is the new alertable signal.
                     if self.stats_udp_drops > 0 {
                         metrics::counter!("matehub_video_udp_send_drops_total")
                             .increment(self.stats_udp_drops);
@@ -394,13 +619,9 @@ impl SfuEngine {
                     self.stats_last_log = Instant::now();
                 }
 
-                // Skip missed ticks instead of bursting — if we lagged behind
-                // (e.g. a big keyframe cascade), snap forward rather than
-                // firing tick() several times in a row.
                 next_tick = now + TICK;
             }
 
-            // --- 4. Negotiation (set-gated) ---------------------------------
             if !self.pending_negotiation.is_empty() {
                 self.negotiate_pending_tracks();
             }
@@ -442,6 +663,12 @@ impl SfuEngine {
                 participant_id,
                 sdp_offer,
             } => self.handle_client_offer(session_id, participant_id, sdp_offer),
+            SfuCommand::UdpInput {
+                session_id,
+                participant_id,
+                source,
+                data,
+            } => self.handle_udp_input(session_id, participant_id, source, &data),
         }
     }
 
@@ -639,6 +866,10 @@ impl SfuEngine {
             ws_tx: reply_tx.clone(),
             tracks_in: Vec::new(),
             tracks_out: Vec::new(),
+            // Default high so subscribers start on `h` until BWE proves
+            // otherwise — matches how Chrome behaves when fresh; switching
+            // straight to `l` on join would cause a visible quality dip.
+            egress_bitrate_bps: 5_000_000,
             pending_offer: None,
             queued_client_offer: None,
             pending_source_hints: HashMap::new(),
@@ -667,6 +898,8 @@ impl SfuEngine {
                     kind: *kind,
                     source: *source,
                     state: TrackOutState::ToOpen,
+                    selected_rid: None,
+                    last_rid_change_at: Instant::now(),
                 });
             }
             tracing::info!(
@@ -679,10 +912,19 @@ impl SfuEngine {
 
         // Register ufrag for fast-path routing. Done last so we don't add
         // an entry for a participant that ended up not getting inserted.
-        self.ufrag_to_participant
-            .insert(local_ufrag, (session_id, participant_id));
+        // Lives in the SHARED map (read by the dispatcher on first
+        // contact) — this shard's index is stamped into the target so
+        // the dispatcher knows where to route subsequent packets.
+        self.shared_maps.ufrag_to_target.write().insert(
+            local_ufrag,
+            ShardTarget {
+                shard: self.shard_index,
+                sid: session_id,
+                pid: participant_id,
+            },
+        );
 
-        tracing::info!(%session_id, %participant_id, "participant joined SFU");
+        tracing::info!(%session_id, %participant_id, shard = self.shard_index, "participant joined SFU");
         Some(PollTarget::One(session_id, participant_id))
     }
 
@@ -828,13 +1070,18 @@ impl SfuEngine {
         session_id: SessionId,
         participant_id: ParticipantId,
     ) -> Option<PollTarget> {
-        // Drop addr cache entries for this participant first — cheap and keeps
-        // the mapping from pointing at a dead Rtc.
-        self.addr_to_participant
-            .retain(|_, &mut (sid, pid)| !(sid == session_id && pid == participant_id));
-        // Same for ufrag map (linear over a typically-small set).
-        self.ufrag_to_participant
-            .retain(|_, &mut (sid, pid)| !(sid == session_id && pid == participant_id));
+        // Sweep both shared routing tables — addr cache and ufrag table —
+        // of any entry targeting this participant. Done first so the
+        // dispatcher stops sending us their packets; the per-Rtc cleanup
+        // below can then proceed without a hot UDP source still feeding it.
+        self.shared_maps
+            .addr_to_target
+            .write()
+            .retain(|_, t| !(t.sid == session_id && t.pid == participant_id));
+        self.shared_maps
+            .ufrag_to_target
+            .write()
+            .retain(|_, t| !(t.sid == session_id && t.pid == participant_id));
 
         // Drop any pending-negotiation entry tied to this participant — they
         // can't ack our offer if they're gone.
@@ -921,11 +1168,18 @@ impl SfuEngine {
 
         if session.participants.is_empty() {
             self.sessions.remove(&session_id);
-            // Defensive: sweep any stragglers still pointing at this session.
-            self.addr_to_participant
-                .retain(|_, &mut (sid, _)| sid != session_id);
-            self.ufrag_to_participant
-                .retain(|_, &mut (sid, _)| sid != session_id);
+            // Defensive sweep across the shared maps — any stragglers
+            // (addr cache misses we never got around to retiring) need to
+            // go too, otherwise the dispatcher would keep targeting a
+            // shard whose session is gone.
+            self.shared_maps
+                .addr_to_target
+                .write()
+                .retain(|_, t| t.sid != session_id);
+            self.shared_maps
+                .ufrag_to_target
+                .write()
+                .retain(|_, t| t.sid != session_id);
             tracing::info!(%session_id, "SFU session destroyed (empty)");
             return None;
         }
@@ -934,83 +1188,16 @@ impl SfuEngine {
         Some(PollTarget::Session(session_id))
     }
 
-    fn handle_udp_packet(
+    /// Handle a UDP packet pre-resolved by the dispatcher. (sid, pid)
+    /// already point at the right participant — we just feed it to the
+    /// Rtc. No map lookups, no slow-path scans.
+    fn handle_udp_input(
         &mut self,
-        data: &[u8],
+        session_id: SessionId,
+        participant_id: ParticipantId,
         source: SocketAddr,
-    ) -> Option<(SessionId, ParticipantId)> {
-        // Fast path: O(1) lookup by remote addr. Populated after the first
-        // successful accept() from this source.
-        if let Some((session_id, participant_id)) =
-            self.addr_to_participant.get(&source).copied()
-        {
-            let Ok(contents) = data.try_into() else {
-                return None;
-            };
-            let input = Input::Receive(
-                Instant::now(),
-                Receive {
-                    proto: Protocol::Udp,
-                    source,
-                    destination: self.primary_candidate_addr(),
-                    contents,
-                },
-            );
-
-            let handled = if let Some(session) = self.sessions.get_mut(&session_id) {
-                if let Some(p) = session.participants.get_mut(&participant_id) {
-                    if p.rtc.accepts(&input) {
-                        p.last_activity_at = Instant::now();
-                        let pid = p.id;
-                        if let Err(e) = p.rtc.handle_input(input) {
-                            tracing::warn!(id = %pid, "rtc handle_input error: {e}");
-                            p.rtc.disconnect();
-                        }
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            if handled {
-                return Some((session_id, participant_id));
-            }
-            // Stale mapping: participant/session gone, or ICE restart rebound
-            // the Rtc to a new source. Drop the cache entry and fall through.
-            self.addr_to_participant.remove(&source);
-        }
-
-        // Slow path. Two stages:
-        //   1. Cheap shape check — drop random UDP noise (RTP/RTCP/DTLS look
-        //      nothing like STUN). The rest of this method only runs for
-        //      packets that look like ICE binding requests.
-        //   2. Parse USERNAME, look up our ufrag → participant. If found,
-        //      route directly. The previous N×M scan over every Rtc is now
-        //      a single lookup; legitimate first-contacts hit it once and
-        //      the addr cache takes over from packet 2 onward.
-        if !looks_like_stun(data) {
-            metrics::counter!("matehub_video_unknown_source_drops_total").increment(1);
-            return None;
-        }
-        let Some(ufrag) = parse_stun_local_ufrag(data) else {
-            // STUN-shaped but no parseable USERNAME — could be a binding
-            // success response from somewhere (legitimate when we initiate
-            // checks) or junk. Drop; caller doesn't lose anything because
-            // we wouldn't have known where to route it anyway.
-            return None;
-        };
-        let Some(&(session_id, participant_id)) =
-            self.ufrag_to_participant.get(ufrag)
-        else {
-            metrics::counter!("matehub_video_unknown_ufrag_drops_total").increment(1);
-            return None;
-        };
-
+        data: &[u8],
+    ) -> Option<PollTarget> {
         let now = Instant::now();
         let destination = self.primary_candidate_addr();
         let session = self.sessions.get_mut(&session_id)?;
@@ -1028,11 +1215,7 @@ impl SfuEngine {
                 contents: input_contents,
             },
         );
-
         if !participant.rtc.accepts(&input) {
-            // Ufrag matched but Rtc still rejects — could be a stale STUN
-            // request from a defunct ICE pair, or a malformed body. One
-            // drop, no escalation.
             return None;
         }
         participant.last_activity_at = now;
@@ -1042,10 +1225,7 @@ impl SfuEngine {
             participant.rtc.disconnect();
             return None;
         }
-        // Cache addr → participant for O(1) demux on subsequent packets.
-        self.addr_to_participant
-            .insert(source, (session_id, pid));
-        Some((session_id, pid))
+        Some(PollTarget::One(session_id, pid))
     }
 
     fn tick(&mut self) {
@@ -1056,6 +1236,56 @@ impl SfuEngine {
         // publisher list is at most a few hundred.
         for session in self.sessions.values_mut() {
             session.recompute_top_audio();
+        }
+
+        // Adaptive simulcast layer pick. For each subscriber's video
+        // TrackOuts, decide whether they should be on `h` or `l` given
+        // their last BWE estimate. On a flip, queue a keyframe request
+        // against the publisher so the new layer starts decoding ASAP.
+        let mut keyframe_requests: Vec<(SessionId, ParticipantId, Mid)> = Vec::new();
+        for (session_id, session) in self.sessions.iter_mut() {
+            // Snapshot bitrates first to avoid holding a mutable borrow
+            // on participants while iterating + mutating their TrackOuts.
+            let bitrates: HashMap<ParticipantId, u64> = session
+                .participants
+                .iter()
+                .map(|(pid, p)| (*pid, p.egress_bitrate_bps))
+                .collect();
+            for participant in session.participants.values_mut() {
+                let Some(bps) = bitrates.get(&participant.id).copied() else {
+                    continue;
+                };
+                for t in participant.tracks_out.iter_mut() {
+                    if t.kind != MediaKind::Video {
+                        continue;
+                    }
+                    let next = next_layer(t.selected_rid, bps, t.last_rid_change_at, now);
+                    if next != t.selected_rid {
+                        // Upgrades to `h` need an I-frame on the new layer
+                        // to start decoding without artifacts. Downgrades
+                        // to `l` already have keyframes flowing (l GOP is
+                        // typically much shorter), so skip the request.
+                        let upgraded_to_h = next == Some("h");
+                        t.selected_rid = next;
+                        t.last_rid_change_at = now;
+                        if upgraded_to_h {
+                            keyframe_requests.push((
+                                *session_id,
+                                t.origin,
+                                t.origin_mid,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        // Drain queued keyframe requests through the throttle so a session
+        // upgrading 30 subscribers in one tick still only fires one PLI
+        // per (publisher, mid).
+        for (session_id, origin_pid, origin_mid) in keyframe_requests {
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                session.request_keyframe_throttled(origin_pid, origin_mid);
+            }
         }
 
         // Collect zombies: ICE disconnected + no media for the configured
@@ -1239,6 +1469,8 @@ impl SfuEngine {
                                             kind: e.kind,
                                             source,
                                             state: TrackOutState::ToOpen,
+                                            selected_rid: None,
+                                            last_rid_change_at: Instant::now(),
                                         });
                                         newly_queued.push(*pid);
                                     }
@@ -1254,6 +1486,20 @@ impl SfuEngine {
                         // a second tracks_in scan — kind is already derived
                         // there as part of the simulcast filter.
                         self.forward_media_now(session_id, source_pid, &data);
+                    }
+                    Event::EgressBitrateEstimate(kind) => {
+                        // BWE gives us per-Rtc throughput estimate; we feed
+                        // it into the layer-pick decision in tick(). TWCC
+                        // is the modern signal; REMB is legacy fallback for
+                        // older endpoints. Both come in as `Bitrate` (bps).
+                        let bps = match kind {
+                            BweKind::Twcc(b) | BweKind::Remb(_, b) => b.as_u64(),
+                        };
+                        if let Some(session) = self.sessions.get_mut(&session_id)
+                            && let Some(p) = session.participants.get_mut(&source_pid)
+                        {
+                            p.egress_bitrate_bps = bps;
+                        }
                     }
                     Event::KeyframeRequest(req) => {
                         // Route PLI/FIR to the PUBLISHER, not the subscriber.
@@ -1309,21 +1555,21 @@ impl SfuEngine {
         source_pid: ParticipantId,
         data: &MediaData,
     ) {
-        // Single TrackIn lookup serves four purposes: stats (kind),
-        // simulcast filter (seen_high_layer), audio EMA update for the
-        // top-K speaker selector, and a hard "unknown track" gate.
+        // Single TrackIn lookup serves three purposes: stats (kind),
+        // simulcast bookkeeping (publisher's seen_high_layer flag), and
+        // audio EMA update for the top-K speaker selector. Plus a hard
+        // "unknown track" gate.
         //
-        // Simulcast filter (steady state forwards `h`, start-up fallback
-        // to `l` until the high layer's first packet arrives):
-        //   * rid == None → no simulcast, always forward (audio mostly).
-        //   * rid == "h"  → forward + flip seen_high_layer.
-        //   * rid != "h"  → forward only while seen_high_layer == false.
+        // Layer filtering MOVED to the per-subscriber loop below, since
+        // adaptive simulcast wants different rids per subscriber: keep
+        // the `h`-seen flag here for the start-up fallback decision, and
+        // let each subscriber's own selected_rid drive what they see.
         //
         // Audio loudness EMA (RFC 6464): voice_activity bit gates whether
         // the level moves the average up or just decays. Smoothing prevents
         // a single loud burst from kicking a quiet participant into the
         // top-K and then back out 20ms later.
-        let (kind, can_forward, in_top_audio) = {
+        let (kind, publisher_seen_high, in_top_audio) = {
             let Some(session) = self.sessions.get_mut(&session_id) else {
                 return;
             };
@@ -1338,29 +1584,24 @@ impl SfuEngine {
                 return;
             };
             let kind = track.kind;
-            let can_forward = match data.rid.as_ref().map(|r| &**r as &str) {
-                None => true,
-                Some("h") => {
-                    if !track.seen_high_layer {
-                        track.seen_high_layer = true;
-                        tracing::info!(
-                            publisher = %source_pid,
-                            mid = %data.mid,
-                            "high simulcast layer live — fallback retired"
-                        );
-                    }
-                    true
+            // Update publisher-side simulcast bookkeeping. seen_high_layer
+            // remains the source of truth for the start-up fallback —
+            // subscribers wanting `h` get `l` while h hasn't shown up yet.
+            if let Some(rid) = data.rid.as_ref().map(|r| &**r as &str) {
+                if rid == "h" && !track.seen_high_layer {
+                    track.seen_high_layer = true;
+                    tracing::info!(
+                        publisher = %source_pid,
+                        mid = %data.mid,
+                        "high simulcast layer live"
+                    );
                 }
-                Some(_) => !track.seen_high_layer,
-            };
-            // Audio loudness bookkeeping. Only audible packets push the
-            // EMA upward; silence (voice_activity=false) decays it so
-            // newly-loud speakers can claim a top-K slot quickly.
+            }
+            let publisher_seen_high = track.seen_high_layer;
             if kind == MediaKind::Audio {
                 let voice_active = data.ext_vals.voice_activity == Some(true);
                 if let Some(level_dbov) = data.ext_vals.audio_level {
                     if voice_active {
-                        // -127..0 dBov → 0..127 loudness; smoothing 0.7/0.3.
                         let loud = (-level_dbov) as f32;
                         track.audio_loudness_ema =
                             track.audio_loudness_ema * 0.7 + loud * 0.3;
@@ -1368,14 +1609,12 @@ impl SfuEngine {
                         track.audio_loudness_ema *= 0.7;
                     }
                 } else {
-                    // Extension wasn't negotiated / publisher dropped it —
-                    // can't do better than treating every packet as
-                    // "speaking", which keeps the participant in top-K.
-                    // Fine; degrades gracefully to forward-everything.
+                    // Extension wasn't negotiated — treat every packet as
+                    // "speaking" so we never starve an unannounced talker.
                     track.audio_loudness_ema = track.audio_loudness_ema.max(64.0);
                 }
             }
-            (kind, can_forward, in_top)
+            (kind, publisher_seen_high, in_top)
         };
 
         // Counters reflect input volume from publishers (pre-filter), same
@@ -1385,10 +1624,6 @@ impl SfuEngine {
             MediaKind::Video => self.stats_video_fwd += 1,
         }
 
-        if !can_forward {
-            return;
-        }
-
         // Top-K audio filter: drop audio from publishers not currently in
         // the speaker set. The set is recomputed on every tick; while it's
         // small enough (≤ K publishers) recompute keeps everyone in,
@@ -1396,6 +1631,10 @@ impl SfuEngine {
         if kind == MediaKind::Audio && !in_top_audio {
             return;
         }
+
+        // Packet's simulcast layer (None = no simulcast at all → forward
+        // unconditionally below).
+        let pkt_rid = data.rid.as_ref().map(|r| &**r as &str);
 
         let key = (source_pid, data.mid);
 
@@ -1427,6 +1666,36 @@ impl SfuEngine {
             let Some(target) = session.participants.get_mut(&target_pid) else {
                 continue;
             };
+
+            // Per-subscriber simulcast filter. For video with simulcast
+            // enabled, each subscriber has their own preferred rid based
+            // on BWE; we drop layers they don't want.
+            //
+            // Effective layer rules:
+            //   * Subscriber wants `h` but publisher hasn't started h yet
+            //     → fall back to `l` so they see something during the
+            //       BWE warm-up window.
+            //   * Subscriber wants `l` → take only `l`.
+            //   * Subscriber has no decision (None) → default `h` with
+            //     the same fallback as above.
+            // Audio packets and non-simulcast video bypass this branch
+            // (pkt_rid is None).
+            if let Some(rid) = pkt_rid {
+                let want_for_target = target
+                    .tracks_out
+                    .iter()
+                    .find(|t| t.open_mid() == Some(target_mid))
+                    .and_then(|t| t.selected_rid)
+                    .unwrap_or("h");
+                let effective = if want_for_target == "h" && !publisher_seen_high {
+                    "l"
+                } else {
+                    want_for_target
+                };
+                if rid != effective {
+                    continue;
+                }
+            }
 
             let Some(writer) = target.rtc.writer(target_mid) else {
                 continue;

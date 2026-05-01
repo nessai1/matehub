@@ -1,14 +1,24 @@
 pub mod sessions;
 pub mod ws;
 
+#[cfg(feature = "profiling")]
+pub mod profiling;
+
 use axum::{Json, Router};
 
 use crate::state::AppState;
 
 pub fn routes(state: AppState) -> Router {
-    Router::new()
+    let mut router = Router::new()
         .merge(sessions::routes())
-        .merge(ws::routes())
+        .merge(ws::routes());
+
+    #[cfg(feature = "profiling")]
+    {
+        router = router.merge(profiling::routes());
+    }
+
+    router
         .route("/health", axum::routing::get(|| async { "ok" }))
         .route("/version", axum::routing::get(version_handler))
         .with_state(state)

@@ -136,12 +136,11 @@ fn ws_send_or_drop(tx: &mpsc::Sender<ServerMessage>, msg: ServerMessage) {
     }
 }
 
-/// Drop-on-full helper for the SFU command channel. Same intent, different
-/// channel type.
-fn sfu_send_or_drop(tx: &crossbeam::channel::Sender<SfuCommand>, cmd: SfuCommand) {
-    if tx.try_send(cmd).is_err() {
-        metrics::counter!("matehub_video_sfu_cmd_drops_total").increment(1);
-    }
+/// Drop-on-full helper for the SFU pool. Routes by session id internally
+/// (consistent hash), so every command lands on the shard owning that
+/// session. Counter increment happens inside `SfuPool::send`.
+fn sfu_send_or_drop(pool: &crate::sfu::SfuPool, sid: SessionId, cmd: SfuCommand) {
+    pool.send(sid, cmd);
 }
 
 /// Derive a stable participant id from (session_id, user_id). Reconnect
@@ -273,7 +272,7 @@ async fn handle_ws(
         }
     });
 
-    let sfu_tx = state.sfu_cmd_tx.clone();
+    let sfu_pool = state.sfu_pool.clone();
 
     // Main loop: read client messages
     while let Some(Ok(msg)) = ws_receiver.next().await {
@@ -312,7 +311,8 @@ async fn handle_ws(
             ClientMessage::Join { sdp_offer } => {
                 tracing::info!(%participant_id, "received SDP offer, sending to SFU");
                 sfu_send_or_drop(
-                    &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                     SfuCommand::Join {
                         session_id,
                         participant_id,
@@ -334,7 +334,8 @@ async fn handle_ws(
             ClientMessage::Answer { sdp_answer } => {
                 tracing::info!(%participant_id, "received SDP answer");
                 sfu_send_or_drop(
-                    &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                     SfuCommand::Answer {
                         session_id,
                         participant_id,
@@ -351,7 +352,8 @@ async fn handle_ws(
                 // Trickle ICE is chatty — keep at debug to not flood logs.
                 tracing::debug!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
                 sfu_send_or_drop(
-                    &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                     SfuCommand::IceCandidate {
                         session_id,
                         participant_id,
@@ -380,7 +382,8 @@ async fn handle_ws(
                     (Some(source), Some(kind)) => {
                         tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
                         sfu_send_or_drop(
-                            &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                             SfuCommand::PublishTrack {
                                 session_id,
                                 participant_id,
@@ -398,7 +401,8 @@ async fn handle_ws(
             ClientMessage::Offer { sdp_offer } => {
                 tracing::info!(%participant_id, "received client-initiated SDP offer");
                 sfu_send_or_drop(
-                    &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                     SfuCommand::ClientOffer {
                         session_id,
                         participant_id,
@@ -436,7 +440,8 @@ async fn handle_ws(
             ClientMessage::Leave => {
                 tracing::info!(%participant_id, %user_id, "participant leaving");
                 sfu_send_or_drop(
-                    &sfu_tx,
+                    &sfu_pool,
+                    session_id,
                     SfuCommand::Leave {
                         session_id,
                         participant_id,
@@ -452,7 +457,8 @@ async fn handle_ws(
 
     // Send leave to SFU (in case WS dropped without explicit leave)
     sfu_send_or_drop(
-        &sfu_tx,
+                    &sfu_pool,
+                    session_id,
         SfuCommand::Leave {
             session_id,
             participant_id,

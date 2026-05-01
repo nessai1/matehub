@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use crossbeam::channel::Sender;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use crate::sfu::SfuCommand;
+use crate::sfu::SfuPool;
 use crate::signaling::ServerMessage;
 
 // Internal-only identifiers (never leave the SFU pod) stay as Uuid — they're
@@ -27,10 +26,10 @@ pub type HubId = i64;
 #[derive(Clone)]
 pub struct AppState {
     pub inner: Arc<Mutex<AppStateInner>>,
-    /// Channel to send commands to the SFU engine (on its dedicated thread).
-    /// crossbeam Sender is Clone + Send + Sync — safe to share across WS tasks
-    /// and to call `.send()` without awaiting.
-    pub sfu_cmd_tx: Sender<SfuCommand>,
+    /// SFU command router. Replaces a single Sender<SfuCommand> — internally
+    /// owns N shard senders and routes by session id (consistent hash on
+    /// Uuid). Clone is Arc-cheap.
+    pub sfu_pool: SfuPool,
     /// Optional NATS client for publishing voice-occupancy events to the hub
     /// service. `None` when NATS isn't reachable — video still works, but the
     /// sidebar roster falls back to polling.
@@ -43,13 +42,13 @@ pub struct AppStateInner {
 }
 
 impl AppState {
-    pub fn new(sfu_cmd_tx: Sender<SfuCommand>, nats: Option<async_nats::Client>) -> Self {
+    pub fn new(sfu_pool: SfuPool, nats: Option<async_nats::Client>) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AppStateInner {
                 sessions: HashMap::new(),
                 channel_to_session: HashMap::new(),
             })),
-            sfu_cmd_tx,
+            sfu_pool,
             nats,
         }
     }
