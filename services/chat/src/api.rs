@@ -104,13 +104,11 @@ async fn send_message(
         return Err(StatusCode::BAD_REQUEST.into());
     }
 
-    // Rate limit: 30 messages / 10s per user per channel. Generous enough
-    // for normal back-and-forth (incl. long pasted blocks broken into a
-    // few sends), tight enough that scripts/loops trip it. The TTL of the
+    // Rate limit: 10 messages / 10s per user per channel. The TTL of the
     // bucket flows back in `Retry-After` so the client can show a countdown.
     if let Some(mut redis) = state.redis.clone() {
         if let Err(retry_after) =
-            read_state::check_rate_limit(&mut redis, &user_id, channel_id, 30, 10).await
+            read_state::check_rate_limit(&mut redis, &user_id, channel_id, 10, 10).await
         {
             return Err(SendError::RateLimited(retry_after));
         }

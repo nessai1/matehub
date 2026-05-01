@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,11 +51,6 @@ interface Hub {
   description: string | null
 }
 
-interface ServiceInfo {
-  name: string
-  version: string | null
-  status: "up" | "down"
-}
 
 export function HubSwitcher({
   currentHub,
@@ -70,40 +65,17 @@ export function HubSwitcher({
   const { perms, has } = usePermissions()
   const [rolesOpen, setRolesOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [services, setServices] = useState<ServiceInfo[] | null>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackEmail, setFeedbackEmail] = useState("")
   const [feedbackText, setFeedbackText] = useState("")
   const [feedbackSending, setFeedbackSending] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState(false)
 
-  // Lazy-load service versions: only when the dropdown opens, and only
-  // once per session — versions don't change between page loads, and
-  // the aggregator does N HTTP calls server-side so caching matters.
-  useEffect(() => {
-    if (!menuOpen || services !== null || !session?.token) return
-    let cancelled = false
-    fetch(`/api/hub/v1/services/versions`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: ServiceInfo[]) => {
-        if (!cancelled) setServices(data)
-      })
-      .catch(() => {
-        if (!cancelled) setServices([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [menuOpen, services, session?.token])
-
   return (
     <>
       <SidebarMenu>
         <SidebarMenuItem>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
@@ -172,39 +144,6 @@ export function HubSwitcher({
                 </>
               )}
 
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-muted-foreground">
-                {t("Services")}
-              </DropdownMenuLabel>
-              {services === null ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  {t("Loading...")}
-                </div>
-              ) : services.length === 0 ? (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  {t("No services reachable")}
-                </div>
-              ) : (
-                services.map((s) => (
-                  <div
-                    key={s.name}
-                    className="flex items-center gap-2 px-2 py-1 text-xs"
-                  >
-                    <span
-                      className={
-                        s.status === "up"
-                          ? "size-1.5 rounded-full bg-emerald-500"
-                          : "size-1.5 rounded-full bg-zinc-500"
-                      }
-                      aria-hidden
-                    />
-                    <span className="font-medium">{s.name}</span>
-                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                      {s.version ?? "—"}
-                    </span>
-                  </div>
-                ))
-              )}
               {otherHubs.length > 0 && (
                 <>
                   <DropdownMenuSeparator />

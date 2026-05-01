@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +19,23 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hubName, setHubName] = useState<string | null>(null);
+
+  // GET /v1/hubs/{id} is public (no AuthUser extractor on the handler), so
+  // we can show the hub's display name on the sign-in screen without a
+  // token. Falls back silently — the form still works if this errors.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${HUB_API}/v1/hubs/${DEV_HUB_ID}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { name?: string } | null) => {
+        if (!cancelled && data?.name) setHubName(data.name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -67,7 +84,7 @@ export default function LoginPage() {
           {t("Sign in")}
         </h1>
         <p className="mt-1 font-mono text-xs text-zinc-500">
-          Dev Hub
+          {hubName ?? " "}
         </p>
       </div>
 

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   HashIcon,
   MicIcon,
+  MicOffIcon,
   RadioIcon,
   PlusIcon,
   ChevronRightIcon,
@@ -202,7 +203,7 @@ function VoiceParticipantsRow({
           {isSelf && <span className="ml-1 text-[10px] text-sidebar-foreground/30">(You)</span>}
         </span>
         {isMicMuted && (
-          <MicIcon className="ml-auto h-3 w-3 text-red-400/70" />
+          <MicOffIcon className="ml-auto h-3 w-3 text-red-400/70" />
         )}
         {!isMicMuted && userId /* hush "unused" */ && null}
       </div>

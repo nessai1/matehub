@@ -20,6 +20,12 @@ interface Props {
   onOpenChange: (open: boolean) => void;
 }
 
+interface ServiceInfo {
+  name: string;
+  version: string | null;
+  status: "up" | "down";
+}
+
 // Admin-only dialog for editing hub identity. The General Settings entry
 // in HubSwitcher is gated on perms?.is_admin so unauthorised users never
 // see this; the backend rejects with 403 either way.
@@ -34,8 +40,31 @@ export function HubSettingsDialog({ open, onOpenChange }: Props) {
   const [cropSource, setCropSource] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [services, setServices] = useState<ServiceInfo[] | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Lazy-fetch service versions only when the dialog opens. Re-fetch on
+  // each open so the operator sees fresh data after a deploy without
+  // reloading the whole SPA.
+  useEffect(() => {
+    if (!open || !session?.token) return;
+    let cancelled = false;
+    setServices(null);
+    fetch(`/api/hub/v1/services/versions`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: ServiceInfo[]) => {
+        if (!cancelled) setServices(data);
+      })
+      .catch(() => {
+        if (!cancelled) setServices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session?.token]);
 
   // Re-seed draft state every time the dialog opens — covers both the
   // first open and repeat opens after another tab edited the hub.
@@ -182,6 +211,43 @@ export function HubSettingsDialog({ open, onOpenChange }: Props) {
               <p className="text-[11px] text-muted-foreground">
                 {description.length}/500
               </p>
+            </div>
+
+            <div className="w-full space-y-2">
+              <label className="text-sm font-medium">{t("Services")}</label>
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                {services === null ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("Loading...")}
+                  </p>
+                ) : services.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {t("No services reachable")}
+                  </p>
+                ) : (
+                  <ul className="space-y-1">
+                    {services.map((s) => (
+                      <li
+                        key={s.name}
+                        className="flex items-center gap-2 text-xs"
+                      >
+                        <span
+                          className={
+                            s.status === "up"
+                              ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
+                              : "size-1.5 shrink-0 rounded-full bg-zinc-500"
+                          }
+                          aria-hidden
+                        />
+                        <span className="font-medium">{s.name}</span>
+                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                          {s.version ?? "—"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
 
             {error && (
