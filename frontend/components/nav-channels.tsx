@@ -28,6 +28,7 @@ import { usePermissions, P } from "@/hooks/use-permissions"
 import { useVideoCall } from "@/contexts/video-call-context"
 import { useHubSelection } from "@/contexts/hub-selection-context"
 import { useVoiceOccupancy } from "@/hooks/use-voice-occupancy"
+import { useVoiceMute } from "@/hooks/use-voice-mute"
 import { useUnreadCounts } from "@/contexts/chat-context"
 import { useAddTeammates } from "@/contexts/add-teammates-context"
 import { ChannelEditor, type ChannelEditorData } from "@/components/hub/channel-editor"
@@ -177,15 +178,20 @@ function VoiceParticipantsRow({
 }) {
   return (
     <li>
-      <div
-        className={cn(
-          "flex items-center gap-2 rounded-md py-1 pl-8 pr-2 text-xs",
-          isSpeaking
-            ? "text-emerald-400"
-            : "text-sidebar-foreground/70",
-        )}
-      >
-        <Avatar size="sm" className="h-4 w-4">
+      <div className="flex items-center gap-2 rounded-md py-1 pl-8 pr-2 text-xs text-sidebar-foreground/70">
+        {/* Speaking indicator: a static green ring + soft halo that fades
+            in and out via transition-shadow. No continuous pulse — it
+            just appears when speech starts and dissolves when it stops.
+            Transitioning box-shadow gives the entrance/exit smoothness
+            for free; both directions share the duration. */}
+        <Avatar
+          size="sm"
+          className={cn(
+            "h-4 w-4 transition-shadow duration-200 ease-out",
+            isSpeaking &&
+              "shadow-[0_0_0_2px_rgba(52,211,153,0.9),0_0_8px_rgba(52,211,153,0.45)]",
+          )}
+        >
           {avatarUrl && <AvatarImage src={avatarUrl} />}
           <AvatarFallback className="text-[8px]">
             {displayName.charAt(0).toUpperCase()}
@@ -260,6 +266,7 @@ export function NavChannels() {
   } = useVideoCall()
   const { selectedTextChannelId, selectTextChannel } = useHubSelection()
   const occupancy = useVoiceOccupancy()
+  const muteState = useVoiceMute()
   const unreadCounts = useUnreadCounts()
   const { open: openAddTeammates } = useAddTeammates()
 
@@ -416,10 +423,20 @@ export function NavChannels() {
                         avatarUrl={m.avatar_url}
                         isSelf={isSelf}
                         isSpeaking={sdk?.isSpeaking ?? false}
+                        // Priority order:
+                        //   1. Self → local SDK state (no roundtrip lag).
+                        //   2. Same call as us → SDK state from peer
+                        //      (sub-second updates via SFU WS).
+                        //   3. Other call → hub-wide voice-mute store
+                        //      (presence-WS, ~tens of ms lag).
+                        // Default both muted matches video service's
+                        // Participant defaults — keeps cold start safe.
                         isMicMuted={
                           isSelf
                             ? !selfMicEnabled
-                            : sdk?.isMicMuted ?? false
+                            : sdk?.isMicMuted ??
+                              muteState.get(m.user_id)?.audioMuted ??
+                              true
                         }
                       />
                     )

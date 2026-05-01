@@ -114,6 +114,81 @@ pub async fn voice_occupancy_snapshot(
         .collect()
 }
 
+// ── Voice mute state ──────────────────────────────────────────
+// Stored as `hub:<hub_id>:voice_mute` hash, keys `<user_id>:<kind>`,
+// values "1" / "0". Cleared en-bloc when the user leaves voice (the
+// occupancy bus calls `voice_mute_clear` to drop both audio + video
+// entries together).
+
+fn voice_mute_key(hub_id: i64) -> String {
+    format!("hub:{hub_id}:voice_mute")
+}
+
+fn voice_mute_field(user_id: i64, kind: &str) -> String {
+    format!("{user_id}:{kind}")
+}
+
+pub async fn voice_mute_set(
+    conn: &mut RedisPool,
+    hub_id: i64,
+    user_id: i64,
+    kind: &str,
+    muted: bool,
+) {
+    let key = voice_mute_key(hub_id);
+    let field = voice_mute_field(user_id, kind);
+    let val = if muted { "1" } else { "0" };
+    if let Err(e) = conn.hset::<_, _, _, ()>(&key, &field, val).await {
+        tracing::error!(%key, %field, "voice mute SET failed: {e}");
+    }
+}
+
+/// Remove all mute state for this user (both kinds). Called when the user
+/// leaves voice altogether — occupancy bus invokes this.
+pub async fn voice_mute_clear(conn: &mut RedisPool, hub_id: i64, user_id: i64) {
+    let key = voice_mute_key(hub_id);
+    let _: Result<(), _> = conn
+        .hdel(
+            &key,
+            &[
+                voice_mute_field(user_id, "audio"),
+                voice_mute_field(user_id, "video"),
+            ],
+        )
+        .await;
+}
+
+/// Snapshot returns map of user_id → (audio_muted, video_muted). Default
+/// for missing entries is "true" (i.e. muted) — matches video service's
+/// Participant initial state, so a member appearing in occupancy without
+/// mute entries reads as both muted.
+pub async fn voice_mute_snapshot(
+    conn: &mut RedisPool,
+    hub_id: i64,
+) -> std::collections::HashMap<i64, (bool, bool)> {
+    let key = voice_mute_key(hub_id);
+    let map: std::collections::HashMap<String, String> =
+        conn.hgetall(&key).await.unwrap_or_default();
+    let mut out: std::collections::HashMap<i64, (bool, bool)> =
+        std::collections::HashMap::new();
+    for (k, v) in map {
+        let Some((uid_s, kind)) = k.split_once(':') else {
+            continue;
+        };
+        let Ok(uid) = uid_s.parse::<i64>() else {
+            continue;
+        };
+        let muted = v == "1";
+        let entry = out.entry(uid).or_insert((true, true));
+        match kind {
+            "audio" => entry.0 = muted,
+            "video" => entry.1 = muted,
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Batch check: which of these user_ids are online
 pub async fn get_online_set(
     conn: &mut RedisPool,

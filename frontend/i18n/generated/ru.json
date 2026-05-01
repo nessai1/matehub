@@ -720,6 +720,18 @@
       ],
       "Only hub admins can change settings": [
         "Только админы могут менять настройки"
+      ],
+      "cancel": [
+        "отменить"
+      ],
+      "Whoa, slow down! Try again in %s :)": [
+        "Уупс! У тебя слишком много сообщений, попробуй через %s :)"
+      ],
+      "Disconnected from call": [
+        "Отключён от звонка"
+      ],
+      "You joined this call from another window. Only one tab can be active at a time.": [
+        "Вы зашли в этот звонок из другого окна. Активной может быть только одна вкладка."
       ]
     }
   }

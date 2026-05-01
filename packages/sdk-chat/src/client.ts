@@ -439,7 +439,7 @@ export class ChatClient {
         attachments: opts.attachments,
       }),
     });
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
     return res.json();
   }
 
@@ -453,7 +453,7 @@ export class ChatClient {
         body: JSON.stringify({ content }),
       },
     );
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
   }
 
   /** Delete a message. */
@@ -465,7 +465,7 @@ export class ChatClient {
         headers: this.headers,
       },
     );
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
   }
 
   /** Fetch message history (newest first). */
@@ -479,7 +479,7 @@ export class ChatClient {
       `${this.apiBase}/v1/channels/${channelId}/messages${qs ? `?${qs}` : ""}`,
       { headers: this.headers },
     );
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
     return res.json();
   }
 
@@ -562,7 +562,7 @@ export class ChatClient {
     const res = await fetch(`${this.apiBase}/v1/read-states`, {
       headers: this.headers,
     });
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
     return res.json();
   }
 
@@ -573,7 +573,7 @@ export class ChatClient {
       headers: this.headers,
       body: JSON.stringify({ channels }),
     });
-    if (!res.ok) throw new ChatApiError(res.status, await res.text());
+    if (!res.ok) throw await chatError(res);
     return res.json();
   }
 }
@@ -583,8 +583,27 @@ export class ChatApiError extends Error {
   constructor(
     public status: number,
     public body: string,
+    /**
+     * Parsed `Retry-After` header (seconds). Set on 429 responses and any
+     * other status that includes the header. The server emits it for rate
+     * limits so the client can show an honest countdown rather than guess.
+     */
+    public retryAfter?: number,
   ) {
     super(`Chat API error ${status}: ${body}`);
     this.name = "ChatApiError";
   }
+}
+
+function parseRetryAfter(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (!raw) return undefined;
+  // Spec also allows HTTP-date; we only emit integer seconds, so don't
+  // overengineer the parser. Bad value → undefined, caller picks a default.
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+async function chatError(res: Response): Promise<ChatApiError> {
+  return new ChatApiError(res.status, await res.text(), parseRetryAfter(res));
 }

@@ -14,6 +14,10 @@ interface UseVideoClientOptions {
   userId: string;
   userUuid?: string;
   token: string;
+  /** Fires when the SFU explicitly kicks us — e.g. the same user joined
+   *  this call from another tab. Caller should leave the call UI
+   *  cleanly (call leaveVoice) and surface a message to the user. */
+  onForceDisconnected?: (reason: string) => void;
 }
 
 interface UseVideoClientReturn {
@@ -204,6 +208,13 @@ export function useVideoClient(
           break;
         case "disconnected":
           setIsConnected(false);
+          break;
+        case "force_disconnected":
+          // Server replaced our session (multi-tab collision). Hop back
+          // to "not in a call" state and let the caller show a toast +
+          // leave the call view.
+          setIsConnected(false);
+          opts?.onForceDisconnected?.(event.reason);
           break;
         case "error":
           setError(event.message);

@@ -8,14 +8,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import {
+  ChatApiError,
   ChatClient,
   type Attachment,
   type ChatClientEvent,
   type ConnectionState,
   type Message,
 } from "@matehub/sdk-chat";
+import { t } from "@/i18n";
 
 const CHAT_API = "/api/chat";
 
@@ -93,6 +96,7 @@ interface ChatContextValue {
   ) => Promise<void>;
   sendTyping: (channelId: string) => void;
   retryMessage: (channelId: string, clientId: string) => void;
+  cancelMessage: (channelId: string, clientId: string) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -138,6 +142,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       { channelId: string; content: string; attachments?: Attachment[] }
     >
   >(new Map());
+  // One toast id per channel: a fresh 429 in the same channel updates the
+  // existing toast instead of stacking three or four on top of each other.
+  const rateLimitToastId = useRef<Map<string, string | number>>(new Map());
 
   const myUserIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -221,10 +228,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             if (msg.client_id) {
               const idx = list.findIndex((m) => m.client_id === msg.client_id);
               if (idx !== -1) {
-                const copy = [...list];
-                copy[idx] = msg;
+                // Drop the local optimistic copy from its old slot and
+                // re-append at the end. Keeping in-place caused the
+                // sender's view to diverge from readers' after a retry:
+                // the server snowflake is always newer than the synthetic
+                // (and newer than anything else that arrived in between),
+                // so the message belongs at the tail for everyone.
+                const without = list.filter((_, i) => i !== idx);
                 const next = new Map(prev);
-                next.set(chId, copy);
+                next.set(chId, [...without, msg]);
                 return next;
               }
             }
@@ -464,6 +476,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       }
       typingTimers.current.clear();
       lastMessageAt.current.clear();
+      for (const id of rateLimitToastId.current.values()) toast.dismiss(id);
+      rateLimitToastId.current.clear();
     };
   }, [session?.token, session?.hubId, ackUpTo]);
 
@@ -587,6 +601,40 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // Toast that ticks down from `seconds` and dismisses itself; a follow-up
+  // 429 in the same channel calls this again and replaces the previous
+  // countdown rather than stacking (toast-id is per channel).
+  const showRateLimitToast = useCallback(
+    (channelId: string, seconds: number) => {
+      const existing = rateLimitToastId.current.get(channelId);
+      if (existing != null) toast.dismiss(existing);
+
+      const renderMsg = (sec: number) =>
+        t("Whoa, slow down! Try again in %s :)", `${sec}s`);
+
+      const id = toast.warning(renderMsg(seconds), {
+        duration: seconds * 1000 + 200,
+      });
+      rateLimitToastId.current.set(channelId, id);
+
+      let remaining = seconds;
+      const interval = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(interval);
+          toast.dismiss(id);
+          rateLimitToastId.current.delete(channelId);
+          return;
+        }
+        toast.warning(renderMsg(remaining), {
+          id,
+          duration: remaining * 1000 + 200,
+        });
+      }, 1000);
+    },
+    [],
+  );
+
   const doSend = useCallback(
     async (
       channelId: string,
@@ -599,15 +647,20 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       try {
         await c.sendMessage(channelId, { content, clientId, attachments });
       } catch (err: unknown) {
-        if (
-          err &&
-          typeof err === "object" &&
-          "status" in err &&
-          (err as { status: number }).status === 401
-        ) {
+        if (err instanceof ChatApiError && err.status === 401) {
           handleUnauthorized();
           return;
         }
+
+        // 429: rate-limited. Show the countdown toast so the user knows when
+        // the bucket reopens, and mark the message failed — the same UI as
+        // any other failure. We deliberately do NOT auto-retry: queueing
+        // sends behind a throttle just turns into a spam buffer that floods
+        // the channel the moment the window resets.
+        if (err instanceof ChatApiError && err.status === 429) {
+          showRateLimitToast(channelId, err.retryAfter ?? 5);
+        }
+
         setMessagesByChannel((prev) => {
           const list = prev.get(channelId);
           if (!list) return prev;
@@ -622,7 +675,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         console.error("[ChatProvider] sendMessage failed:", err);
       }
     },
-    [handleUnauthorized],
+    [handleUnauthorized, showRateLimitToast],
   );
 
   const sendMessage = useCallback(
@@ -686,21 +739,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (channelId: string, clientId: string) => {
       const payload = pendingPayload.current.get(clientId);
       if (!payload) return;
+      // Move to end of list on retry — same logic as the server-echo path
+      // (see message.new handler). When the user explicitly retries a
+      // failed message, they expect it to be the *latest* thing they sent,
+      // which is what readers will see anyway.
       setMessagesByChannel((prev) => {
         const list = prev.get(channelId);
         if (!list) return prev;
         const idx = list.findIndex((m) => m.client_id === clientId);
         if (idx === -1) return prev;
-        const copy = [...list];
-        copy[idx] = { ...copy[idx], _status: "sending" };
+        const msg = { ...list[idx], _status: "sending" as const };
+        const without = list.filter((_, i) => i !== idx);
         const next = new Map(prev);
-        next.set(channelId, copy);
+        next.set(channelId, [...without, msg]);
         return next;
       });
       void doSend(channelId, clientId, payload.content, payload.attachments);
     },
     [doSend],
   );
+
+  const cancelMessage = useCallback((channelId: string, clientId: string) => {
+    pendingPayload.current.delete(clientId);
+    setMessagesByChannel((prev) => {
+      const list = prev.get(channelId);
+      if (!list) return prev;
+      const next = new Map(prev);
+      next.set(channelId, list.filter((m) => m.client_id !== clientId));
+      return next;
+    });
+  }, []);
 
   const sendTyping = useCallback((channelId: string) => {
     clientRef.current?.sendTyping(channelId);
@@ -721,6 +789,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendMessage,
       sendTyping,
       retryMessage,
+      cancelMessage,
     }),
     [
       client,
@@ -736,6 +805,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       sendMessage,
       sendTyping,
       retryMessage,
+      cancelMessage,
     ],
   );
 
@@ -786,6 +856,11 @@ export function useChatClient(channelId: string) {
     [ctx, channelId],
   );
 
+  const cancelMessage = useCallback(
+    (clientId: string) => ctx.cancelMessage(channelId, clientId),
+    [ctx, channelId],
+  );
+
   return {
     client: ctx.client,
     messages,
@@ -796,6 +871,7 @@ export function useChatClient(channelId: string) {
     sendTyping,
     loadMore,
     retryMessage,
+    cancelMessage,
   };
 }
 

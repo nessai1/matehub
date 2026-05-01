@@ -720,3 +720,15 @@ msgstr "保存に失敗しました"
 
 msgid "Only hub admins can change settings"
 msgstr "管理者のみが設定を変更できます"
+
+msgid "cancel"
+msgstr "キャンセル"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "送信が速すぎます！%s 後にもう一度どうぞ :)"
+
+msgid "Disconnected from call"
+msgstr "通話から切断されました"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "別のウィンドウからこの通話に参加しました。同時にアクティブにできるタブは1つだけです。"

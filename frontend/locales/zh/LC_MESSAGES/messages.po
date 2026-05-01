@@ -720,3 +720,15 @@ msgstr "保存失败"
 
 msgid "Only hub admins can change settings"
 msgstr "只有管理员可以修改设置"
+
+msgid "cancel"
+msgstr "取消"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "哎呀，慢一点！%s 后再试 :)"
+
+msgid "Disconnected from call"
+msgstr "已从通话中断开"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "您已从另一个窗口加入此通话。同一时间只能激活一个标签页。"

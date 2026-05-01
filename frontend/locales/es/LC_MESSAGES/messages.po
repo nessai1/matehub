@@ -720,3 +720,15 @@ msgstr "Error al guardar"
 
 msgid "Only hub admins can change settings"
 msgstr "Solo los administradores pueden cambiar la configuración"
+
+msgid "cancel"
+msgstr "cancelar"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "¡Más despacio! Intenta de nuevo en %s :)"
+
+msgid "Disconnected from call"
+msgstr "Desconectado de la llamada"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "Te uniste a esta llamada desde otra ventana. Solo una pestaña puede estar activa a la vez."

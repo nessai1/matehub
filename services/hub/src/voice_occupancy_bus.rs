@@ -39,10 +39,19 @@ pub struct OccupancyEvent {
 }
 
 /// Wire format sent to WS subscribers.
+///
+/// Snowflakes overflow JS safe-int (2^53), so they MUST go out as decimal
+/// strings — same convention as every other id field crossing the
+/// frontend boundary. Without this the FE handler in use-members.ts:
+/// `if (typeof msg.user_id === "string")` silently dropped every
+/// voice_occupancy event, leaving leavers stuck in the sidebar until a
+/// page reload triggered the members-full re-seed.
 #[derive(Debug, Serialize)]
 struct WireEvent<'a> {
     r#type: &'a str,
+    #[serde(with = "matehub_common::serde_i64::as_string")]
     user_id: i64,
+    #[serde(with = "matehub_common::serde_i64::option_as_string")]
     channel_id: Option<i64>,
 }
 
@@ -108,6 +117,9 @@ async fn run(
                     }
                     None => {
                         presence::voice_occupancy_clear(&mut conn, ev.hub_id, ev.user_id).await;
+                        // Drop stale mute state too — the user's left voice,
+                        // their next join starts from defaults.
+                        presence::voice_mute_clear(&mut conn, ev.hub_id, ev.user_id).await;
                     }
                 }
             }

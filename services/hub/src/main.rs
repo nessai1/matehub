@@ -6,6 +6,7 @@ mod member_events;
 mod models;
 mod presence;
 mod storage;
+mod voice_mute_bus;
 mod voice_occupancy_bus;
 
 use std::sync::Arc;
@@ -66,6 +67,7 @@ async fn main() -> Result<()> {
     // the hub still comes up when NATS is down in a dev box.
     let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     voice_occupancy_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
+    voice_mute_bus::spawn(&nats_url, redis.clone(), events_tx.clone()).await;
 
     // Hub-local member-event publisher: write-paths in invitations/groups
     // call into this; presence WS clients receive the events on the same

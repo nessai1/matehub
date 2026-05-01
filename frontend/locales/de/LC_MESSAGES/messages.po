@@ -720,3 +720,15 @@ msgstr "Speichern fehlgeschlagen"
 
 msgid "Only hub admins can change settings"
 msgstr "Nur Hub-Admins können die Einstellungen ändern"
+
+msgid "cancel"
+msgstr "abbrechen"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "Hoppla, langsamer! Versuch es in %s erneut :)"
+
+msgid "Disconnected from call"
+msgstr "Vom Anruf getrennt"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "Sie sind diesem Anruf aus einem anderen Fenster beigetreten. Nur ein Tab kann gleichzeitig aktiv sein."

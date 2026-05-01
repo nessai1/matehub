@@ -3,7 +3,8 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
     routing::{get, patch, post},
 };
 use serde::Deserialize;
@@ -51,6 +52,38 @@ async fn version_handler() -> Json<serde_json::Value> {
     }))
 }
 
+// ── Error envelope ──────────────────────────────
+//
+// Most send-path failures are plain status codes; 429 needs a `Retry-After`
+// header so the client can show an honest countdown instead of guessing.
+// Wrapping everything in this enum keeps the handler signature monomorphic
+// without a custom Response builder at every error site.
+enum SendError {
+    Status(StatusCode),
+    RateLimited(u64),
+}
+
+impl From<StatusCode> for SendError {
+    fn from(s: StatusCode) -> Self {
+        SendError::Status(s)
+    }
+}
+
+impl IntoResponse for SendError {
+    fn into_response(self) -> Response {
+        match self {
+            SendError::Status(s) => s.into_response(),
+            SendError::RateLimited(secs) => {
+                let mut resp = StatusCode::TOO_MANY_REQUESTS.into_response();
+                if let Ok(value) = secs.to_string().parse() {
+                    resp.headers_mut().insert(header::RETRY_AFTER, value);
+                }
+                resp
+            }
+        }
+    }
+}
+
 // ── Send Message ────────────────────────────────
 
 async fn send_message(
@@ -58,23 +91,28 @@ async fn send_message(
     Path(channel_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<SendMessageRequest>,
-) -> Result<(StatusCode, Json<Message>), StatusCode> {
+) -> Result<(StatusCode, Json<Message>), SendError> {
     let hub_id = auth.0.hub_id;
     // Scylla/Redis keys still store user_id as text — stringify once at the boundary.
     let user_id = auth.0.sub.to_string();
 
     if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(StatusCode::FORBIDDEN.into());
     }
 
     if body.content.trim().is_empty() && body.attachments.as_ref().is_none_or(|a| a.is_empty()) {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(StatusCode::BAD_REQUEST.into());
     }
 
-    // Rate limit: 5 messages/5s per user per channel
+    // Rate limit: 30 messages / 10s per user per channel. Generous enough
+    // for normal back-and-forth (incl. long pasted blocks broken into a
+    // few sends), tight enough that scripts/loops trip it. The TTL of the
+    // bucket flows back in `Retry-After` so the client can show a countdown.
     if let Some(mut redis) = state.redis.clone() {
-        if !read_state::check_rate_limit(&mut redis, &user_id, channel_id, 5, 5).await {
-            return Err(StatusCode::TOO_MANY_REQUESTS);
+        if let Err(retry_after) =
+            read_state::check_rate_limit(&mut redis, &user_id, channel_id, 30, 10).await
+        {
+            return Err(SendError::RateLimited(retry_after));
         }
     }
 
@@ -109,7 +147,7 @@ async fn send_message(
         .await
         .map_err(|e| {
             tracing::error!("write_message failed: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
+            SendError::Status(StatusCode::INTERNAL_SERVER_ERROR)
         })?;
 
     // Store idempotency

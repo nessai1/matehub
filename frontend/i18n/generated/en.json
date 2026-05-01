@@ -720,6 +720,18 @@
       ],
       "Only hub admins can change settings": [
         "Only hub admins can change settings"
+      ],
+      "cancel": [
+        "cancel"
+      ],
+      "Whoa, slow down! Try again in %s :)": [
+        "Whoa, slow down! Try again in %s :)"
+      ],
+      "Disconnected from call": [
+        "Disconnected from call"
+      ],
+      "You joined this call from another window. Only one tab can be active at a time.": [
+        "You joined this call from another window. Only one tab can be active at a time."
       ]
     }
   }

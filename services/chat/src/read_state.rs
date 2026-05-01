@@ -125,17 +125,28 @@ fn rate_key(user_id: &str, channel_id: i64) -> String {
     format!("rate:msg:{user_id}:{channel_id}")
 }
 
+/// `Ok(())` when the call is allowed; `Err(seconds)` carries the TTL of the
+/// active window so the caller can build a `Retry-After` header. We don't
+/// guess on TTL miss — a fresh-and-already-over-the-limit edge case shouldn't
+/// happen in practice (count==1 always fits under any reasonable limit), but
+/// if Redis loses the EXPIRE for any reason we fall back to `window_secs`
+/// rather than 0 so the client doesn't immediately retry.
 pub async fn check_rate_limit(
     conn: &mut RedisPool,
     user_id: &str,
     channel_id: i64,
     limit: i64,
     window_secs: u64,
-) -> bool {
+) -> Result<(), u64> {
     let key = rate_key(user_id, channel_id);
     let count: i64 = conn.incr(&key, 1i64).await.unwrap_or(1);
     if count == 1 {
         let _: Result<(), _> = conn.expire(&key, window_secs as i64).await;
     }
-    count <= limit
+    if count <= limit {
+        return Ok(());
+    }
+    let ttl: i64 = conn.ttl(&key).await.unwrap_or(window_secs as i64);
+    let secs = if ttl > 0 { ttl as u64 } else { window_secs };
+    Err(secs.max(1))
 }

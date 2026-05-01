@@ -5,6 +5,11 @@ import {
   seedVoiceOccupancy,
   setVoiceOccupancy,
 } from "@/lib/voice-occupancy-store";
+import {
+  clearVoiceMute,
+  seedVoiceMute,
+  setVoiceMute,
+} from "@/lib/voice-mute-store";
 import { pendingInvitesKey } from "@/hooks/use-pending-invites";
 
 const HUB_API = "/api/hub";
@@ -30,6 +35,13 @@ export interface Member {
   deleted_at: string | null;
   /** Voice channel the member is currently in (null = not in voice). */
   current_voice_channel_id: string | null;
+  /** Audio mute state when the member is in a voice channel. Hub-wide
+   *  live updates flow through the voice-mute-store; this is the cold
+   *  start value the server returns from /members-full. Default true
+   *  for users not in voice — matches the video service Participant
+   *  defaults so UI doesn't briefly mis-render. */
+  voice_audio_muted: boolean;
+  voice_video_muted: boolean;
 }
 
 /** True if the member should appear in the live roster (sidebar) and be
@@ -98,6 +110,23 @@ export function useMembers() {
               ],
           ),
         );
+        // Mute state seeded only for users actually in voice — others
+        // don't have a meaningful state to render and would crowd the
+        // store unnecessarily.
+        seedVoiceMute(
+          members
+            .filter((m) => m.current_voice_channel_id !== null)
+            .map(
+              (m) =>
+                [
+                  m.user_id,
+                  {
+                    audioMuted: m.voice_audio_muted,
+                    videoMuted: m.voice_video_muted,
+                  },
+                ] as const,
+            ),
+        );
       },
     },
   );
@@ -151,11 +180,27 @@ export function usePresence() {
             type?: string;
             user_id?: string;
             channel_id?: string | null;
+            kind?: string;
+            muted?: boolean;
           };
           switch (msg.type) {
             case "voice_occupancy":
               if (typeof msg.user_id === "string") {
                 setVoiceOccupancy(msg.user_id, msg.channel_id ?? null);
+                // User left voice → drop their mute entry too. Their next
+                // join will start from defaults (both muted).
+                if (msg.channel_id == null) {
+                  clearVoiceMute(msg.user_id);
+                }
+              }
+              break;
+            case "voice_mute":
+              if (
+                typeof msg.user_id === "string" &&
+                (msg.kind === "audio" || msg.kind === "video") &&
+                typeof msg.muted === "boolean"
+              ) {
+                setVoiceMute(msg.user_id, msg.kind, msg.muted);
               }
               break;
             case "member_joined":

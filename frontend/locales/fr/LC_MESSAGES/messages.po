@@ -720,3 +720,15 @@ msgstr "Échec de l'enregistrement"
 
 msgid "Only hub admins can change settings"
 msgstr "Seuls les admins peuvent modifier les paramètres"
+
+msgid "cancel"
+msgstr "annuler"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "Doucement ! Réessaie dans %s :)"
+
+msgid "Disconnected from call"
+msgstr "Déconnecté de l'appel"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "Vous avez rejoint cet appel depuis une autre fenêtre. Un seul onglet peut être actif à la fois."

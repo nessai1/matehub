@@ -720,6 +720,18 @@
       ],
       "Only hub admins can change settings": [
         "管理者のみが設定を変更できます"
+      ],
+      "cancel": [
+        "キャンセル"
+      ],
+      "Whoa, slow down! Try again in %s :)": [
+        "送信が速すぎます！%s 後にもう一度どうぞ :)"
+      ],
+      "Disconnected from call": [
+        "通話から切断されました"
+      ],
+      "You joined this call from another window. Only one tab can be active at a time.": [
+        "別のウィンドウからこの通話に参加しました。同時にアクティブにできるタブは1つだけです。"
       ]
     }
   }

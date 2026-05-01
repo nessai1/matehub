@@ -581,6 +581,24 @@ export class VideoClient {
         this.emit({ type: "error", message: msg.message as string });
         break;
       }
+
+      case "force_disconnected": {
+        // Server is kicking us — typically because the same user joined
+        // this session from another tab. Distinct event from generic
+        // `disconnected` so the call UI can leave the call + show a
+        // friendly toast instead of treating this as a network blip.
+        const reason = (msg.reason as string) || "force_disconnected";
+        this.log("force disconnected by server", { reason });
+        this.emit({ type: "force_disconnected", reason });
+        // Tear down the WS — server has already dropped its Rtc, no point
+        // keeping the socket around.
+        try {
+          this.ws?.close(1000, "force_disconnected");
+        } catch {
+          /* ignore */
+        }
+        break;
+      }
     }
   }
 

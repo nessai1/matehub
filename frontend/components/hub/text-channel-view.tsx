@@ -191,6 +191,7 @@ function ChatMessage({
   allGroups,
   onGroupsChanged,
   onRetry,
+  onCancel,
 }: {
   message: ChatMessageT;
   member?: Member;
@@ -198,6 +199,7 @@ function ChatMessage({
   allGroups: MemberGroup[];
   onGroupsChanged: () => void;
   onRetry?: (clientId: string) => void;
+  onCancel?: (clientId: string) => void;
 }) {
   const displayName = member?.display_name || member?.username || message.author_id;
   const initials = displayName.slice(0, 2).toUpperCase();
@@ -244,7 +246,7 @@ function ChatMessage({
   const statusBadge = pending ? (
     <span className="text-[10px] italic text-muted-foreground">{t("sending…")}</span>
   ) : failed ? (
-    <span className="flex items-center gap-1 text-[10px] text-destructive">
+    <span className="flex items-center gap-1.5 text-[10px] text-destructive">
       {t("failed")}
       {message.client_id && onRetry && (
         <button
@@ -253,6 +255,15 @@ function ChatMessage({
           className="underline hover:no-underline"
         >
           {t("retry")}
+        </button>
+      )}
+      {message.client_id && onCancel && (
+        <button
+          type="button"
+          onClick={() => onCancel(message.client_id!)}
+          className="text-muted-foreground underline hover:text-foreground hover:no-underline"
+        >
+          {t("cancel")}
         </button>
       )}
     </span>
@@ -360,6 +371,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
     sendTyping,
     loadMore,
     retryMessage,
+    cancelMessage,
   } = useChatClient(channelId);
   const { uploads, addFiles, clearAll, readyAttachments, hasInFlight } =
     useAttachmentUpload(client, channelId);
@@ -750,6 +762,7 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
                       allGroups={allGroups}
                       onGroupsChanged={refetch}
                       onRetry={retryMessage}
+                      onCancel={cancelMessage}
                     />
                   )}
                 </Fragment>

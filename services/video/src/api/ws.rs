@@ -56,6 +56,36 @@ fn authenticate(token: Option<&str>) -> Option<String> {
 }
 
 const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
+const VOICE_MUTE_SUBJECT: &str = "voice.mute";
+
+/// Publish an audio/video mute toggle for a user. Lets the hub fan it out
+/// to all hub-wide presence WS clients — without this, peers in OTHER
+/// voice channels don't see Alice's mic state because the SFU's
+/// in-session `participant_muted` broadcast never reaches them.
+async fn publish_mute(
+    nats: &async_nats::Client,
+    hub_id: i64,
+    user_id: i64,
+    kind: &str,
+    muted: bool,
+) {
+    let payload = serde_json::json!({
+        "hub_id": hub_id.to_string(),
+        "user_id": user_id.to_string(),
+        "kind": kind,
+        "muted": muted,
+    });
+    let bytes = match serde_json::to_vec(&payload) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to encode voice.mute event");
+            return;
+        }
+    };
+    if let Err(e) = nats.publish(VOICE_MUTE_SUBJECT.to_string(), bytes.into()).await {
+        tracing::warn!(error = %e, "failed to publish voice.mute event");
+    }
+}
 
 /// Publish a `voice.occupancy` event. `channel_id = None` signals "left".
 /// `call_id` is the SFU session id — carried so the hub can stitch this
@@ -413,27 +443,39 @@ async fn handle_ws(
 
             ClientMessage::MuteChanged { kind, muted } => {
                 tracing::info!(%participant_id, %kind, %muted, "mute changed");
-                let mut inner = state.inner.lock();
-                if let Some(session) = inner.sessions.get_mut(&session_id) {
-                    // Persist mute state so new joiners get it
-                    if let Some(me) = session.participants.get_mut(&participant_id) {
-                        match kind.as_str() {
-                            "video" => me.video_muted = muted,
-                            "audio" => me.audio_muted = muted,
-                            _ => {}
+                {
+                    let mut inner = state.inner.lock();
+                    if let Some(session) = inner.sessions.get_mut(&session_id) {
+                        // Persist mute state so new joiners get it
+                        if let Some(me) = session.participants.get_mut(&participant_id) {
+                            match kind.as_str() {
+                                "video" => me.video_muted = muted,
+                                "audio" => me.audio_muted = muted,
+                                _ => {}
+                            }
+                        }
+                        // In-session broadcast — peers in this call get
+                        // immediate per-track update via SFU's WS.
+                        let msg = ServerMessage::ParticipantMuted {
+                            participant_id,
+                            kind: kind.clone(),
+                            muted,
+                        };
+                        for (pid, p) in &session.participants {
+                            if *pid != participant_id {
+                                ws_send_or_drop(&p.ws_tx, msg.clone());
+                            }
                         }
                     }
-                    // Broadcast to other participants
-                    let msg = ServerMessage::ParticipantMuted {
-                        participant_id,
-                        kind,
-                        muted,
-                    };
-                    for (pid, p) in &session.participants {
-                        if *pid != participant_id {
-                            ws_send_or_drop(&p.ws_tx, msg.clone());
-                        }
-                    }
+                }
+                // Hub-wide fanout — peers in OTHER voice channels (or just
+                // viewing the sidebar) get the update via NATS → hub →
+                // presence-WS. Without this the mic indicator next to a
+                // participant's name only updates while you're in their call.
+                if let (Some(nats), Some(uid)) =
+                    (state.nats.as_ref(), user_snowflake)
+                {
+                    publish_mute(nats, hub_id, uid, &kind, muted).await;
                 }
             }
 

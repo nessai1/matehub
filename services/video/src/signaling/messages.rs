@@ -88,4 +88,11 @@ pub enum ServerMessage {
     Error {
         message: String,
     },
+    /// SFU is dropping this client because the same user joined this
+    /// session from another tab/device. Client should leave the call UI
+    /// and surface the reason — without this signal, the kicked tab
+    /// would stay on a dead Rtc until the WS times out.
+    ForceDisconnected {
+        reason: String,
+    },
 }

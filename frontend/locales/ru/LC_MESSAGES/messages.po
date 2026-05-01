@@ -720,3 +720,15 @@ msgstr "Не удалось сохранить"
 
 msgid "Only hub admins can change settings"
 msgstr "Только админы могут менять настройки"
+
+msgid "cancel"
+msgstr "отменить"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "Уупс! У тебя слишком много сообщений, попробуй через %s :)"
+
+msgid "Disconnected from call"
+msgstr "Отключён от звонка"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "Вы зашли в этот звонок из другого окна. Активной может быть только одна вкладка."

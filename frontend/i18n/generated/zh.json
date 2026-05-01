@@ -720,6 +720,18 @@
       ],
       "Only hub admins can change settings": [
         "只有管理员可以修改设置"
+      ],
+      "cancel": [
+        "取消"
+      ],
+      "Whoa, slow down! Try again in %s :)": [
+        "哎呀，慢一点！%s 后再试 :)"
+      ],
+      "Disconnected from call": [
+        "已从通话中断开"
+      ],
+      "You joined this call from another window. Only one tab can be active at a time.": [
+        "您已从另一个窗口加入此通话。同一时间只能激活一个标签页。"
       ]
     }
   }

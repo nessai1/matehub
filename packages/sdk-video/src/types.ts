@@ -62,6 +62,11 @@ export type VideoClientEvent =
   | { type: "screen_share_started"; participantId: string }
   | { type: "screen_share_stopped"; participantId: string }
   | { type: "disconnected"; reason: string }
+  /** Server kicked us off — typically because the same user joined this
+   *  session from another tab/device. Distinct from generic `disconnected`
+   *  so the call UI can leave + show a friendly toast instead of treating
+   *  it as a transient network issue worth retrying. */
+  | { type: "force_disconnected"; reason: string }
   | { type: "error"; message: string }
   | { type: "debug"; level: "info" | "warn" | "error"; msg: string; data?: unknown };
 

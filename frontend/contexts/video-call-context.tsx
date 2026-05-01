@@ -7,9 +7,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import { useVideoClient } from "@/hooks/use-video-client";
 import { useAuth } from "@/lib/auth";
 import { playCallSound } from "@/lib/call-sounds";
+import { t } from "@/i18n";
 import type {
   Participant,
   ScreenShareProfile,
@@ -70,6 +72,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   );
   // Session id allocated by the SFU for that channel.
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Set when SFU kicks us via force_disconnected; useEffect below reacts
+  // to it (call leaveVoice + toast). Going through state — instead of
+  // calling leaveVoice directly from the SDK callback — keeps the closure
+  // dependencies sane (videoOpts otherwise would have to depend on the
+  // current leaveVoice, recreating on every state change).
+  const [forceKickReason, setForceKickReason] = useState<string | null>(null);
 
   const videoOpts = useMemo(() => {
     if (!sessionId || !session) return null;
@@ -81,6 +89,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       // `users.id`. No more display-name/uuid split.
       userId: session.userId,
       token: session.token,
+      // Stable React setter — no closure freshness concerns.
+      onForceDisconnected: setForceKickReason,
     };
   }, [sessionId, session]);
 
@@ -140,6 +150,27 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     setSessionId(null);
     setActiveVoiceChannelId(null);
   }, [activeVoiceChannelId, vc]);
+
+  // React to force-disconnect (multi-tab collision): leave the call view
+  // cleanly and tell the user why. The reason currently has one value
+  // ("joined_elsewhere") but the indirection costs nothing — server can
+  // ship more reasons (admin kick, etc.) without FE changes here.
+  useEffect(() => {
+    if (forceKickReason === null) return;
+    leaveVoice();
+    if (forceKickReason === "joined_elsewhere") {
+      toast.warning(t("Disconnected from call"), {
+        description: t(
+          "You joined this call from another window. Only one tab can be active at a time.",
+        ),
+      });
+    } else {
+      toast.warning(t("Disconnected from call"), {
+        description: forceKickReason,
+      });
+    }
+    setForceKickReason(null);
+  }, [forceKickReason, leaveVoice]);
 
   const value = useMemo<VideoCallContextValue>(
     () => ({

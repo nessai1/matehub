@@ -400,10 +400,20 @@ fn looks_like_stun(data: &[u8]) -> bool {
         && data[4..8] == STUN_MAGIC_COOKIE
 }
 
-/// Best-effort extraction of the local ufrag from a STUN binding request's
-/// USERNAME attribute. Returns None on parser disagreement (truncated
-/// packet, missing USERNAME, malformed UTF-8) — caller should fall through
-/// to the existing slow scan rather than blackhole the packet.
+/// Best-effort extraction of the recipient-side (LOCAL, from our POV) ufrag
+/// from a STUN binding request's USERNAME attribute.
+///
+/// Per RFC 8489 / RFC 8445 §7.2.2 and as documented in str0m's IceAgent:
+/// USERNAME on a binding request from the remote peer is formatted as
+/// `"{recipient_ufrag}:{sender_ufrag}"`. So when the SFU receives a
+/// binding request, the FIRST half (before `:`) is its own ufrag — the
+/// key we registered in `ufrag_to_target` on Join. The previous version
+/// of this function returned the second half (sender's) and silently
+/// dropped every STUN packet, breaking ICE entirely.
+///
+/// Returns None on parser disagreement (truncated packet, missing
+/// USERNAME, malformed UTF-8). Caller drops the packet — the next
+/// retransmit gives Chrome plenty of attempts.
 fn parse_stun_local_ufrag(data: &[u8]) -> Option<&str> {
     if !looks_like_stun(data) {
         return None;
@@ -420,9 +430,8 @@ fn parse_stun_local_ufrag(data: &[u8]) -> Option<&str> {
         }
         if attr_type == STUN_ATTR_USERNAME {
             let val = &data[value_start..value_end];
-            // RFC 8445 §7: USERNAME = "{remote_ufrag}:{local_ufrag}".
             let colon = val.iter().position(|&b| b == b':')?;
-            return std::str::from_utf8(&val[colon + 1..]).ok();
+            return std::str::from_utf8(&val[..colon]).ok();
         }
         // Pad to next 4-byte boundary; saturating to length avoids loops on
         // malformed lengths.
@@ -743,22 +752,35 @@ impl SfuShard {
         sdp_offer: String,
         reply_tx: mpsc::Sender<ServerMessage>,
     ) -> Option<PollTarget> {
-        // Reconnect: the WS handler derives participant_id from
-        // (session_id, user_id), so a fresh socket from the same user
-        // lands on the same pid. If a participant entry already exists,
-        // it's a stale Rtc from a dropped connection — tear it down via
-        // the existing handle_leave path (which cleans tracks, fan-out,
-        // and renegotiates remaining peers) before we slot the new Rtc in.
-        let already_present = self
+        // Reconnect / multi-tab collision: the WS handler derives
+        // participant_id from (session_id, user_id), so a fresh socket
+        // from the same user lands on the same pid. Reasons it might
+        // collide:
+        //   * Genuine reconnect after WS drop — old SfuParticipant is a
+        //     stale Rtc; just tear it down.
+        //   * Same user opens a second tab/window and joins the call —
+        //     we do NOT want both tabs publishing audio. Tell the old
+        //     tab "you got replaced" via WS so its UI exits the call,
+        //     then proceed with the standard leave + new join.
+        // The ForceDisconnected message gets pushed before handle_leave
+        // because handle_leave drops the SfuParticipant (and with it
+        // the ws_tx clone we'd otherwise need).
+        let existing_ws_tx = self
             .sessions
             .get(&session_id)
-            .map(|s| s.participants.contains_key(&participant_id))
-            .unwrap_or(false);
-        if already_present {
+            .and_then(|s| s.participants.get(&participant_id))
+            .map(|p| p.ws_tx.clone());
+        if let Some(tx) = existing_ws_tx {
             tracing::info!(
                 %session_id,
                 %participant_id,
-                "reconnect detected — replacing stale participant"
+                "join collision — kicking prior session for this user"
+            );
+            ws_try_send(
+                &tx,
+                ServerMessage::ForceDisconnected {
+                    reason: "joined_elsewhere".into(),
+                },
             );
             self.handle_leave(session_id, participant_id);
         }
@@ -1288,12 +1310,15 @@ impl SfuShard {
         }
 
         // Disconnect zombies (will be cleaned up by WS close or next Leave command)
+        // Bug fix: previous version only called `p.rtc.disconnect()` and left
+        // the participant in `session.participants`. Next tick the zombie
+        // condition was still true (`ice_disconnected + elapsed > timeout`),
+        // so the warning fired again — every 20ms forever, with no actual
+        // cleanup. The fix is to run the full leave path: tears down the
+        // Rtc, sweeps shared maps, deactivates m-lines on remaining peers,
+        // destroys the session if it became empty.
         for (session_id, pid) in zombies {
-            if let Some(session) = self.sessions.get_mut(&session_id) {
-                if let Some(p) = session.participants.get_mut(&pid) {
-                    p.rtc.disconnect();
-                }
-            }
+            self.handle_leave(session_id, pid);
         }
     }
 
@@ -1893,8 +1918,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_stun_local_ufrag_returns_segment_after_colon() {
-        let pkt = build_stun_binding_with_username(b"remote_uf:my_local");
+    fn parse_stun_local_ufrag_returns_recipient_segment_before_colon() {
+        // Format on the wire is "{recipient}:{sender}" — recipient (us) is
+        // first. Bug: previous version returned the sender's half and
+        // silently broke ICE because every lookup missed.
+        let pkt = build_stun_binding_with_username(b"my_local:remote_uf");
         assert_eq!(parse_stun_local_ufrag(&pkt), Some("my_local"));
     }
 
@@ -1902,7 +1930,7 @@ mod tests {
     fn parse_stun_local_ufrag_handles_padding_correctly() {
         // 3-byte username forces 1 byte of padding.
         let pkt = build_stun_binding_with_username(b"a:b");
-        assert_eq!(parse_stun_local_ufrag(&pkt), Some("b"));
+        assert_eq!(parse_stun_local_ufrag(&pkt), Some("a"));
     }
 
     #[test]

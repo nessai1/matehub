@@ -745,3 +745,15 @@ msgstr "Save failed"
 
 msgid "Only hub admins can change settings"
 msgstr "Only hub admins can change settings"
+
+msgid "cancel"
+msgstr "cancel"
+
+msgid "Whoa, slow down! Try again in %s :)"
+msgstr "Whoa, slow down! Try again in %s :)"
+
+msgid "Disconnected from call"
+msgstr "Disconnected from call"
+
+msgid "You joined this call from another window. Only one tab can be active at a time."
+msgstr "You joined this call from another window. Only one tab can be active at a time."

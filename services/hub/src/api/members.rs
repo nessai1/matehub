@@ -49,6 +49,13 @@ struct MemberResponse {
     /// sync via NATS.
     #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
     current_voice_channel_id: Option<i64>,
+    /// Audio mute state when the user is in voice. Default true (consistent
+    /// with the video service's Participant defaults). Hub-wide live
+    /// updates come via the `voice_mute` presence-WS event; the snapshot
+    /// here is the cold-start value for newly-loaded sidebars.
+    voice_audio_muted: bool,
+    /// Video (camera) mute state — same lifecycle as `voice_audio_muted`.
+    voice_video_muted: bool,
 }
 
 #[derive(Serialize)]
@@ -135,8 +142,16 @@ async fn get_members_full(
             std::collections::HashMap::new()
         }
     };
+    let mute_fut = async {
+        if let Some(mut redis) = state.redis.clone() {
+            presence::voice_mute_snapshot(&mut redis, hub_id).await
+        } else {
+            std::collections::HashMap::new()
+        }
+    };
 
-    let (members_result, voice_map) = tokio::join!(members_fut, voice_fut);
+    let (members_result, voice_map, mute_map) =
+        tokio::join!(members_fut, voice_fut, mute_fut);
     let members = members_result.map_err(|e| {
         tracing::error!(?e, %hub_id, "members-full SQL failed");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -153,9 +168,16 @@ async fn get_members_full(
 
     let mut result: Vec<MemberResponse> = members
         .into_iter()
-        .map(|m| MemberResponse {
+        .map(|m| {
+            // Default to fully muted when nothing's persisted — matches the
+            // video service's Participant defaults so the sidebar doesn't
+            // briefly show a green mic before the first explicit toggle.
+            let (a_mute, v_mute) = mute_map.get(&m.user_id).copied().unwrap_or((true, true));
+            MemberResponse {
             is_online: online_set.contains(&m.user_id),
             current_voice_channel_id: voice_map.get(&m.user_id).copied(),
+            voice_audio_muted: a_mute,
+            voice_video_muted: v_mute,
             user_id: m.user_id,
             username: m.username,
             display_name: m.display_name,
@@ -173,6 +195,7 @@ async fn get_members_full(
             user_type: m.user_type,
             expires_at: m.expires_at,
             deleted_at: m.deleted_at,
+            }
         })
         .collect();
 

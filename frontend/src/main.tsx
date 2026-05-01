@@ -7,6 +7,7 @@ import "@fontsource-variable/geist-mono";
 
 import "@/app/globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth";
 import { LocaleProvider, detectInitialLocale, loadLocale } from "@/i18n";
 import { router } from "./router";
@@ -34,6 +35,7 @@ Promise.all([loadConfig(), loadLocale(detectInitialLocale())]).then(() => {
       <LocaleProvider>
         <AuthProvider>
           <RouterProvider router={router} />
+          <Toaster />
         </AuthProvider>
       </LocaleProvider>
     </ThemeProvider>,
