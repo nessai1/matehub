@@ -55,7 +55,7 @@ serde_json = "1"
 jsonwebtoken = "9"
 
 # Utils
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 rand = "0.9"
 bytes = "1"
 thiserror = "2"

@@ -69,7 +69,7 @@ pub struct Participant {
     pub id: ParticipantId,
     pub user_id: String,
     pub state: ParticipantState,
-    pub ws_tx: mpsc::UnboundedSender<ServerMessage>,
+    pub ws_tx: mpsc::Sender<ServerMessage>,
     pub video_muted: bool,
     pub audio_muted: bool,
 }

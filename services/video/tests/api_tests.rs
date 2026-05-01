@@ -19,7 +19,7 @@ async fn create_session_returns_201() {
 
     let resp = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-000000000001"}))
+        .json(&json!({"channel_id": "9000000000000001", "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -36,12 +36,12 @@ async fn create_session_returns_201() {
 async fn create_session_idempotent() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
-    let channel_id = "00000000-0000-0000-0000-000000000002";
+    let channel_id = "9000000000000002";
 
     // First call -- creates
     let resp1 = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": channel_id}))
+        .json(&json!({"channel_id": channel_id, "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -51,7 +51,7 @@ async fn create_session_idempotent() {
     // Second call -- returns existing
     let resp2 = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": channel_id}))
+        .json(&json!({"channel_id": channel_id, "hub_id": "1"}))
         .send()
         .await
         .unwrap();
@@ -69,7 +69,7 @@ async fn get_session_returns_info() {
 
     let create_resp: Value = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-000000000003"}))
+        .json(&json!({"channel_id": "9000000000000003", "hub_id": "1"}))
         .send()
         .await
         .unwrap()
@@ -89,7 +89,7 @@ async fn get_session_returns_info() {
 
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["session_id"], session_id);
-    assert_eq!(body["channel_id"], "00000000-0000-0000-0000-000000000003");
+    assert_eq!(body["channel_id"], "9000000000000003");
     assert!(body["participants"].as_array().unwrap().is_empty());
 }
 
@@ -147,7 +147,7 @@ async fn create_session_no_content_type_returns_4xx() {
 
     let resp = client
         .post(format!("{base}/v1/sessions"))
-        .body(r#"{"channel_id": "00000000-0000-0000-0000-000000000001"}"#)
+        .body(r#"{"channel_id": "9000000000000001", "hub_id": "1"}"#)
         .send()
         .await
         .unwrap();
@@ -176,7 +176,7 @@ async fn different_channels_create_different_sessions() {
 
     let resp1: Value = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-000000000010"}))
+        .json(&json!({"channel_id": "9000000000000010", "hub_id": "1"}))
         .send()
         .await
         .unwrap()
@@ -186,7 +186,7 @@ async fn different_channels_create_different_sessions() {
 
     let resp2: Value = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-000000000020"}))
+        .json(&json!({"channel_id": "9000000000000020", "hub_id": "1"}))
         .send()
         .await
         .unwrap()
@@ -207,7 +207,7 @@ async fn create_session_ws_url_contains_host() {
 
     let resp: Value = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-000000000030"}))
+        .json(&json!({"channel_id": "9000000000000030", "hub_id": "1"}))
         .send()
         .await
         .unwrap()
@@ -234,7 +234,7 @@ async fn create_session_ws_url_contains_host() {
 #[tokio::test]
 async fn concurrent_session_creation_same_channel() {
     let base = common::spawn_app().await;
-    let channel_id = "00000000-0000-0000-0000-000000000042";
+    let channel_id = "9000000000000042";
 
     let futs = (0..10).map(|_| {
         let base = base.clone();
@@ -242,7 +242,7 @@ async fn concurrent_session_creation_same_channel() {
         async move {
             reqwest::Client::new()
                 .post(format!("{base}/v1/sessions"))
-                .json(&serde_json::json!({"channel_id": channel_id}))
+                .json(&serde_json::json!({"channel_id": channel_id, "hub_id": "1"}))
                 .send()
                 .await
                 .unwrap()

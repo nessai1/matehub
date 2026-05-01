@@ -1,7 +1,6 @@
 pub mod session;
-pub mod udp;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
@@ -9,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam::channel::{Receiver, TryRecvError};
 use str0m::change::SdpOffer;
+use str0m::ice::IceCreds;
 use str0m::media::{Direction, MediaData, MediaKind, Mid};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
@@ -18,6 +18,19 @@ use uuid::Uuid;
 use crate::signaling::ServerMessage;
 
 pub use session::{SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState};
+
+/// Drop-on-full send to a per-WS channel. Same intent as the helper in
+/// api/ws.rs — slow consumers don't back-pressure the media thread. Kept
+/// here as a free fn (not a method) so call sites inside partial-borrow
+/// scopes work.
+#[inline]
+fn ws_try_send(tx: &mpsc::Sender<ServerMessage>, msg: ServerMessage) {
+    if let Err(e) = tx.try_send(msg) {
+        if matches!(e, mpsc::error::TrySendError::Full(_)) {
+            metrics::counter!("matehub_video_ws_send_drops_total").increment(1);
+        }
+    }
+}
 
 pub type ParticipantId = Uuid;
 pub type SessionId = Uuid;
@@ -31,10 +44,11 @@ pub enum SfuCommand {
         participant_id: ParticipantId,
         user_id: String,
         sdp_offer: String,
-        // Still tokio mpsc — the receiving side is the per-WebSocket send task
-        // (async). We only call `.send()` which is sync on tokio mpsc, so the
-        // media thread can talk to the tokio runtime without blocking.
-        reply_tx: mpsc::UnboundedSender<ServerMessage>,
+        // Bounded tokio mpsc. The media thread uses `try_send` (sync, no
+        // async runtime needed) so it can talk to the tokio side without
+        // blocking; on Full we drop+counter — slow consumers don't get to
+        // back-pressure media forwarding.
+        reply_tx: mpsc::Sender<ServerMessage>,
     },
     /// SDP answer from client (renegotiation response)
     Answer {
@@ -74,6 +88,9 @@ pub enum SfuCommand {
 /// forwarding latency doesn't compete with signaling / HTTP work on the
 /// shared tokio runtime.
 pub struct SfuEngine {
+    /// How long an ICE-disconnected participant can be silent before we
+    /// declare them dead. Configurable from main; see config::Config.
+    zombie_timeout: Duration,
     sessions: HashMap<SessionId, SfuSession>,
     /// Blocking std socket. `set_read_timeout` gives us the tick cadence;
     /// send_to is blocking but kernel UDP send buffer (tuned to 2MB in main)
@@ -92,13 +109,28 @@ pub struct SfuEngine {
     /// Populated after the first successful accept() from a given source addr.
     /// Invalidated on leave / session destroy / stale mapping detection.
     addr_to_participant: HashMap<SocketAddr, (SessionId, ParticipantId)>,
-    /// True when at least one participant has a TrackOut in ToOpen state.
-    /// Gates the O(N×K) sweep in `negotiate_pending_tracks()` — 50 times/sec
-    /// on audio alone is a waste when there's nothing to negotiate.
-    has_pending_negotiation: bool,
+    /// Local-ICE-ufrag → participant. Populated on Join, removed on Leave.
+    /// First UDP packet from a peer is a STUN binding request whose
+    /// USERNAME attribute is `{remote_ufrag}:{local_ufrag}`. We parse the
+    /// local half and route to that exact participant — replaces an O(N)
+    /// linear scan over every Rtc that turned the slow path into a DoS
+    /// vector (anyone who knew the port could feed mostly-junk and burn
+    /// CPU on `rtc.accepts()` calls).
+    ufrag_to_participant: HashMap<String, (SessionId, ParticipantId)>,
+    /// (session, participant) pairs that have at least one TrackOut in ToOpen
+    /// state and need a server-initiated offer. Replaces a boolean+sweep:
+    /// negotiate_pending_tracks() now iterates only the entries here, so a
+    /// 500-participant session with two pending joins runs O(2) instead of
+    /// O(500) per pass.
+    pending_negotiation: HashSet<(SessionId, ParticipantId)>,
     /// Media forwarding stats (logged periodically)
     stats_audio_fwd: u64,
     stats_video_fwd: u64,
+    /// UDP sends that returned WouldBlock — packet dropped to keep the
+    /// media thread responsive. A non-zero rate here is a signal that the
+    /// kernel send buffer (default 2MB, see main.rs) is too small or the
+    /// network is saturated. Logged with the periodic stats line.
+    stats_udp_drops: u64,
     stats_last_log: Instant,
 }
 
@@ -125,6 +157,53 @@ fn stream_id_for(origin: ParticipantId, source: Source, kind: MediaKind) -> Stri
     format!("{origin}-{source_tag}-{kind_tag}")
 }
 
+/// STUN magic cookie (RFC 5389 §6).
+const STUN_MAGIC_COOKIE: [u8; 4] = [0x21, 0x12, 0xA4, 0x42];
+/// STUN attribute type for USERNAME (RFC 5389 §15.3).
+const STUN_ATTR_USERNAME: u16 = 0x0006;
+
+/// Cheap STUN binding-request shape check. Returns true only when the
+/// header looks STUN-ish — top 2 bits of byte 0 zero (per RFC 5389 §6:
+/// "the most significant 2 bits of every STUN message MUST be zeroes")
+/// and magic cookie at offset 4. Drops random noise (RTP/RTCP/DTLS look
+/// nothing like this) before we burn cycles on the per-Rtc accept probe.
+fn looks_like_stun(data: &[u8]) -> bool {
+    data.len() >= 20
+        && (data[0] & 0xC0) == 0
+        && data[4..8] == STUN_MAGIC_COOKIE
+}
+
+/// Best-effort extraction of the local ufrag from a STUN binding request's
+/// USERNAME attribute. Returns None on parser disagreement (truncated
+/// packet, missing USERNAME, malformed UTF-8) — caller should fall through
+/// to the existing slow scan rather than blackhole the packet.
+fn parse_stun_local_ufrag(data: &[u8]) -> Option<&str> {
+    if !looks_like_stun(data) {
+        return None;
+    }
+    // Attributes start at offset 20 (header is 20 bytes).
+    let mut p = 20usize;
+    while p + 4 <= data.len() {
+        let attr_type = u16::from_be_bytes([data[p], data[p + 1]]);
+        let attr_len = u16::from_be_bytes([data[p + 2], data[p + 3]]) as usize;
+        let value_start = p + 4;
+        let value_end = value_start.checked_add(attr_len)?;
+        if value_end > data.len() {
+            return None;
+        }
+        if attr_type == STUN_ATTR_USERNAME {
+            let val = &data[value_start..value_end];
+            // RFC 8445 §7: USERNAME = "{remote_ufrag}:{local_ufrag}".
+            let colon = val.iter().position(|&b| b == b':')?;
+            return std::str::from_utf8(&val[colon + 1..]).ok();
+        }
+        // Pad to next 4-byte boundary; saturating to length avoids loops on
+        // malformed lengths.
+        p = value_end + ((4 - (attr_len % 4)) % 4);
+    }
+    None
+}
+
 /// What work a just-handled event produced. Drives targeted polling instead
 /// of sweeping every Rtc after every event.
 #[derive(Debug, Clone, Copy)]
@@ -141,6 +220,7 @@ impl SfuEngine {
         udp_socket: Arc<UdpSocket>,
         public_ips: Vec<std::net::IpAddr>,
         cmd_rx: Receiver<SfuCommand>,
+        zombie_timeout: Duration,
     ) -> Self {
         let local_addr = udp_socket.local_addr().expect("UDP local addr");
         let candidate_addrs: Vec<SocketAddr> = public_ips
@@ -152,16 +232,51 @@ impl SfuEngine {
             "SfuEngine needs at least one public IP for host candidates"
         );
         Self {
+            zombie_timeout,
             sessions: HashMap::new(),
             udp_socket,
             local_addr,
             candidate_addrs,
             cmd_rx,
             addr_to_participant: HashMap::new(),
-            has_pending_negotiation: false,
+            ufrag_to_participant: HashMap::new(),
+            pending_negotiation: HashSet::new(),
             stats_audio_fwd: 0,
             stats_video_fwd: 0,
+            stats_udp_drops: 0,
             stats_last_log: Instant::now(),
+        }
+    }
+
+    /// Non-blocking UDP send. Drops the packet on WouldBlock instead of
+    /// stalling the media thread on a full kernel send buffer.
+    ///
+    /// Static method (takes &UdpSocket / &mut u64 separately) so it can be
+    /// called from inside a `forward_media_now` loop where `&mut self` is
+    /// already partially borrowed by `session.participants.get_mut(...)`.
+    /// MSG_DONTWAIT is a per-call non-blocking flag — the socket itself
+    /// stays blocking for `recv_from`, which we still need for the
+    /// SO_RCVTIMEO-driven tick cadence.
+    #[inline]
+    fn udp_send_one(
+        socket: &UdpSocket,
+        data: &[u8],
+        dest: SocketAddr,
+        drop_counter: &mut u64,
+    ) {
+        let sock = socket2::SockRef::from(socket);
+        let addr: socket2::SockAddr = dest.into();
+        match sock.send_to_with_flags(data, &addr, libc::MSG_DONTWAIT) {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                *drop_counter += 1;
+            }
+            Err(e) => {
+                // Non-WouldBlock errors (EHOSTUNREACH on transient route flaps,
+                // EMSGSIZE on a way-too-big payload, etc). Trace level so we
+                // don't flood the log; the periodic stats line surfaces volume.
+                tracing::trace!(error = %e, %dest, "UDP send error");
+            }
         }
     }
 
@@ -255,16 +370,27 @@ impl SfuEngine {
 
                 // Stats log every 5s.
                 if self.stats_last_log.elapsed() >= Duration::from_secs(5) {
-                    if self.stats_audio_fwd > 0 || self.stats_video_fwd > 0 {
-                        let elapsed = self.stats_last_log.elapsed().as_secs_f32();
+                    let elapsed = self.stats_last_log.elapsed().as_secs_f32();
+                    if self.stats_audio_fwd > 0
+                        || self.stats_video_fwd > 0
+                        || self.stats_udp_drops > 0
+                    {
                         tracing::info!(
                             audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
                             video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
+                            udp_drops = self.stats_udp_drops,
                             "media forwarding stats"
                         );
                     }
+                    // Surface drop volume to Prometheus too — the warn-on-each
+                    // log line is gone, this is the new alertable signal.
+                    if self.stats_udp_drops > 0 {
+                        metrics::counter!("matehub_video_udp_send_drops_total")
+                            .increment(self.stats_udp_drops);
+                    }
                     self.stats_audio_fwd = 0;
                     self.stats_video_fwd = 0;
+                    self.stats_udp_drops = 0;
                     self.stats_last_log = Instant::now();
                 }
 
@@ -274,8 +400,8 @@ impl SfuEngine {
                 next_tick = now + TICK;
             }
 
-            // --- 4. Negotiation (flag-gated) --------------------------------
-            if self.has_pending_negotiation {
+            // --- 4. Negotiation (set-gated) ---------------------------------
+            if !self.pending_negotiation.is_empty() {
                 self.negotiate_pending_tracks();
             }
         }
@@ -362,15 +488,24 @@ impl SfuEngine {
         let session = self.sessions.get_mut(&session_id)?;
         let participant = session.participants.get_mut(&participant_id)?;
 
-        // A pending server-side offer would make this impossible to reconcile —
-        // the client's offer is relative to the last stable state. In practice
-        // SDK waits for our last Answer before issuing its own Offer; log and
-        // drop if that invariant gets broken.
+        // A pending server-side offer means we can't apply this client offer
+        // right now — it's relative to the last stable SDP state. Stash it
+        // (overwriting any previous queued offer; the latest reflects the
+        // client's current PC) and drain inside handle_answer once
+        // pending_offer clears.
         if participant.pending_offer.is_some() {
-            tracing::warn!(
-                %participant_id,
-                "client offer arrived while server offer still pending — dropping"
-            );
+            if participant.queued_client_offer.is_some() {
+                tracing::warn!(
+                    %participant_id,
+                    "replacing already-queued client offer with newer one"
+                );
+            } else {
+                tracing::debug!(
+                    %participant_id,
+                    "queueing client offer until server offer is answered"
+                );
+            }
+            participant.queued_client_offer = Some(sdp_offer);
             return None;
         }
 
@@ -383,10 +518,13 @@ impl SfuEngine {
         };
 
         let answer_str = answer.to_sdp_string();
-        let _ = participant.ws_tx.send(ServerMessage::Answer {
-            sdp_answer: answer_str,
-            participant_id,
-        });
+        ws_try_send(
+            &participant.ws_tx,
+            ServerMessage::Answer {
+                sdp_answer: answer_str,
+                participant_id,
+            },
+        );
 
         tracing::info!(%participant_id, "client offer accepted, answer sent");
         Some(PollTarget::One(session_id, participant_id))
@@ -398,8 +536,28 @@ impl SfuEngine {
         participant_id: ParticipantId,
         user_id: String,
         sdp_offer: String,
-        reply_tx: mpsc::UnboundedSender<ServerMessage>,
+        reply_tx: mpsc::Sender<ServerMessage>,
     ) -> Option<PollTarget> {
+        // Reconnect: the WS handler derives participant_id from
+        // (session_id, user_id), so a fresh socket from the same user
+        // lands on the same pid. If a participant entry already exists,
+        // it's a stale Rtc from a dropped connection — tear it down via
+        // the existing handle_leave path (which cleans tracks, fan-out,
+        // and renegotiates remaining peers) before we slot the new Rtc in.
+        let already_present = self
+            .sessions
+            .get(&session_id)
+            .map(|s| s.participants.contains_key(&participant_id))
+            .unwrap_or(false);
+        if already_present {
+            tracing::info!(
+                %session_id,
+                %participant_id,
+                "reconnect detected — replacing stale participant"
+            );
+            self.handle_leave(session_id, participant_id);
+        }
+
         // Parse the SDP offer (try JSON first, then raw SDP string)
         let offer: SdpOffer = match serde_json::from_str(&sdp_offer) {
             Ok(o) => o,
@@ -407,18 +565,26 @@ impl SfuEngine {
                 Ok(o) => o,
                 Err(e) => {
                     tracing::warn!(%participant_id, "invalid SDP offer: {e}");
-                    let _ = reply_tx.send(ServerMessage::Error {
-                        message: format!("invalid SDP offer: {e}"),
-                    });
+                    ws_try_send(
+                        &reply_tx,
+                        ServerMessage::Error {
+                            message: format!("invalid SDP offer: {e}"),
+                        },
+                    );
                     return None;
                 }
             },
         };
 
-        // Create Rtc instance
+        // Create Rtc instance with explicit ICE creds so we know the local
+        // ufrag before the first STUN binding. We track ufrag → participant
+        // for O(1) UDP demux on first contact (see handle_udp_packet's
+        // STUN routing).
         // Note: full ICE (not ICE-lite). ICE-lite causes immediate Disconnected
         // because str0m expects STUN before poll_output runs the first timeout.
-        let mut rtc = Rtc::new();
+        let creds = IceCreds::new();
+        let local_ufrag = creds.ufrag.clone();
+        let mut rtc = Rtc::builder().set_local_ice_credentials(creds).build();
 
         // Add one host candidate per local interface we know about.
         // ICE on the browser then has multiple real paths to try instead of
@@ -434,9 +600,12 @@ impl SfuEngine {
             Ok(answer) => answer,
             Err(e) => {
                 tracing::warn!(%participant_id, "failed to accept SDP offer: {e}");
-                let _ = reply_tx.send(ServerMessage::Error {
-                    message: format!("SDP negotiation failed: {e}"),
-                });
+                ws_try_send(
+                    &reply_tx,
+                    ServerMessage::Error {
+                        message: format!("SDP negotiation failed: {e}"),
+                    },
+                );
                 return None;
             }
         };
@@ -471,6 +640,7 @@ impl SfuEngine {
             tracks_in: Vec::new(),
             tracks_out: Vec::new(),
             pending_offer: None,
+            queued_client_offer: None,
             pending_source_hints: HashMap::new(),
             last_activity_at: Instant::now(),
             ice_disconnected: false,
@@ -478,10 +648,13 @@ impl SfuEngine {
         session.participants.insert(participant_id, participant);
 
         // Send SDP answer
-        let _ = reply_tx.send(ServerMessage::Answer {
-            sdp_answer: answer_str,
-            participant_id,
-        });
+        ws_try_send(
+            &reply_tx,
+            ServerMessage::Answer {
+                sdp_answer: answer_str,
+                participant_id,
+            },
+        );
 
         // Set up track forwarding: new participant needs outgoing tracks
         // for all existing participants' incoming tracks
@@ -501,8 +674,13 @@ impl SfuEngine {
                 existing = existing_tracks.len(),
                 "queued existing tracks for new participant"
             );
-            self.has_pending_negotiation = true;
+            self.pending_negotiation.insert((session_id, participant_id));
         }
+
+        // Register ufrag for fast-path routing. Done last so we don't add
+        // an entry for a participant that ended up not getting inserted.
+        self.ufrag_to_participant
+            .insert(local_ufrag, (session_id, participant_id));
 
         tracing::info!(%session_id, %participant_id, "participant joined SFU");
         Some(PollTarget::One(session_id, participant_id))
@@ -588,6 +766,22 @@ impl SfuEngine {
                 }
             }
         }
+        // pending_offer is now None — drain a queued client offer if there
+        // was one. Re-fetching the participant here (instead of holding the
+        // earlier &mut over the recursive call) keeps the borrow checker
+        // happy and naturally handles the participant-vanished race.
+        let queued = self
+            .sessions
+            .get_mut(&session_id)
+            .and_then(|s| s.participants.get_mut(&participant_id))
+            .and_then(|p| p.queued_client_offer.take());
+        if let Some(sdp) = queued {
+            tracing::info!(
+                %participant_id,
+                "draining queued client offer after server offer answered"
+            );
+            self.handle_client_offer(session_id, participant_id, sdp);
+        }
         // Answer may have opened new tracks and triggered PLI against origins —
         // sweep the whole session so those keyframe requests leave the wire.
         Some(PollTarget::Session(session_id))
@@ -638,6 +832,14 @@ impl SfuEngine {
         // the mapping from pointing at a dead Rtc.
         self.addr_to_participant
             .retain(|_, &mut (sid, pid)| !(sid == session_id && pid == participant_id));
+        // Same for ufrag map (linear over a typically-small set).
+        self.ufrag_to_participant
+            .retain(|_, &mut (sid, pid)| !(sid == session_id && pid == participant_id));
+
+        // Drop any pending-negotiation entry tied to this participant — they
+        // can't ack our offer if they're gone.
+        self.pending_negotiation
+            .remove(&(session_id, participant_id));
 
         let session = self.sessions.get_mut(&session_id)?;
 
@@ -702,10 +904,13 @@ impl SfuEngine {
                 Some((offer, pending)) => {
                     p.pending_offer = Some(pending);
                     let offer_str = offer.to_sdp_string();
-                    let _ = p.ws_tx.send(ServerMessage::Offer {
-                        sdp_offer: offer_str,
-                        tracks: None,
-                    });
+                    ws_try_send(
+                        &p.ws_tx,
+                        ServerMessage::Offer {
+                            sdp_offer: offer_str,
+                            tracks: None,
+                        },
+                    );
                     tracing::info!(%pid, mids = ?mids, "sent deactivation renegotiation offer");
                 }
                 None => {
@@ -718,6 +923,8 @@ impl SfuEngine {
             self.sessions.remove(&session_id);
             // Defensive: sweep any stragglers still pointing at this session.
             self.addr_to_participant
+                .retain(|_, &mut (sid, _)| sid != session_id);
+            self.ufrag_to_participant
                 .retain(|_, &mut (sid, _)| sid != session_id);
             tracing::info!(%session_id, "SFU session destroyed (empty)");
             return None;
@@ -778,79 +985,81 @@ impl SfuEngine {
             self.addr_to_participant.remove(&source);
         }
 
-        // Slow path: linear scan. Used only for unknown source addrs — first
-        // packet from a new peer, STUN bindings, or ICE restarts.
+        // Slow path. Two stages:
+        //   1. Cheap shape check — drop random UDP noise (RTP/RTCP/DTLS look
+        //      nothing like STUN). The rest of this method only runs for
+        //      packets that look like ICE binding requests.
+        //   2. Parse USERNAME, look up our ufrag → participant. If found,
+        //      route directly. The previous N×M scan over every Rtc is now
+        //      a single lookup; legitimate first-contacts hit it once and
+        //      the addr cache takes over from packet 2 onward.
+        if !looks_like_stun(data) {
+            metrics::counter!("matehub_video_unknown_source_drops_total").increment(1);
+            return None;
+        }
+        let Some(ufrag) = parse_stun_local_ufrag(data) else {
+            // STUN-shaped but no parseable USERNAME — could be a binding
+            // success response from somewhere (legitimate when we initiate
+            // checks) or junk. Drop; caller doesn't lose anything because
+            // we wouldn't have known where to route it anyway.
+            return None;
+        };
+        let Some(&(session_id, participant_id)) =
+            self.ufrag_to_participant.get(ufrag)
+        else {
+            metrics::counter!("matehub_video_unknown_ufrag_drops_total").increment(1);
+            return None;
+        };
+
         let now = Instant::now();
-        // Pull the destination addr out before the &mut borrow of self.sessions.
         let destination = self.primary_candidate_addr();
+        let session = self.sessions.get_mut(&session_id)?;
+        let participant = session.participants.get_mut(&participant_id)?;
 
-        let mut matched: Option<(SessionId, ParticipantId)> = None;
-        for (session_id, session) in self.sessions.iter_mut() {
-            for participant in session.participants.values_mut() {
-                // Input is !Copy (handle_input consumes), and Receive::contents
-                // is !Copy too — so we build a fresh one each time we need it.
-                // data.try_into() is a cheap wrapper over the slice.
-                let Ok(probe_contents) = data.try_into() else {
-                    return None;
-                };
-                let probe = Input::Receive(
-                    now,
-                    Receive {
-                        proto: Protocol::Udp,
-                        source,
-                        destination,
-                        contents: probe_contents,
-                    },
-                );
-                if !participant.rtc.accepts(&probe) {
-                    continue;
-                }
+        let Ok(input_contents) = data.try_into() else {
+            return None;
+        };
+        let input = Input::Receive(
+            now,
+            Receive {
+                proto: Protocol::Udp,
+                source,
+                destination,
+                contents: input_contents,
+            },
+        );
 
-                let Ok(input_contents) = data.try_into() else {
-                    return None;
-                };
-                let input = Input::Receive(
-                    now,
-                    Receive {
-                        proto: Protocol::Udp,
-                        source,
-                        destination,
-                        contents: input_contents,
-                    },
-                );
-
-                participant.last_activity_at = now;
-                let pid = participant.id;
-                if let Err(e) = participant.rtc.handle_input(input) {
-                    tracing::warn!(id = %pid, "rtc handle_input error: {e}");
-                    participant.rtc.disconnect();
-                    return None;
-                }
-                matched = Some((*session_id, pid));
-                break;
-            }
-            if matched.is_some() {
-                break;
-            }
+        if !participant.rtc.accepts(&input) {
+            // Ufrag matched but Rtc still rejects — could be a stale STUN
+            // request from a defunct ICE pair, or a malformed body. One
+            // drop, no escalation.
+            return None;
         }
-
-        match matched {
-            Some((sid, pid)) => {
-                self.addr_to_participant.insert(source, (sid, pid));
-                Some((sid, pid))
-            }
-            None => {
-                tracing::debug!(%source, bytes = data.len(), "no Rtc accepts UDP packet");
-                None
-            }
+        participant.last_activity_at = now;
+        let pid = participant.id;
+        if let Err(e) = participant.rtc.handle_input(input) {
+            tracing::warn!(id = %pid, "rtc handle_input error: {e}");
+            participant.rtc.disconnect();
+            return None;
         }
+        // Cache addr → participant for O(1) demux on subsequent packets.
+        self.addr_to_participant
+            .insert(source, (session_id, pid));
+        Some((session_id, pid))
     }
 
     fn tick(&mut self) {
         let now = Instant::now();
 
-        // Collect zombies: ICE disconnected + no media for 30s.
-        // At 500 participants this is a single O(N) scan per tick.
+        // Refresh top-K audio publishers per session. O(audio_tracks) work
+        // every 20ms — negligible even at 500 participants where the audio
+        // publisher list is at most a few hundred.
+        for session in self.sessions.values_mut() {
+            session.recompute_top_audio();
+        }
+
+        // Collect zombies: ICE disconnected + no media for the configured
+        // window. At 500 participants this is a single O(N) scan per tick.
         let mut zombies: Vec<(SessionId, ParticipantId)> = Vec::new();
 
         for (session_id, session) in &mut self.sessions {
@@ -858,7 +1067,7 @@ impl SfuEngine {
                 let _ = participant.rtc.handle_input(Input::Timeout(now));
 
                 if participant.ice_disconnected
-                    && participant.last_activity_at.elapsed() > Duration::from_secs(30)
+                    && participant.last_activity_at.elapsed() > self.zombie_timeout
                 {
                     tracing::warn!(
                         pid = %participant.id,
@@ -901,13 +1110,48 @@ impl SfuEngine {
         }
     }
 
-    /// Drain outputs for one participant, forwarding media inline.
-    ///
-    /// The forwarding architecture (BUG-1 fix): on MediaData we immediately
-    /// call write() + drain_transmits on every subscriber — the RTP packet
-    /// hits the wire within microseconds of being polled, not after we finish
-    /// iterating everyone.
+    /// Drain outputs for one participant. Wraps the inner loop in
+    /// `catch_unwind` so a panic deep in str0m (malformed RTCP, codec edge
+    /// case, etc.) terminates *that* participant cleanly instead of bringing
+    /// the entire media thread down — and with it, every active call. The
+    /// affected Rtc is marked dead and the next zombie sweep will collect it.
     fn poll_participant(&mut self, session_id: SessionId, source_pid: ParticipantId) {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.poll_participant_inner(session_id, source_pid);
+        }));
+        if outcome.is_err() {
+            metrics::counter!("matehub_video_panics_caught_total").increment(1);
+            tracing::error!(
+                %session_id,
+                %source_pid,
+                "caught panic in poll_participant — marking participant dead"
+            );
+            if let Some(session) = self.sessions.get_mut(&session_id)
+                && let Some(p) = session.participants.get_mut(&source_pid)
+            {
+                p.rtc.disconnect();
+                p.ice_disconnected = true;
+                // Backdate so the next zombie tick collects it immediately
+                // (no point waiting another 12s for a poisoned Rtc).
+                p.last_activity_at = Instant::now()
+                    .checked_sub(self.zombie_timeout + Duration::from_secs(1))
+                    .unwrap_or(p.last_activity_at);
+                ws_try_send(
+                    &p.ws_tx,
+                    ServerMessage::Error {
+                        message: "internal SFU error — please rejoin".into(),
+                    },
+                );
+            }
+        }
+    }
+
+    /// Inner body — separated so `catch_unwind` can wrap it without nesting.
+    fn poll_participant_inner(
+        &mut self,
+        session_id: SessionId,
+        source_pid: ParticipantId,
+    ) {
         loop {
             // Scope the mutable borrow: extract output, then release self.sessions
             let output = {
@@ -926,12 +1170,12 @@ impl SfuEngine {
 
             match output {
                 Ok(Output::Transmit(transmit)) => {
-                    if let Err(e) = self
-                        .udp_socket
-                        .send_to(&transmit.contents, transmit.destination)
-                    {
-                        tracing::warn!("UDP send dropped: {e}");
-                    }
+                    Self::udp_send_one(
+                        &self.udp_socket,
+                        &transmit.contents,
+                        transmit.destination,
+                        &mut self.stats_udp_drops,
+                    );
                 }
                 Ok(Output::Event(event)) => match event {
                     Event::IceConnectionStateChange(state) => {
@@ -958,7 +1202,6 @@ impl SfuEngine {
                         // No hint → Camera (the Join-flow default — cam/mic
                         // sent implicitly in the first offer).
                         if let Some(session) = self.sessions.get_mut(&session_id) {
-                            let mut queued_for_others = false;
                             let source = session
                                 .participants
                                 .get_mut(&source_pid)
@@ -968,6 +1211,7 @@ impl SfuEngine {
                                         .and_then(|q| q.pop_front())
                                 })
                                 .unwrap_or(Source::Camera);
+                            let mut newly_queued: Vec<ParticipantId> = Vec::new();
                             for (pid, p) in &mut session.participants {
                                 if *pid == source_pid {
                                     p.tracks_in.push(TrackIn {
@@ -975,6 +1219,14 @@ impl SfuEngine {
                                         kind: e.kind,
                                         source,
                                         seen_high_layer: false,
+                                        // Initialise mid-loud (~64 / 127) so a
+                                        // brand-new audio publisher rides into
+                                        // top-K on their first packet, before
+                                        // the EMA has had a chance to settle.
+                                        // Without this, joiners are silenced
+                                        // for a tick or two — sounds like an
+                                        // audio cutout.
+                                        audio_loudness_ema: 64.0,
                                     });
                                 } else {
                                     let already = p.tracks_out.iter().any(|t| {
@@ -988,29 +1240,19 @@ impl SfuEngine {
                                             source,
                                             state: TrackOutState::ToOpen,
                                         });
-                                        queued_for_others = true;
+                                        newly_queued.push(*pid);
                                     }
                                 }
                             }
-                            if queued_for_others {
-                                self.has_pending_negotiation = true;
+                            for pid in newly_queued {
+                                self.pending_negotiation.insert((session_id, pid));
                             }
                         }
                     }
                     Event::MediaData(data) => {
-                        // Count stats by kind
-                        if let Some(session) = self.sessions.get_mut(&session_id) {
-                            if let Some(p) = session.participants.get_mut(&source_pid) {
-                                let is_audio = p.tracks_in.iter().any(|t| {
-                                    t.mid == data.mid && t.kind == MediaKind::Audio
-                                });
-                                if is_audio {
-                                    self.stats_audio_fwd += 1;
-                                } else {
-                                    self.stats_video_fwd += 1;
-                                }
-                            }
-                        }
+                        // Stats counter folded into forward_media_now to avoid
+                        // a second tracks_in scan — kind is already derived
+                        // there as part of the simulcast filter.
                         self.forward_media_now(session_id, source_pid, &data);
                     }
                     Event::KeyframeRequest(req) => {
@@ -1067,45 +1309,92 @@ impl SfuEngine {
         source_pid: ParticipantId,
         data: &MediaData,
     ) {
-        // Simulcast filter: if the publisher is sending layered video
-        // (screen share, mostly), the steady state forwards the `h` layer.
-        // Adaptive per-subscriber layer selection lives in Phase 5.
+        // Single TrackIn lookup serves four purposes: stats (kind),
+        // simulcast filter (seen_high_layer), audio EMA update for the
+        // top-K speaker selector, and a hard "unknown track" gate.
         //
-        // Start-up fallback: until the publisher's `h` encoder has produced
-        // its first packet (BWE ramp-up takes ~2-5s on a fresh PC),
-        // forward `l` so subscribers see something instead of a black
-        // screen. Once we see the first `h` packet for this (pid, mid)
-        // we flip TrackIn.seen_high_layer and never forward `l` again.
+        // Simulcast filter (steady state forwards `h`, start-up fallback
+        // to `l` until the high layer's first packet arrives):
+        //   * rid == None → no simulcast, always forward (audio mostly).
+        //   * rid == "h"  → forward + flip seen_high_layer.
+        //   * rid != "h"  → forward only while seen_high_layer == false.
         //
-        // `data.rid == None` means no simulcast on this track — always forward.
-        if let Some(rid) = data.rid.as_ref() {
-            let rid_str: &str = &**rid;
-            if rid_str == "h" {
-                if let Some(session) = self.sessions.get_mut(&session_id)
-                    && let Some(p) = session.participants.get_mut(&source_pid)
-                    && let Some(track) =
-                        p.tracks_in.iter_mut().find(|t| t.mid == data.mid)
-                    && !track.seen_high_layer
-                {
-                    track.seen_high_layer = true;
-                    tracing::info!(
-                        publisher = %source_pid,
-                        mid = %data.mid,
-                        "high simulcast layer live — fallback retired"
-                    );
+        // Audio loudness EMA (RFC 6464): voice_activity bit gates whether
+        // the level moves the average up or just decays. Smoothing prevents
+        // a single loud burst from kicking a quiet participant into the
+        // top-K and then back out 20ms later.
+        let (kind, can_forward, in_top_audio) = {
+            let Some(session) = self.sessions.get_mut(&session_id) else {
+                return;
+            };
+            let in_top = session
+                .top_audio_publishers
+                .contains(&(source_pid, data.mid));
+            let Some(p) = session.participants.get_mut(&source_pid) else {
+                return;
+            };
+            let Some(track) = p.tracks_in.iter_mut().find(|t| t.mid == data.mid)
+            else {
+                return;
+            };
+            let kind = track.kind;
+            let can_forward = match data.rid.as_ref().map(|r| &**r as &str) {
+                None => true,
+                Some("h") => {
+                    if !track.seen_high_layer {
+                        track.seen_high_layer = true;
+                        tracing::info!(
+                            publisher = %source_pid,
+                            mid = %data.mid,
+                            "high simulcast layer live — fallback retired"
+                        );
+                    }
+                    true
                 }
-            } else {
-                let seen_high = self
-                    .sessions
-                    .get(&session_id)
-                    .and_then(|s| s.participants.get(&source_pid))
-                    .and_then(|p| p.tracks_in.iter().find(|t| t.mid == data.mid))
-                    .map(|t| t.seen_high_layer)
-                    .unwrap_or(false);
-                if seen_high {
-                    return;
+                Some(_) => !track.seen_high_layer,
+            };
+            // Audio loudness bookkeeping. Only audible packets push the
+            // EMA upward; silence (voice_activity=false) decays it so
+            // newly-loud speakers can claim a top-K slot quickly.
+            if kind == MediaKind::Audio {
+                let voice_active = data.ext_vals.voice_activity == Some(true);
+                if let Some(level_dbov) = data.ext_vals.audio_level {
+                    if voice_active {
+                        // -127..0 dBov → 0..127 loudness; smoothing 0.7/0.3.
+                        let loud = (-level_dbov) as f32;
+                        track.audio_loudness_ema =
+                            track.audio_loudness_ema * 0.7 + loud * 0.3;
+                    } else {
+                        track.audio_loudness_ema *= 0.7;
+                    }
+                } else {
+                    // Extension wasn't negotiated / publisher dropped it —
+                    // can't do better than treating every packet as
+                    // "speaking", which keeps the participant in top-K.
+                    // Fine; degrades gracefully to forward-everything.
+                    track.audio_loudness_ema = track.audio_loudness_ema.max(64.0);
                 }
             }
+            (kind, can_forward, in_top)
+        };
+
+        // Counters reflect input volume from publishers (pre-filter), same
+        // semantic as before this method owned the increment.
+        match kind {
+            MediaKind::Audio => self.stats_audio_fwd += 1,
+            MediaKind::Video => self.stats_video_fwd += 1,
+        }
+
+        if !can_forward {
+            return;
+        }
+
+        // Top-K audio filter: drop audio from publishers not currently in
+        // the speaker set. The set is recomputed on every tick; while it's
+        // small enough (≤ K publishers) recompute keeps everyone in,
+        // making this branch a no-op for typical 2-5 person calls.
+        if kind == MediaKind::Audio && !in_top_audio {
+            return;
         }
 
         let key = (source_pid, data.mid);
@@ -1155,9 +1444,12 @@ impl SfuEngine {
             loop {
                 match target.rtc.poll_output() {
                     Ok(Output::Transmit(t)) => {
-                        if let Err(e) = self.udp_socket.send_to(&t.contents, t.destination) {
-                            tracing::warn!("UDP drain dropped: {e}");
-                        }
+                        Self::udp_send_one(
+                            &self.udp_socket,
+                            &t.contents,
+                            t.destination,
+                            &mut self.stats_udp_drops,
+                        );
                     }
                     Ok(Output::Timeout(_)) => break,
                     Ok(Output::Event(_)) => {} // events handled in main poll loop
@@ -1183,26 +1475,14 @@ impl SfuEngine {
     /// Create SDP offers for all participants that have ToOpen outgoing tracks.
     /// Batches multiple ToOpen tracks into a single offer per participant.
     ///
-    /// Gated by `self.has_pending_negotiation` — don't call this every
-    /// audio packet when there's nothing to negotiate.
+    /// Gated by `self.pending_negotiation` — only iterates participants that
+    /// pushed a ToOpen track since the last pass. Re-inserts on the
+    /// pending-offer-still-set retry path.
     fn negotiate_pending_tracks(&mut self) {
-        // Clear the flag up front. Any new ToOpen queued during this pass
-        // (e.g. from an SDP apply that triggers another MediaAdded) will
-        // set it again.
-        self.has_pending_negotiation = false;
-
-        let mut to_negotiate: Vec<(SessionId, ParticipantId)> = Vec::new();
-        for (session_id, session) in &self.sessions {
-            for (pid, participant) in &session.participants {
-                let has_to_open = participant
-                    .tracks_out
-                    .iter()
-                    .any(|t| matches!(t.state, TrackOutState::ToOpen));
-                if has_to_open {
-                    to_negotiate.push((*session_id, *pid));
-                }
-            }
-        }
+        // Take the set so we own it; participants that re-queue (pending_offer
+        // still set) re-insert themselves below for the next tick to pick up.
+        let to_negotiate: Vec<(SessionId, ParticipantId)> =
+            std::mem::take(&mut self.pending_negotiation).into_iter().collect();
 
         if to_negotiate.is_empty() {
             return;
@@ -1246,9 +1526,9 @@ impl SfuEngine {
 
             if participant.pending_offer.is_some() {
                 // Can't send a new offer while we're still waiting for an
-                // answer. Re-raise the flag so the next pass retries after
-                // handle_answer clears pending_offer.
-                self.has_pending_negotiation = true;
+                // answer. Re-insert into the pending set so the next tick
+                // retries after handle_answer clears pending_offer.
+                self.pending_negotiation.insert((session_id, pid));
                 continue;
             }
 
@@ -1282,14 +1562,17 @@ impl SfuEngine {
                     participant.pending_offer = Some(pending);
                     let offer_str = offer.to_sdp_string();
 
-                    let _ = participant.ws_tx.send(ServerMessage::Offer {
-                        sdp_offer: offer_str,
-                        tracks: if track_mappings.is_empty() {
-                            None
-                        } else {
-                            Some(track_mappings.clone())
+                    ws_try_send(
+                        &participant.ws_tx,
+                        ServerMessage::Offer {
+                            sdp_offer: offer_str,
+                            tracks: if track_mappings.is_empty() {
+                                None
+                            } else {
+                                Some(track_mappings.clone())
+                            },
                         },
-                    });
+                    );
                     tracing::info!(%pid, "sent renegotiation offer");
                 }
                 None => {
@@ -1309,6 +1592,92 @@ mod tests {
     /// from the msid the browser sees on `ontrack`.
     fn is_msid_safe(c: char) -> bool {
         c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~')
+    }
+
+    // ── STUN early-drop & USERNAME parsing ─────────────────────────
+
+    fn build_stun_binding_with_username(username: &[u8]) -> Vec<u8> {
+        let attr_pad = (4 - (username.len() % 4)) % 4;
+        let attrs_len = 4 + username.len() + attr_pad;
+        let mut buf = Vec::with_capacity(20 + attrs_len);
+        // Type: Binding Request (0x0001)
+        buf.extend_from_slice(&0x0001u16.to_be_bytes());
+        // Length: attrs_len
+        buf.extend_from_slice(&(attrs_len as u16).to_be_bytes());
+        // Magic cookie
+        buf.extend_from_slice(&STUN_MAGIC_COOKIE);
+        // Transaction id (12 bytes; arbitrary)
+        buf.extend_from_slice(&[0xAA; 12]);
+        // USERNAME attribute
+        buf.extend_from_slice(&STUN_ATTR_USERNAME.to_be_bytes());
+        buf.extend_from_slice(&(username.len() as u16).to_be_bytes());
+        buf.extend_from_slice(username);
+        buf.extend(std::iter::repeat_n(0u8, attr_pad));
+        buf
+    }
+
+    #[test]
+    fn looks_like_stun_accepts_valid_binding() {
+        let pkt = build_stun_binding_with_username(b"remote:local");
+        assert!(looks_like_stun(&pkt));
+    }
+
+    #[test]
+    fn looks_like_stun_rejects_short_packet() {
+        let short = vec![0u8; 19];
+        assert!(!looks_like_stun(&short));
+    }
+
+    #[test]
+    fn looks_like_stun_rejects_rtp_shape() {
+        // Real RTP packets have version=2 in top 2 bits of byte 0 → 0x80.
+        let mut rtp = vec![0u8; 30];
+        rtp[0] = 0x80;
+        // Magic cookie absent; this is exactly the noise we want to drop.
+        assert!(!looks_like_stun(&rtp));
+    }
+
+    #[test]
+    fn looks_like_stun_rejects_wrong_magic() {
+        let mut pkt = build_stun_binding_with_username(b"remote:local");
+        // Corrupt the cookie.
+        pkt[4] = 0xFF;
+        assert!(!looks_like_stun(&pkt));
+    }
+
+    #[test]
+    fn parse_stun_local_ufrag_returns_segment_after_colon() {
+        let pkt = build_stun_binding_with_username(b"remote_uf:my_local");
+        assert_eq!(parse_stun_local_ufrag(&pkt), Some("my_local"));
+    }
+
+    #[test]
+    fn parse_stun_local_ufrag_handles_padding_correctly() {
+        // 3-byte username forces 1 byte of padding.
+        let pkt = build_stun_binding_with_username(b"a:b");
+        assert_eq!(parse_stun_local_ufrag(&pkt), Some("b"));
+    }
+
+    #[test]
+    fn parse_stun_local_ufrag_returns_none_when_missing_colon() {
+        let pkt = build_stun_binding_with_username(b"no-colon-here");
+        assert_eq!(parse_stun_local_ufrag(&pkt), None);
+    }
+
+    #[test]
+    fn parse_stun_local_ufrag_returns_none_for_non_stun() {
+        // RTP-shaped: top byte 0x80, no magic.
+        let mut rtp = vec![0u8; 60];
+        rtp[0] = 0x80;
+        assert_eq!(parse_stun_local_ufrag(&rtp), None);
+    }
+
+    #[test]
+    fn parse_stun_local_ufrag_safe_against_truncation() {
+        // Build a packet then cut off mid-attribute. Must not panic.
+        let mut pkt = build_stun_binding_with_username(b"remote:local");
+        pkt.truncate(22); // header + 2 bytes of attr type
+        assert_eq!(parse_stun_local_ufrag(&pkt), None);
     }
 
     const ALL_SOURCES: [Source; 2] = [Source::Camera, Source::Screen];

@@ -5,12 +5,14 @@ use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-/// Helper: create a session and return (base_url, session_id)
+/// Helper: create a session and return its session_id. Channel ids are
+/// Snowflake i64s on the wire (string-encoded so JS doesn't lose precision)
+/// — UUIDs would 400 at the deserializer.
 async fn create_test_session(base: &str) -> String {
     let client = reqwest::Client::new();
     let resp: Value = client
         .post(format!("{base}/v1/sessions"))
-        .json(&json!({"channel_id": "00000000-0000-0000-0000-aaaaaaaaaaaa"}))
+        .json(&json!({"channel_id": "9000000000000000001", "hub_id": "1"}))
         .send()
         .await
         .unwrap()
@@ -25,7 +27,7 @@ async fn ws_connect_and_receive_error_on_join() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;
 
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     // Send join
@@ -51,7 +53,7 @@ async fn ws_participant_joined_broadcast() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
 
     // Send join so Alice is registered
@@ -68,7 +70,7 @@ async fn ws_participant_joined_broadcast() {
     let _ = ws_alice.next().await;
 
     // Bob connects -- Alice should receive participant_joined
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (_ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
 
     // Alice should receive participant_joined for Bob
@@ -89,7 +91,7 @@ async fn ws_participant_left_broadcast() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
@@ -102,7 +104,7 @@ async fn ws_participant_left_broadcast() {
     let _ = ws_alice.next().await; // drain error
 
     // Bob connects
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
 
     // Alice gets participant_joined
@@ -133,7 +135,7 @@ async fn ws_session_destroyed_on_last_leave() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects and immediately leaves
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     ws.send(Message::Text(json!({"type": "leave"}).to_string().into()))
         .await
@@ -162,7 +164,7 @@ async fn ws_invalid_message_returns_error() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;
 
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     // Send garbage
@@ -186,7 +188,7 @@ async fn ws_connect_to_nonexistent_session_closes() {
 
     let ws_url = common::ws_url(
         &base,
-        "/ws/00000000-0000-0000-0000-000000000099?user_id=alice",
+        "/ws/00000000-0000-0000-0000-000000000099?token=dev-alice-token",
     );
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
@@ -207,7 +209,7 @@ async fn ws_abrupt_disconnect_triggers_cleanup() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
@@ -220,7 +222,7 @@ async fn ws_abrupt_disconnect_triggers_cleanup() {
     let _ = ws_alice.next().await; // drain error
 
     // Bob connects
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     let _ = ws_alice.next().await; // drain participant_joined for bob
 
@@ -246,7 +248,7 @@ async fn ws_get_session_shows_participants() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     ws.send(Message::Text(
         json!({"type": "join", "sdp_offer": "fake"})
@@ -277,7 +279,7 @@ async fn ws_ice_candidate_does_not_crash() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;
 
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     // Send join first
@@ -315,7 +317,7 @@ async fn ws_answer_does_not_crash() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;
 
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     ws.send(Message::Text(
@@ -341,37 +343,31 @@ async fn ws_answer_does_not_crash() {
         .unwrap();
 }
 
+/// Reconnect from the same user_id replaces the prior slot (one logical
+/// "voice presence" per user per session). The old behaviour spawned a
+/// fresh participant_id for every WS connect and left the dropped one
+/// hanging in fan-out for the full zombie window — visible to peers as
+/// duplicated audio. New behaviour: derived participant_id is stable on
+/// (session_id, user_id), so a second WS replaces the first.
 #[tokio::test]
-async fn ws_duplicate_user_id_creates_separate_participants() {
+async fn ws_reconnect_same_user_replaces_prior_session() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
     let session_id = create_test_session(&base).await;
 
-    // Two connections with same user_id
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    // Two connections with same user_id back to back.
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws1, _) = connect_async(&ws_url).await.unwrap();
-    let (mut ws2, _) = connect_async(&ws_url).await.unwrap();
+    // First connection should be replaced by the second.
+    let (_ws2, _) = connect_async(&ws_url).await.unwrap();
+    // Give the server a beat to process the second WS upgrade and overwrite
+    // ws1's slot in AppState.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    // Both join
-    ws1.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"})
-            .to_string()
-            .into(),
-    ))
-    .await
-    .unwrap();
-    let _ = ws1.next().await; // drain error
+    // ws1's slot has been clobbered by ws2; closing it explicitly avoids
+    // dangling state in the test process.
+    let _ = ws1.close(None).await;
 
-    ws2.send(Message::Text(
-        json!({"type": "join", "sdp_offer": "fake"})
-            .to_string()
-            .into(),
-    ))
-    .await
-    .unwrap();
-    let _ = ws2.next().await;
-
-    // REST should show 2 participants
     let resp: Value = client
         .get(format!("{base}/v1/sessions/{session_id}"))
         .send()
@@ -382,17 +378,12 @@ async fn ws_duplicate_user_id_creates_separate_participants() {
         .unwrap();
 
     let participants = resp["participants"].as_array().unwrap();
-    assert_eq!(participants.len(), 2);
-
-    // Both should have user_id "alice" but different participant_ids
+    assert_eq!(
+        participants.len(),
+        1,
+        "duplicate connect from same user must collapse to one participant"
+    );
     assert_eq!(participants[0]["user_id"], "alice");
-    assert_eq!(participants[1]["user_id"], "alice");
-
-    let ids: std::collections::HashSet<_> = participants
-        .iter()
-        .map(|p| p["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids.len(), 2, "participant IDs should be unique");
 }
 
 // ── Mute signaling tests (Stage 2) ──────────────
@@ -403,7 +394,7 @@ async fn ws_mute_changed_broadcasts_to_others() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
@@ -416,7 +407,7 @@ async fn ws_mute_changed_broadcasts_to_others() {
     let _ = ws_alice.next().await; // drain error
 
     // Bob connects
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     let _ = ws_alice.next().await; // drain participant_joined for bob
 
@@ -453,7 +444,7 @@ async fn ws_mute_changed_not_echoed_to_sender() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects alone
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     ws.send(Message::Text(
         json!({"type": "join", "sdp_offer": "fake"})
@@ -487,7 +478,7 @@ async fn ws_mute_state_sent_on_join() {
     let session_id = create_test_session(&base).await;
 
     // Bob connects and enables camera
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     ws_bob
         .send(Message::Text(
@@ -499,7 +490,7 @@ async fn ws_mute_state_sent_on_join() {
         .unwrap();
 
     // Alice connects -- should receive participant_joined AND participant_muted for Bob
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
 
     // First message: participant_joined for Bob
@@ -530,11 +521,11 @@ async fn ws_mute_state_not_sent_when_muted() {
     let session_id = create_test_session(&base).await;
 
     // Bob connects but does NOT enable camera (default: muted)
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (_ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
 
     // Alice connects -- should receive participant_joined but NO participant_muted
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
 
     // First message: participant_joined for Bob
@@ -560,7 +551,7 @@ async fn ws_mute_toggle_sequence() {
     let session_id = create_test_session(&base).await;
 
     // Alice connects
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     ws_alice
         .send(Message::Text(
@@ -573,7 +564,7 @@ async fn ws_mute_toggle_sequence() {
     let _ = ws_alice.next().await; // drain error
 
     // Bob connects
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     let _ = ws_alice.next().await; // drain participant_joined
     let _ = ws_bob.next().await; // drain participant_joined for alice
@@ -606,7 +597,7 @@ async fn ws_mute_state_persists_across_reconnect() {
     let session_id = create_test_session(&base).await;
 
     // Bob connects and enables camera
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     ws_bob
         .send(Message::Text(
@@ -618,7 +609,7 @@ async fn ws_mute_state_persists_across_reconnect() {
         .unwrap();
 
     // Alice connects first time, gets Bob's mute state
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
     let _ = ws_alice.next().await; // participant_joined(bob)
     let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
@@ -669,7 +660,7 @@ async fn ws_mute_state_updates_after_toggle_off() {
     let session_id = create_test_session(&base).await;
 
     // Bob connects, enables camera, then disables it
-    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?user_id=bob"));
+    let ws_url_bob = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-bob-token"));
     let (mut ws_bob, _) = connect_async(&ws_url_bob).await.unwrap();
     ws_bob
         .send(Message::Text(
@@ -687,9 +678,12 @@ async fn ws_mute_state_updates_after_toggle_off() {
         ))
         .await
         .unwrap();
+    // Drain Bob's pipe so the second mute_changed reaches AppState before
+    // Alice connects — otherwise the assertion is a race with the WS reader.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     // Alice connects -- should NOT get participant_muted (camera is off now)
-    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url_alice = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws_alice, _) = connect_async(&ws_url_alice).await.unwrap();
 
     let msg = tokio::time::timeout(std::time::Duration::from_secs(2), ws_alice.next())
@@ -713,7 +707,7 @@ async fn ws_binary_frame_ignored() {
     let base = common::spawn_app().await;
     let session_id = create_test_session(&base).await;
 
-    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?user_id=alice"));
+    let ws_url = common::ws_url(&base, &format!("/ws/{session_id}?token=dev-alice-token"));
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
     // Send binary frame -- should be ignored, not crash

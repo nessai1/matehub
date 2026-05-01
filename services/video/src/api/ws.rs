@@ -4,7 +4,8 @@ use axum::{
         Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::IntoResponse,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -25,12 +26,33 @@ pub fn routes() -> Router<AppState> {
 
 #[derive(Deserialize)]
 struct WsQuery {
-    #[allow(dead_code)]
+    /// Required. Either a real JWT (verified via matehub_common::auth) or a
+    /// dev-mode shortcut "dev-{username}-token" — same pattern as the hub
+    /// service. user_id is derived from the verified claims, NOT trusted
+    /// from a separate query param.
     token: Option<String>,
-    /// Snowflake i64 rendered as a decimal string (Sonyflakes exceed JS
-    /// MAX_SAFE_INTEGER). `"anonymous"` or a non-numeric value disables
-    /// occupancy reporting but the SFU session still works.
-    user_id: Option<String>,
+}
+
+/// Validate a WS token and return the authenticated user_id. None means
+/// reject the upgrade. Sources of truth, in order:
+///   * dev shortcut: "dev-{username}-token" → user_id = "{username}".
+///     Matches services/hub/src/auth.rs; lets local tests skip JWT issuance.
+///   * Real JWT: verify_token → claims.sub (Snowflake i64) as decimal string.
+fn authenticate(token: Option<&str>) -> Option<String> {
+    let token = token?;
+    if let Some(rest) = token.strip_prefix("dev-")
+        && let Some(username) = rest.strip_suffix("-token")
+        && !username.is_empty()
+    {
+        return Some(username.to_string());
+    }
+    match matehub_common::auth::verify_token(token) {
+        Ok(claims) => Some(claims.sub.to_string()),
+        Err(e) => {
+            tracing::warn!(error = %e, "WS token verification failed");
+            None
+        }
+    }
 }
 
 const VOICE_OCCUPANCY_SUBJECT: &str = "voice.occupancy";
@@ -75,12 +97,11 @@ async fn ws_upgrade(
     Path(session_id): Path<SessionId>,
     Query(query): Query<WsQuery>,
     ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    let user_id = query.user_id.unwrap_or_else(|| "anonymous".into());
-    // The canonical user id is a Snowflake; frontend sends it as the string
-    // representation of the i64. Anonymous / non-numeric fall back to
-    // skipping occupancy reporting — the video session still works, but the
-    // hub won't see the roster entry.
+) -> Response {
+    let Some(user_id) = authenticate(query.token.as_deref()) else {
+        metrics::counter!("matehub_video_ws_auth_rejects_total").increment(1);
+        return (StatusCode::UNAUTHORIZED, "missing or invalid token").into_response();
+    };
     let user_snowflake = user_id.parse::<i64>().ok();
 
     let span = tracing::info_span!(
@@ -94,6 +115,51 @@ async fn ws_upgrade(
     ws.on_upgrade(move |socket| {
         handle_ws(socket, state, session_id, user_id, user_snowflake).instrument(span)
     })
+    .into_response()
+}
+
+/// Outbound WS buffer size per participant. Each ServerMessage is at most
+/// a renegotiation Offer (~50KB SDP) but most are tiny. 256 messages ≈ a
+/// small SDP burst with headroom; well under "this connection is broken,
+/// give up".
+const WS_TX_BUFFER: usize = 256;
+
+/// Drop-on-full helper for the per-WS broadcast channel. Slow consumers
+/// don't get to back-pressure the SFU.
+fn ws_send_or_drop(tx: &mpsc::Sender<ServerMessage>, msg: ServerMessage) {
+    if let Err(e) = tx.try_send(msg) {
+        // SendError on closed-channel is the legit "WS already disconnected"
+        // case — silent. Full is the alertable signal.
+        if matches!(e, mpsc::error::TrySendError::Full(_)) {
+            metrics::counter!("matehub_video_ws_send_drops_total").increment(1);
+        }
+    }
+}
+
+/// Drop-on-full helper for the SFU command channel. Same intent, different
+/// channel type.
+fn sfu_send_or_drop(tx: &crossbeam::channel::Sender<SfuCommand>, cmd: SfuCommand) {
+    if tx.try_send(cmd).is_err() {
+        metrics::counter!("matehub_video_sfu_cmd_drops_total").increment(1);
+    }
+}
+
+/// Derive a stable participant id from (session_id, user_id). Reconnect
+/// from the same user lands on the same slot — `handle_join` detects the
+/// existing participant and does a graceful replace (drops the old Rtc,
+/// rebuilds tracks). Without this, a transient WS drop left a zombie that
+/// kept publishing audio for the full ~12s zombie window, doubling the
+/// caller's voice in everyone else's mix.
+///
+/// "anonymous" stays on v4 (collision-free) — only authenticated sessions
+/// get the deterministic id. Once JWT auth is mandatory we can drop this
+/// branch.
+fn derive_participant_id(session_id: SessionId, user_id: &str) -> Uuid {
+    if user_id == "anonymous" {
+        Uuid::new_v4()
+    } else {
+        Uuid::new_v5(&session_id, user_id.as_bytes())
+    }
 }
 
 async fn handle_ws(
@@ -103,9 +169,9 @@ async fn handle_ws(
     user_id: String,
     user_snowflake: Option<i64>,
 ) {
-    let participant_id = Uuid::new_v4();
+    let participant_id = derive_participant_id(session_id, &user_id);
     Span::current().record("participant_id", tracing::field::display(&participant_id));
-    let (ws_tx, mut ws_rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (ws_tx, mut ws_rx) = mpsc::channel::<ServerMessage>(WS_TX_BUFFER);
 
     tracing::info!("participant connecting");
 
@@ -131,24 +197,33 @@ async fn handle_ws(
 
         // Send existing participants to the new participant (+ their mute state)
         for p in session.participants.values() {
-            let _ = ws_tx.send(ServerMessage::ParticipantJoined {
-                participant_id: p.id,
-                user_id: p.user_id.clone(),
-            });
+            ws_send_or_drop(
+                &ws_tx,
+                ServerMessage::ParticipantJoined {
+                    participant_id: p.id,
+                    user_id: p.user_id.clone(),
+                },
+            );
             // Send current mute state so new joiner knows who has camera/mic on
             if !p.video_muted {
-                let _ = ws_tx.send(ServerMessage::ParticipantMuted {
-                    participant_id: p.id,
-                    kind: "video".into(),
-                    muted: false,
-                });
+                ws_send_or_drop(
+                    &ws_tx,
+                    ServerMessage::ParticipantMuted {
+                        participant_id: p.id,
+                        kind: "video".into(),
+                        muted: false,
+                    },
+                );
             }
             if !p.audio_muted {
-                let _ = ws_tx.send(ServerMessage::ParticipantMuted {
-                    participant_id: p.id,
-                    kind: "audio".into(),
-                    muted: false,
-                });
+                ws_send_or_drop(
+                    &ws_tx,
+                    ServerMessage::ParticipantMuted {
+                        participant_id: p.id,
+                        kind: "audio".into(),
+                        muted: false,
+                    },
+                );
             }
         }
 
@@ -158,7 +233,7 @@ async fn handle_ws(
             user_id: user_id.clone(),
         };
         for p in session.participants.values() {
-            let _ = p.ws_tx.send(join_msg.clone());
+            ws_send_or_drop(&p.ws_tx, join_msg.clone());
         }
 
         session.participants.insert(
@@ -172,10 +247,7 @@ async fn handle_ws(
                 audio_muted: true,
             },
         );
-        let total_participants: usize =
-            inner.sessions.values().map(|s| s.participants.len()).sum();
-        metrics::gauge!("matehub_video_active_participants")
-            .set(total_participants as f64);
+        metrics::counter!("matehub_video_participant_joins_total").increment(1);
     }
 
     // Tell the hub: this user is now in this voice channel.
@@ -226,9 +298,12 @@ async fn handle_ws(
                     raw = %text.chars().take(200).collect::<String>(),
                     "failed to parse WS message"
                 );
-                let _ = ws_tx.send(ServerMessage::Error {
-                    message: format!("invalid message: {e}"),
-                });
+                ws_send_or_drop(
+                    &ws_tx,
+                    ServerMessage::Error {
+                        message: format!("invalid message: {e}"),
+                    },
+                );
                 continue;
             }
         };
@@ -236,13 +311,16 @@ async fn handle_ws(
         match client_msg {
             ClientMessage::Join { sdp_offer } => {
                 tracing::info!(%participant_id, "received SDP offer, sending to SFU");
-                let _ = sfu_tx.send(SfuCommand::Join {
-                    session_id,
-                    participant_id,
-                    user_id: user_id.clone(),
-                    sdp_offer,
-                    reply_tx: ws_tx.clone(),
-                });
+                sfu_send_or_drop(
+                    &sfu_tx,
+                    SfuCommand::Join {
+                        session_id,
+                        participant_id,
+                        user_id: user_id.clone(),
+                        sdp_offer,
+                        reply_tx: ws_tx.clone(),
+                    },
+                );
 
                 // Update state
                 let mut inner = state.inner.lock();
@@ -255,11 +333,14 @@ async fn handle_ws(
 
             ClientMessage::Answer { sdp_answer } => {
                 tracing::info!(%participant_id, "received SDP answer");
-                let _ = sfu_tx.send(SfuCommand::Answer {
-                    session_id,
-                    participant_id,
-                    sdp_answer,
-                });
+                sfu_send_or_drop(
+                    &sfu_tx,
+                    SfuCommand::Answer {
+                        session_id,
+                        participant_id,
+                        sdp_answer,
+                    },
+                );
             }
 
             ClientMessage::IceCandidate {
@@ -269,12 +350,15 @@ async fn handle_ws(
             } => {
                 // Trickle ICE is chatty — keep at debug to not flood logs.
                 tracing::debug!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
-                let _ = sfu_tx.send(SfuCommand::IceCandidate {
-                    session_id,
-                    participant_id,
-                    candidate,
-                    sdp_mid,
-                });
+                sfu_send_or_drop(
+                    &sfu_tx,
+                    SfuCommand::IceCandidate {
+                        session_id,
+                        participant_id,
+                        candidate,
+                        sdp_mid,
+                    },
+                );
             }
 
             ClientMessage::PublishTrack {
@@ -295,12 +379,15 @@ async fn handle_ws(
                 match (parsed_source, parsed_kind) {
                     (Some(source), Some(kind)) => {
                         tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
-                        let _ = sfu_tx.send(SfuCommand::PublishTrack {
-                            session_id,
-                            participant_id,
-                            source,
-                            kind,
-                        });
+                        sfu_send_or_drop(
+                            &sfu_tx,
+                            SfuCommand::PublishTrack {
+                                session_id,
+                                participant_id,
+                                source,
+                                kind,
+                            },
+                        );
                     }
                     _ => {
                         tracing::warn!(%participant_id, %source, %kind, "unknown publish_track kind/source");
@@ -310,11 +397,14 @@ async fn handle_ws(
 
             ClientMessage::Offer { sdp_offer } => {
                 tracing::info!(%participant_id, "received client-initiated SDP offer");
-                let _ = sfu_tx.send(SfuCommand::ClientOffer {
-                    session_id,
-                    participant_id,
-                    sdp_offer,
-                });
+                sfu_send_or_drop(
+                    &sfu_tx,
+                    SfuCommand::ClientOffer {
+                        session_id,
+                        participant_id,
+                        sdp_offer,
+                    },
+                );
             }
 
             ClientMessage::MuteChanged { kind, muted } => {
@@ -337,7 +427,7 @@ async fn handle_ws(
                     };
                     for (pid, p) in &session.participants {
                         if *pid != participant_id {
-                            let _ = p.ws_tx.send(msg.clone());
+                            ws_send_or_drop(&p.ws_tx, msg.clone());
                         }
                     }
                 }
@@ -345,10 +435,13 @@ async fn handle_ws(
 
             ClientMessage::Leave => {
                 tracing::info!(%participant_id, %user_id, "participant leaving");
-                let _ = sfu_tx.send(SfuCommand::Leave {
-                    session_id,
-                    participant_id,
-                });
+                sfu_send_or_drop(
+                    &sfu_tx,
+                    SfuCommand::Leave {
+                        session_id,
+                        participant_id,
+                    },
+                );
                 break;
             }
         }
@@ -358,36 +451,52 @@ async fn handle_ws(
     send_task.abort();
 
     // Send leave to SFU (in case WS dropped without explicit leave)
-    let _ = sfu_tx.send(SfuCommand::Leave {
-        session_id,
-        participant_id,
-    });
+    sfu_send_or_drop(
+        &sfu_tx,
+        SfuCommand::Leave {
+            session_id,
+            participant_id,
+        },
+    );
 
-    // Remove from REST API state (single lock scope to avoid TOCTOU race)
+    // Remove from REST API state (single lock scope to avoid TOCTOU race).
+    // Reconnect twist: with derived participant_id, a fresh WS from the same
+    // user overwrites our slot. If our ws_tx no longer matches the slot's
+    // tx, this handler is the OLD connection — don't yank the new one out
+    // from under itself. `same_channel` compares the underlying mpsc handle.
     {
         let mut inner = state.inner.lock();
         if let Some(session) = inner.sessions.get_mut(&session_id) {
-            session.participants.remove(&participant_id);
+            let still_ours = session
+                .participants
+                .get(&participant_id)
+                .map(|p| p.ws_tx.same_channel(&ws_tx))
+                .unwrap_or(false);
+            if still_ours {
+                session.participants.remove(&participant_id);
 
-            let leave_msg = ServerMessage::ParticipantLeft {
-                participant_id,
-                user_id: user_id.clone(),
-            };
-            for p in session.participants.values() {
-                let _ = p.ws_tx.send(leave_msg.clone());
-            }
+                let leave_msg = ServerMessage::ParticipantLeft {
+                    participant_id,
+                    user_id: user_id.clone(),
+                };
+                for p in session.participants.values() {
+                    ws_send_or_drop(&p.ws_tx, leave_msg.clone());
+                }
 
-            if session.participants.is_empty() {
-                let session = inner.sessions.remove(&session_id).unwrap();
-                inner.channel_to_session.remove(&session.channel_id);
-                metrics::gauge!("matehub_video_active_sessions")
-                    .set(inner.sessions.len() as f64);
-                tracing::info!("session destroyed (last participant left)");
+                if session.participants.is_empty() {
+                    let session = inner.sessions.remove(&session_id).unwrap();
+                    inner.channel_to_session.remove(&session.channel_id);
+                    metrics::counter!("matehub_video_session_destroys_total").increment(1);
+                    tracing::info!("session destroyed (last participant left)");
+                }
+                metrics::counter!("matehub_video_participant_leaves_total").increment(1);
+            } else {
+                tracing::debug!(
+                    %session_id,
+                    %participant_id,
+                    "stale WS handler exiting; slot already owned by reconnected session"
+                );
             }
-            let total_participants: usize =
-                inner.sessions.values().map(|s| s.participants.len()).sum();
-            metrics::gauge!("matehub_video_active_participants")
-                .set(total_participants as f64);
         }
     }
 
@@ -397,4 +506,74 @@ async fn handle_ws(
     }
 
     tracing::info!("participant disconnected");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derive_participant_id_is_stable_for_same_user() {
+        let session = Uuid::new_v4();
+        let a = derive_participant_id(session, "alice");
+        let b = derive_participant_id(session, "alice");
+        assert_eq!(a, b, "same (session, user) must produce same pid");
+    }
+
+    #[test]
+    fn derive_participant_id_differs_per_user() {
+        let session = Uuid::new_v4();
+        assert_ne!(
+            derive_participant_id(session, "alice"),
+            derive_participant_id(session, "bob"),
+        );
+    }
+
+    #[test]
+    fn derive_participant_id_differs_per_session() {
+        // Same user in different sessions must NOT collide — otherwise
+        // session A's ufrag map could be hit by session B's STUN packets.
+        let s1 = Uuid::new_v4();
+        let s2 = Uuid::new_v4();
+        assert_ne!(
+            derive_participant_id(s1, "alice"),
+            derive_participant_id(s2, "alice"),
+        );
+    }
+
+    #[test]
+    fn derive_participant_id_anonymous_is_random() {
+        // Two anonymous connects must NOT collapse onto each other —
+        // otherwise the second WS would clobber the first's slot
+        // unintentionally.
+        let session = Uuid::new_v4();
+        let a = derive_participant_id(session, "anonymous");
+        let b = derive_participant_id(session, "anonymous");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn authenticate_dev_shortcut_extracts_username() {
+        assert_eq!(
+            authenticate(Some("dev-alice-token")).as_deref(),
+            Some("alice"),
+        );
+    }
+
+    #[test]
+    fn authenticate_rejects_missing_token() {
+        assert!(authenticate(None).is_none());
+    }
+
+    #[test]
+    fn authenticate_rejects_dev_with_empty_username() {
+        // "dev--token" parses to empty username; must not authenticate.
+        assert!(authenticate(Some("dev--token")).is_none());
+    }
+
+    #[test]
+    fn authenticate_rejects_garbage() {
+        // Random non-JWT, non-dev string. verify_token returns Err.
+        assert!(authenticate(Some("not-a-token")).is_none());
+    }
 }

@@ -8,6 +8,13 @@ pub struct Config {
     /// and routing asymmetry forces replies via a different interface,
     /// ICE falls back to peer-reflexive and nomination stalls.
     pub public_ips: Vec<IpAddr>,
+    /// Seconds of UDP silence (after ICE went disconnected) before we
+    /// declare the participant a zombie and force-disconnect their Rtc.
+    /// Default 12 seconds: above Chrome's typical ICE-restart envelope (~8s)
+    /// so we don't pre-empt legitimate restarts, below the previous 30s
+    /// which left dead participants in fan-out maps for too long under
+    /// high-churn sessions.
+    pub zombie_timeout_secs: u64,
 }
 
 impl Config {
@@ -16,6 +23,7 @@ impl Config {
             http_port: env_or("HTTP_PORT", 4000),
             udp_port: env_or("UDP_PORT", 4001),
             public_ips: public_ips_from_env(),
+            zombie_timeout_secs: env_or("ZOMBIE_TIMEOUT_SECS", 12),
         }
     }
 }

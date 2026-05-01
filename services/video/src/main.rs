@@ -29,7 +29,12 @@ async fn main() -> Result<()> {
     // Cross-thread SFU command channel. crossbeam so the sender can be called
     // synchronously from tokio WebSocket handlers (no .await) and the receiver
     // can be polled from a blocking OS thread (no async runtime needed).
-    let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::unbounded();
+    //
+    // Bounded so that a stuck / dead media thread can't OOM us by accumulating
+    // unconsumed commands. WS handlers `try_send`; on Full we drop+counter
+    // (matehub_video_sfu_cmd_drops_total). 8192 covers the worst burst we've
+    // seen in practice (30-person join cascade × ~50 trickle ICE candidates).
+    let (sfu_cmd_tx, sfu_cmd_rx) = crossbeam::channel::bounded(8192);
 
     // NATS connection for voice-occupancy events. Optional — if the box isn't
     // running NATS yet the video service still handles calls, just without
@@ -67,7 +72,12 @@ async fn main() -> Result<()> {
 
     // SFU engine on a dedicated OS thread, OUT of the tokio runtime.
     // Media forwarding latency no longer competes with signaling / HTTP work.
-    let engine = SfuEngine::new(udp_socket, config.public_ips.clone(), sfu_cmd_rx);
+    let engine = SfuEngine::new(
+        udp_socket,
+        config.public_ips.clone(),
+        sfu_cmd_rx,
+        std::time::Duration::from_secs(config.zombie_timeout_secs),
+    );
     let media_thread = std::thread::Builder::new()
         .name("sfu-media".into())
         // str0m keeps a fair amount of per-Rtc state on the stack during

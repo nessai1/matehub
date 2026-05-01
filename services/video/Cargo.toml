@@ -41,6 +41,9 @@ anyhow.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 socket2.workspace = true
+# libc is pulled in solely for MSG_DONTWAIT — needed by per-send non-blocking
+# UDP writes so kernel send-buf back-pressure can't stall the media thread.
+libc = "0.2"
 
 # Allocator — default glibc malloc is a noticeable tax at high packet rates
 # (str0m does allocate on hot paths). mimalloc is pure-Rust, no ffi system

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 use str0m::Rtc;
@@ -34,7 +34,23 @@ pub struct SfuSession {
     /// throttling each one would fire its own PLI and the publisher's
     /// encoder would emit multiple I-frames in a row, spiking bitrate.
     pub last_keyframe_at: HashMap<(ParticipantId, Mid), Instant>,
+    /// Top-K audio publishers (by smoothed loudness EMA), refreshed by
+    /// `recompute_top_audio` on every tick. Forwarding filter drops audio
+    /// from publishers NOT in this set — saves a 30-person call from
+    /// fan-out'ing 29 audio streams to every client when at most a handful
+    /// are actually speaking at any moment. Empty set or fewer publishers
+    /// than threshold means "no filter, forward everything".
+    pub top_audio_publishers: HashSet<(ParticipantId, Mid)>,
 }
+
+/// Top-K audio publishers to forward when a session has many talkers.
+/// 3 is the long-standing industry choice — Zoom, Meet, Teams all hover
+/// around it. Subscribers see at most this many concurrent speakers, which
+/// matches what humans can actually parse anyway.
+pub const AUDIO_TOP_K: usize = 3;
+/// Below this threshold (≤ K) we don't bother filtering — there's no win.
+/// Above it, the filter trims the long tail of silent participants.
+pub const AUDIO_FILTER_MIN_PUBLISHERS: usize = AUDIO_TOP_K + 1;
 
 impl SfuSession {
     pub fn new(id: SessionId) -> Self {
@@ -43,7 +59,25 @@ impl SfuSession {
             participants: HashMap::new(),
             forwarding_map: HashMap::new(),
             last_keyframe_at: HashMap::new(),
+            top_audio_publishers: HashSet::new(),
         }
+    }
+
+    /// Recompute which audio publishers should be forwarded this period.
+    /// Sessions with ≤ AUDIO_TOP_K audio publishers fill `top_audio_publishers`
+    /// with all of them (i.e. no actual filtering happens). Larger sessions
+    /// keep only the loudest K — the rest go silent for subscribers until
+    /// they speak up enough to climb the EMA.
+    pub fn recompute_top_audio(&mut self) {
+        let mut audio: Vec<(f32, ParticipantId, Mid)> = Vec::new();
+        for (pid, p) in &self.participants {
+            for t in &p.tracks_in {
+                if t.kind == MediaKind::Audio {
+                    audio.push((t.audio_loudness_ema, *pid, t.mid));
+                }
+            }
+        }
+        self.top_audio_publishers = pick_top_audio(audio);
     }
 
     /// Send a PLI keyframe request to (publisher, mid), coalescing bursts:
@@ -94,17 +128,46 @@ impl SfuSession {
     }
 }
 
+/// Pure logic of recompute_top_audio: pick the top-K loudest audio
+/// publishers, OR everyone if there are too few to bother filtering.
+/// Pulled out as a free function so it's unit-testable without standing up
+/// a full SfuParticipant (Rtc, ws_tx, etc).
+pub fn pick_top_audio(
+    mut audio: Vec<(f32, ParticipantId, Mid)>,
+) -> HashSet<(ParticipantId, Mid)> {
+    let mut out = HashSet::new();
+    if audio.len() < AUDIO_FILTER_MIN_PUBLISHERS {
+        for (_, pid, mid) in audio {
+            out.insert((pid, mid));
+        }
+        return out;
+    }
+    audio.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for (_, pid, mid) in audio.into_iter().take(AUDIO_TOP_K) {
+        out.insert((pid, mid));
+    }
+    out
+}
+
 pub struct SfuParticipant {
     pub id: ParticipantId,
     pub user_id: String,
     pub rtc: Rtc,
-    pub ws_tx: mpsc::UnboundedSender<ServerMessage>,
+    pub ws_tx: mpsc::Sender<ServerMessage>,
     /// Tracks this participant is publishing (incoming to SFU)
     pub tracks_in: Vec<TrackIn>,
     /// Tracks this participant is subscribing to (outgoing from SFU)
     pub tracks_out: Vec<TrackOut>,
     /// Pending SDP offer awaiting answer from client
     pub pending_offer: Option<SdpPendingOffer>,
+    /// Client SDP offer that arrived while we still had `pending_offer` set
+    /// (i.e. server's offer hadn't been answered yet). Drained inside
+    /// `handle_answer` once we reach the stable state. Holds the latest
+    /// offer; if the client sends two before answering ours, the older one
+    /// is replaced (it's stale relative to the client's current PC state).
+    pub queued_client_offer: Option<String>,
     /// Source hints for upcoming MediaAdded events, keyed by kind so audio
     /// and video can be independently queued. Populated by `publish_track`
     /// signaling BEFORE the client-initiated SDP offer arrives; drained
@@ -154,6 +217,11 @@ pub struct TrackIn {
     /// Once `h` is live we drop `l` again — adaptive per-subscriber layer
     /// pick is a separate, larger feature.
     pub seen_high_layer: bool,
+    /// Smoothed loudness on a 0..127 scale (higher = louder). Built from
+    /// the audio-level RTP header extension (RFC 6464). Only updated for
+    /// audio tracks; left at 0 for video. Drives the top-K speaker filter
+    /// — see `SfuSession::top_audio_publishers`.
+    pub audio_loudness_ema: f32,
 }
 
 #[derive(Debug)]
@@ -306,6 +374,65 @@ mod tests {
         s.drop_from_forwarding(pid()); // unrelated
 
         assert_eq!(s.forwarding_map, snapshot);
+    }
+
+    // ── Top-K audio selector ────────────────────────────────────
+
+    fn audio_entry(loud: f32) -> (f32, ParticipantId, Mid) {
+        (loud, Uuid::new_v4(), Mid::new())
+    }
+
+    #[test]
+    fn pick_top_audio_passes_everyone_under_threshold() {
+        // K = 3, threshold = K + 1 = 4. With 3 publishers, no filter.
+        let entries = vec![audio_entry(10.0), audio_entry(80.0), audio_entry(40.0)];
+        let pids_in: Vec<_> = entries.iter().map(|(_, p, m)| (*p, *m)).collect();
+        let top = pick_top_audio(entries);
+        assert_eq!(top.len(), 3);
+        for k in pids_in {
+            assert!(top.contains(&k));
+        }
+    }
+
+    #[test]
+    fn pick_top_audio_keeps_only_loudest_k_above_threshold() {
+        // 5 publishers — top 3 loudest survive; bottom 2 get dropped.
+        let q1 = audio_entry(5.0);
+        let q2 = audio_entry(15.0);
+        let m = audio_entry(50.0);
+        let l1 = audio_entry(100.0);
+        let l2 = audio_entry(95.0);
+        let entries = vec![q1, q2, m, l1, l2];
+        let top = pick_top_audio(entries);
+        assert_eq!(top.len(), AUDIO_TOP_K);
+        assert!(top.contains(&(l1.1, l1.2)));
+        assert!(top.contains(&(l2.1, l2.2)));
+        assert!(top.contains(&(m.1, m.2)));
+        assert!(!top.contains(&(q1.1, q1.2)));
+        assert!(!top.contains(&(q2.1, q2.2)));
+    }
+
+    #[test]
+    fn pick_top_audio_handles_nan_without_panicking() {
+        // NaN inputs would panic on a strict ordering. partial_cmp
+        // fallback + Ordering::Equal keeps the sort stable.
+        let entries = vec![
+            audio_entry(f32::NAN),
+            audio_entry(10.0),
+            audio_entry(20.0),
+            audio_entry(30.0),
+            audio_entry(40.0),
+        ];
+        let top = pick_top_audio(entries);
+        // Result: stable. We don't assert which 3 made it; only that the
+        // function returned without aborting.
+        assert_eq!(top.len(), AUDIO_TOP_K);
+    }
+
+    #[test]
+    fn pick_top_audio_empty_input() {
+        let top = pick_top_audio(Vec::new());
+        assert!(top.is_empty());
     }
 
     #[test]
