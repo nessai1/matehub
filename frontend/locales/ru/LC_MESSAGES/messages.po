@@ -615,3 +615,57 @@ msgstr "Тёмная"
 
 msgid "System"
 msgstr "Системная"
+
+msgid "Invited"
+msgstr "Приглашены"
+
+msgid "Temp link — not yet used"
+msgstr "Временная ссылка — ещё не использована"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "Постоянное приглашение — ещё не принято"
+
+msgid "Created"
+msgstr "Создано"
+
+msgid "By"
+msgstr "Автор"
+
+msgid "Expires"
+msgstr "Истекает"
+
+msgid "Delete invite"
+msgstr "Удалить приглашение"
+
+msgid "Deleting..."
+msgstr "Удаление..."
+
+msgid "No permission to delete this invite"
+msgstr "Нет прав на удаление этого приглашения"
+
+msgid "Enter login"
+msgstr "Введите логин"
+
+msgid "Login is already taken"
+msgstr "Логин уже занят"
+
+msgid "There's already a pending invite for this login"
+msgstr "Уже есть активное приглашение на этот логин"
+
+msgid "Invalid email format"
+msgstr "Некорректный формат email"
+
+msgid "Email is already in use"
+msgstr "Email уже используется"
+
+msgid "There's already a pending invite for this email"
+msgstr "Уже есть активное приглашение на этот email"
+
+msgid "No permission to create invitations"
+msgstr "Нет прав на создание приглашений"
+
+msgid "Toggle channels"
+msgstr "Переключить каналы"
+
+msgid "Toggle members"
+msgstr "Переключить участников"

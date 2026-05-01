@@ -615,6 +615,60 @@
       ],
       "System": [
         "System"
+      ],
+      "Invited": [
+        "Eingeladen"
+      ],
+      "Temp link — not yet used": [
+        "Temporärer Link — noch nicht verwendet"
+      ],
+      "Permanent invite — not yet accepted": [
+        "Dauerhafte Einladung — noch nicht angenommen"
+      ],
+      "Created": [
+        "Erstellt"
+      ],
+      "By": [
+        "Von"
+      ],
+      "Expires": [
+        "Läuft ab"
+      ],
+      "Delete invite": [
+        "Einladung löschen"
+      ],
+      "Deleting...": [
+        "Löschen..."
+      ],
+      "No permission to delete this invite": [
+        "Keine Berechtigung, diese Einladung zu löschen"
+      ],
+      "Enter login": [
+        "Login eingeben"
+      ],
+      "Login is already taken": [
+        "Login ist bereits vergeben"
+      ],
+      "There's already a pending invite for this login": [
+        "Es gibt bereits eine offene Einladung für diesen Login"
+      ],
+      "Invalid email format": [
+        "Ungültiges E-Mail-Format"
+      ],
+      "Email is already in use": [
+        "E-Mail wird bereits verwendet"
+      ],
+      "There's already a pending invite for this email": [
+        "Es gibt bereits eine offene Einladung für diese E-Mail"
+      ],
+      "No permission to create invitations": [
+        "Keine Berechtigung zum Erstellen von Einladungen"
+      ],
+      "Toggle channels": [
+        "Kanäle ein-/ausblenden"
+      ],
+      "Toggle members": [
+        "Mitglieder ein-/ausblenden"
       ]
     }
   }

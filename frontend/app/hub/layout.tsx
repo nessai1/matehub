@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet } from "react-router";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthGuard } from "@/components/auth-guard";
@@ -11,9 +11,36 @@ import { ChannelsProvider } from "@/contexts/channels-context";
 import { ChatProvider } from "@/contexts/chat-context";
 import { IncomingCallProvider } from "@/contexts/incoming-call-context";
 import { AddTeammatesProvider } from "@/contexts/add-teammates-context";
+import { MemberSidebarProvider } from "@/contexts/member-sidebar-context";
 import { IncomingCallDialog } from "@/components/hub/incoming-call-dialog";
 
+// Mirror member-sidebar-context's COLLAPSE_BREAKPOINT so both sidebars react
+// to the same threshold. Media query wins on every resize event — manual
+// toggles work for the current viewport, then a breakpoint crossing resets.
+const LEFT_COLLAPSE_BREAKPOINT = 1024;
+
+function useLeftSidebarOpen() {
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth >= LEFT_COLLAPSE_BREAKPOINT;
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia(`(min-width: ${LEFT_COLLAPSE_BREAKPOINT}px)`);
+    const apply = () => setOpen(mql.matches);
+    apply();
+    mql.addEventListener("change", apply);
+    return () => mql.removeEventListener("change", apply);
+  }, []);
+
+  return [open, setOpen] as const;
+}
+
 export function HubLayout() {
+  const [leftOpen, setLeftOpen] = useLeftSidebarOpen();
   return (
     <Suspense>
       <AuthGuard>
@@ -37,22 +64,24 @@ export function HubLayout() {
                       hub-wide so the modal pops up regardless of route. */}
                   <IncomingCallProvider>
                     <AddTeammatesProvider>
-                      <SidebarProvider>
-                        <AppSidebar />
-                        <SidebarInset>
-                          <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
-                            <div className="flex flex-1 gap-2 overflow-hidden">
-                              <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-background">
-                                <Outlet />
-                              </main>
-                              <Suspense>
-                                <MemberSidebar />
-                              </Suspense>
+                      <MemberSidebarProvider>
+                        <SidebarProvider open={leftOpen} onOpenChange={setLeftOpen}>
+                          <AppSidebar />
+                          <SidebarInset>
+                            <div className="flex h-screen flex-col overflow-hidden p-2 pl-0">
+                              <div className="flex flex-1 gap-2 overflow-hidden">
+                                <main className="flex flex-1 flex-col overflow-hidden rounded-2xl bg-background">
+                                  <Outlet />
+                                </main>
+                                <Suspense>
+                                  <MemberSidebar />
+                                </Suspense>
+                              </div>
                             </div>
-                          </div>
-                        </SidebarInset>
-                      </SidebarProvider>
-                      <IncomingCallDialog />
+                          </SidebarInset>
+                        </SidebarProvider>
+                        <IncomingCallDialog />
+                      </MemberSidebarProvider>
                     </AddTeammatesProvider>
                   </IncomingCallProvider>
                 </ChatProvider>

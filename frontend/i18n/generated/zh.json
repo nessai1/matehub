@@ -615,6 +615,60 @@
       ],
       "System": [
         "系统"
+      ],
+      "Invited": [
+        "已邀请"
+      ],
+      "Temp link — not yet used": [
+        "临时链接 — 尚未使用"
+      ],
+      "Permanent invite — not yet accepted": [
+        "永久邀请 — 尚未接受"
+      ],
+      "Created": [
+        "创建于"
+      ],
+      "By": [
+        "创建者"
+      ],
+      "Expires": [
+        "过期时间"
+      ],
+      "Delete invite": [
+        "删除邀请"
+      ],
+      "Deleting...": [
+        "删除中..."
+      ],
+      "No permission to delete this invite": [
+        "没有删除此邀请的权限"
+      ],
+      "Enter login": [
+        "请输入登录名"
+      ],
+      "Login is already taken": [
+        "登录名已被占用"
+      ],
+      "There's already a pending invite for this login": [
+        "此登录名已存在待处理的邀请"
+      ],
+      "Invalid email format": [
+        "邮箱格式无效"
+      ],
+      "Email is already in use": [
+        "邮箱已被使用"
+      ],
+      "There's already a pending invite for this email": [
+        "此邮箱已存在待处理的邀请"
+      ],
+      "No permission to create invitations": [
+        "没有创建邀请的权限"
+      ],
+      "Toggle channels": [
+        "切换频道"
+      ],
+      "Toggle members": [
+        "切换成员"
       ]
     }
   }

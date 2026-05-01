@@ -615,6 +615,60 @@
       ],
       "System": [
         "システム"
+      ],
+      "Invited": [
+        "招待済み"
+      ],
+      "Temp link — not yet used": [
+        "一時リンク — 未使用"
+      ],
+      "Permanent invite — not yet accepted": [
+        "永続招待 — 未承認"
+      ],
+      "Created": [
+        "作成日"
+      ],
+      "By": [
+        "作成者"
+      ],
+      "Expires": [
+        "有効期限"
+      ],
+      "Delete invite": [
+        "招待を削除"
+      ],
+      "Deleting...": [
+        "削除中..."
+      ],
+      "No permission to delete this invite": [
+        "この招待を削除する権限がありません"
+      ],
+      "Enter login": [
+        "ログイン名を入力"
+      ],
+      "Login is already taken": [
+        "ログイン名はすでに使用されています"
+      ],
+      "There's already a pending invite for this login": [
+        "このログイン名宛ての招待がすでに保留中です"
+      ],
+      "Invalid email format": [
+        "メールアドレスの形式が無効です"
+      ],
+      "Email is already in use": [
+        "メールアドレスはすでに使用されています"
+      ],
+      "There's already a pending invite for this email": [
+        "このメールアドレス宛ての招待がすでに保留中です"
+      ],
+      "No permission to create invitations": [
+        "招待を作成する権限がありません"
+      ],
+      "Toggle channels": [
+        "チャンネルを切り替え"
+      ],
+      "Toggle members": [
+        "メンバーを切り替え"
       ]
     }
   }

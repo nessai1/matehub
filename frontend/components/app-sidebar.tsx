@@ -16,7 +16,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   if (!session) return null
 
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
         <HubSwitcher
           currentHub={{

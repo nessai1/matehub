@@ -615,3 +615,57 @@ msgstr "Dunkel"
 
 msgid "System"
 msgstr "System"
+
+msgid "Invited"
+msgstr "Eingeladen"
+
+msgid "Temp link — not yet used"
+msgstr "Temporärer Link — noch nicht verwendet"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "Dauerhafte Einladung — noch nicht angenommen"
+
+msgid "Created"
+msgstr "Erstellt"
+
+msgid "By"
+msgstr "Von"
+
+msgid "Expires"
+msgstr "Läuft ab"
+
+msgid "Delete invite"
+msgstr "Einladung löschen"
+
+msgid "Deleting..."
+msgstr "Löschen..."
+
+msgid "No permission to delete this invite"
+msgstr "Keine Berechtigung, diese Einladung zu löschen"
+
+msgid "Enter login"
+msgstr "Login eingeben"
+
+msgid "Login is already taken"
+msgstr "Login ist bereits vergeben"
+
+msgid "There's already a pending invite for this login"
+msgstr "Es gibt bereits eine offene Einladung für diesen Login"
+
+msgid "Invalid email format"
+msgstr "Ungültiges E-Mail-Format"
+
+msgid "Email is already in use"
+msgstr "E-Mail wird bereits verwendet"
+
+msgid "There's already a pending invite for this email"
+msgstr "Es gibt bereits eine offene Einladung für diese E-Mail"
+
+msgid "No permission to create invitations"
+msgstr "Keine Berechtigung zum Erstellen von Einladungen"
+
+msgid "Toggle channels"
+msgstr "Kanäle ein-/ausblenden"
+
+msgid "Toggle members"
+msgstr "Mitglieder ein-/ausblenden"

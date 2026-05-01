@@ -615,3 +615,57 @@ msgstr "Sombre"
 
 msgid "System"
 msgstr "Système"
+
+msgid "Invited"
+msgstr "Invités"
+
+msgid "Temp link — not yet used"
+msgstr "Lien temporaire — pas encore utilisé"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "Invitation permanente — pas encore acceptée"
+
+msgid "Created"
+msgstr "Créé"
+
+msgid "By"
+msgstr "Par"
+
+msgid "Expires"
+msgstr "Expire"
+
+msgid "Delete invite"
+msgstr "Supprimer l'invitation"
+
+msgid "Deleting..."
+msgstr "Suppression..."
+
+msgid "No permission to delete this invite"
+msgstr "Aucune autorisation pour supprimer cette invitation"
+
+msgid "Enter login"
+msgstr "Saisissez l'identifiant"
+
+msgid "Login is already taken"
+msgstr "L'identifiant est déjà pris"
+
+msgid "There's already a pending invite for this login"
+msgstr "Une invitation est déjà en attente pour cet identifiant"
+
+msgid "Invalid email format"
+msgstr "Format d'email invalide"
+
+msgid "Email is already in use"
+msgstr "L'email est déjà utilisé"
+
+msgid "There's already a pending invite for this email"
+msgstr "Une invitation est déjà en attente pour cet email"
+
+msgid "No permission to create invitations"
+msgstr "Pas d'autorisation pour créer des invitations"
+
+msgid "Toggle channels"
+msgstr "Basculer les canaux"
+
+msgid "Toggle members"
+msgstr "Basculer les membres"

@@ -615,3 +615,57 @@ msgstr "深色"
 
 msgid "System"
 msgstr "系统"
+
+msgid "Invited"
+msgstr "已邀请"
+
+msgid "Temp link — not yet used"
+msgstr "临时链接 — 尚未使用"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "永久邀请 — 尚未接受"
+
+msgid "Created"
+msgstr "创建于"
+
+msgid "By"
+msgstr "创建者"
+
+msgid "Expires"
+msgstr "过期时间"
+
+msgid "Delete invite"
+msgstr "删除邀请"
+
+msgid "Deleting..."
+msgstr "删除中..."
+
+msgid "No permission to delete this invite"
+msgstr "没有删除此邀请的权限"
+
+msgid "Enter login"
+msgstr "请输入登录名"
+
+msgid "Login is already taken"
+msgstr "登录名已被占用"
+
+msgid "There's already a pending invite for this login"
+msgstr "此登录名已存在待处理的邀请"
+
+msgid "Invalid email format"
+msgstr "邮箱格式无效"
+
+msgid "Email is already in use"
+msgstr "邮箱已被使用"
+
+msgid "There's already a pending invite for this email"
+msgstr "此邮箱已存在待处理的邀请"
+
+msgid "No permission to create invitations"
+msgstr "没有创建邀请的权限"
+
+msgid "Toggle channels"
+msgstr "切换频道"
+
+msgid "Toggle members"
+msgstr "切换成员"

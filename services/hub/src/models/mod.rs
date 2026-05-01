@@ -9,5 +9,4 @@ pub use channel::Channel;
 pub use group::Group;
 pub use hub::Hub;
 pub use invitation::Invitation;
-pub use temp_user::TempUser;
 pub use user::User;

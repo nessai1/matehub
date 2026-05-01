@@ -615,3 +615,57 @@ msgstr "ダーク"
 
 msgid "System"
 msgstr "システム"
+
+msgid "Invited"
+msgstr "招待済み"
+
+msgid "Temp link — not yet used"
+msgstr "一時リンク — 未使用"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "永続招待 — 未承認"
+
+msgid "Created"
+msgstr "作成日"
+
+msgid "By"
+msgstr "作成者"
+
+msgid "Expires"
+msgstr "有効期限"
+
+msgid "Delete invite"
+msgstr "招待を削除"
+
+msgid "Deleting..."
+msgstr "削除中..."
+
+msgid "No permission to delete this invite"
+msgstr "この招待を削除する権限がありません"
+
+msgid "Enter login"
+msgstr "ログイン名を入力"
+
+msgid "Login is already taken"
+msgstr "ログイン名はすでに使用されています"
+
+msgid "There's already a pending invite for this login"
+msgstr "このログイン名宛ての招待がすでに保留中です"
+
+msgid "Invalid email format"
+msgstr "メールアドレスの形式が無効です"
+
+msgid "Email is already in use"
+msgstr "メールアドレスはすでに使用されています"
+
+msgid "There's already a pending invite for this email"
+msgstr "このメールアドレス宛ての招待がすでに保留中です"
+
+msgid "No permission to create invitations"
+msgstr "招待を作成する権限がありません"
+
+msgid "Toggle channels"
+msgstr "チャンネルを切り替え"
+
+msgid "Toggle members"
+msgstr "メンバーを切り替え"

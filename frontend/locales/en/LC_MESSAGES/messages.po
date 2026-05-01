@@ -640,3 +640,57 @@ msgstr "Dark"
 
 msgid "System"
 msgstr "System"
+
+msgid "Invited"
+msgstr "Invited"
+
+msgid "Temp link — not yet used"
+msgstr "Temp link — not yet used"
+
+msgid "Permanent invite — not yet accepted"
+msgstr "Permanent invite — not yet accepted"
+
+msgid "Created"
+msgstr "Created"
+
+msgid "By"
+msgstr "By"
+
+msgid "Expires"
+msgstr "Expires"
+
+msgid "Delete invite"
+msgstr "Delete invite"
+
+msgid "Deleting..."
+msgstr "Deleting..."
+
+msgid "No permission to delete this invite"
+msgstr "No permission to delete this invite"
+
+msgid "Enter login"
+msgstr "Enter login"
+
+msgid "Login is already taken"
+msgstr "Login is already taken"
+
+msgid "There's already a pending invite for this login"
+msgstr "There's already a pending invite for this login"
+
+msgid "Invalid email format"
+msgstr "Invalid email format"
+
+msgid "Email is already in use"
+msgstr "Email is already in use"
+
+msgid "There's already a pending invite for this email"
+msgstr "There's already a pending invite for this email"
+
+msgid "No permission to create invitations"
+msgstr "No permission to create invitations"
+
+msgid "Toggle channels"
+msgstr "Toggle channels"
+
+msgid "Toggle members"
+msgstr "Toggle members"

@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useAuth } from "@/lib/auth";
+import { invalidatePendingInvites } from "@/hooks/use-pending-invites";
 import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
@@ -169,6 +170,7 @@ function TempInviteForm({
       const data = await res.json();
       // Backend returns relative `/join/{token}` — make it absolute.
       setInviteUrl(`${window.location.origin}${data.invite_url}`);
+      invalidatePendingInvites(hubId);
     } catch {
       setError("Не получилось связаться с сервером");
     }
@@ -278,15 +280,55 @@ function PermanentInviteForm({
   const [email, setEmail] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  // Field-scoped errors so the user sees which input is wrong, plus a
+  // top-level "form" slot for everything that isn't tied to a field
+  // (forbidden, network, unknown status).
+  const [usernameErr, setUsernameErr] = useState("");
+  const [emailErr, setEmailErr] = useState("");
+  const [formErr, setFormErr] = useState("");
+
+  // Maps the backend's discriminated `{error: "..."}` payload to either a
+  // field-scoped message or a top-level one. Keeps the translation table in
+  // one place rather than scattered through if/elses.
+  const applyServerError = (code: string | undefined, fallbackStatus: number) => {
+    switch (code) {
+      case "username_required":
+        setUsernameErr(t("Enter login"));
+        return;
+      case "username_taken":
+        setUsernameErr(t("Login is already taken"));
+        return;
+      case "username_pending":
+        setUsernameErr(t("There's already a pending invite for this login"));
+        return;
+      case "invalid_email":
+        setEmailErr(t("Invalid email format"));
+        return;
+      case "email_taken":
+        setEmailErr(t("Email is already in use"));
+        return;
+      case "email_pending":
+        setEmailErr(t("There's already a pending invite for this email"));
+        return;
+      case "forbidden":
+        setFormErr(t("No permission to create invitations"));
+        return;
+      default:
+        setFormErr(`${t("Error")}: ${fallbackStatus}`);
+    }
+  };
 
   const submit = async () => {
     if (!hubId || !token) return;
+    setUsernameErr("");
+    setEmailErr("");
+    setFormErr("");
+
     if (!username.trim()) {
-      setError("Введите логин");
+      setUsernameErr(t("Enter login"));
       return;
     }
-    setError("");
+
     setSubmitting(true);
     try {
       const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/invitations`, {
@@ -301,14 +343,21 @@ function PermanentInviteForm({
         }),
       });
       if (!res.ok) {
-        setError(res.status === 403 ? "Нет прав на создание приглашений" : `Ошибка: ${res.status}`);
+        // Body is `{error: "..."}` for all our 4xx; a 5xx might be empty
+        // text, hence the .catch fallback.
+        const body = await res.json().catch(() => ({}));
+        applyServerError(
+          (body as { error?: string }).error,
+          res.status,
+        );
         setSubmitting(false);
         return;
       }
       const data = await res.json();
       setInviteUrl(`${window.location.origin}${data.invite_url}`);
+      invalidatePendingInvites(hubId);
     } catch {
-      setError("Не получилось связаться с сервером");
+      setFormErr(t("Could not reach the server"));
     }
     setSubmitting(false);
   };
@@ -324,9 +373,14 @@ function PermanentInviteForm({
         <Input
           id="invite-username"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => {
+            setUsername(e.target.value);
+            if (usernameErr) setUsernameErr("");
+          }}
           autoComplete="off"
+          aria-invalid={!!usernameErr}
         />
+        {usernameErr && <p className="text-xs text-destructive">{usernameErr}</p>}
       </div>
 
       <div className="space-y-2">
@@ -335,11 +389,16 @@ function PermanentInviteForm({
           id="invite-email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (emailErr) setEmailErr("");
+          }}
+          aria-invalid={!!emailErr}
         />
+        {emailErr && <p className="text-xs text-destructive">{emailErr}</p>}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {formErr && <p className="text-sm text-destructive">{formErr}</p>}
 
       <Button onClick={submit} disabled={submitting} className="w-full">
         {submitting ? t("Creating...") : t("Create invitation")}

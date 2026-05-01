@@ -17,6 +17,8 @@ import {
   CodeIcon,
   EllipsisVerticalIcon,
   UploadCloudIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -37,6 +39,8 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemberCard } from "@/components/hub/member-card";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
+import { useSidebar } from "@/components/ui/sidebar";
+import { useMemberSidebar } from "@/contexts/member-sidebar-context";
 import { useChatClient } from "@/hooks/use-chat-client";
 import { useAttachmentUpload } from "@/hooks/use-attachment-upload";
 import { useMembers, type Member, type MemberGroup } from "@/hooks/use-members";
@@ -342,6 +346,10 @@ function TypingIndicator({
 
 export function TextChannelView({ channelId, channelName, channel, hideHeader }: TextChannelViewProps) {
   const { session } = useAuth();
+  const { toggleSidebar: toggleLeftSidebar, open: leftOpen, openMobile: leftOpenMobile, isMobile: leftIsMobile } =
+    useSidebar();
+  const { open: rightOpen, toggle: toggleRightSidebar } = useMemberSidebar();
+  const leftActive = leftIsMobile ? leftOpenMobile : leftOpen;
   const {
     client,
     messages,
@@ -618,30 +626,54 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
       onDrop={handleDrop}
     >
       {!hideHeader && (
-        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
+        <header className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
+          <button
+            type="button"
+            title={t("Toggle channels")}
+            onClick={toggleLeftSidebar}
+            className={cn(
+              "grid h-7 w-7 place-items-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+              leftActive ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            <PanelLeftIcon className="h-3.5 w-3.5" />
+          </button>
           {channel ? (
             <ChannelIcon channel={channel} />
           ) : (
             <Hash className="h-4 w-4 text-muted-foreground" />
           )}
           <span className="text-sm font-medium">{channelName}</span>
-          {!isConnected && (
-            <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-              {isConnecting ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {t("Connecting...")}
-                </>
-              ) : connectionState === "reconnecting" ? (
-                <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {t("Reconnecting...")}
-                </>
-              ) : (
-                <span className="text-destructive">{t("Disconnected")}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {!isConnected && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {isConnecting ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t("Connecting...")}
+                  </>
+                ) : connectionState === "reconnecting" ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t("Reconnecting...")}
+                  </>
+                ) : (
+                  <span className="text-destructive">{t("Disconnected")}</span>
+                )}
+              </span>
+            )}
+            <button
+              type="button"
+              title={t("Toggle members")}
+              onClick={toggleRightSidebar}
+              className={cn(
+                "grid h-7 w-7 place-items-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+                rightOpen ? "text-foreground" : "text-muted-foreground",
               )}
-            </span>
-          )}
+            >
+              <PanelRightIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </header>
       )}
 

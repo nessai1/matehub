@@ -1,12 +1,20 @@
-import { ChevronUpIcon, ChevronDownIcon, PhoneIcon } from "lucide-react";
+import {
+  ChevronUpIcon,
+  ChevronDownIcon,
+  PhoneIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import { TextChannelView } from "@/components/hub/text-channel-view";
 import { useWorkspaceStack } from "@/components/hub/workspace-stack";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useAuth } from "@/lib/auth";
 import { useMembers } from "@/hooks/use-members";
 import { useIncomingCall } from "@/contexts/incoming-call-context";
 import { useVideoCall } from "@/contexts/video-call-context";
+import { useMemberSidebar } from "@/contexts/member-sidebar-context";
 import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 
@@ -16,20 +24,54 @@ function HeaderIconButton({
   children,
   onClick,
   title,
+  active,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   title?: string;
+  active?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className={cn(
+        "grid h-7 w-7 place-items-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+        active ? "text-foreground" : "text-muted-foreground",
+      )}
     >
       {children}
     </button>
+  );
+}
+
+// Toggle for the left (channel) sidebar — wraps shadcn's useSidebar so the
+// chat header can flip the same panel that the rail/keyboard shortcut do.
+function LeftSidebarToggle() {
+  const { toggleSidebar, open, openMobile, isMobile } = useSidebar();
+  const isOpen = isMobile ? openMobile : open;
+  return (
+    <HeaderIconButton
+      title={t("Toggle channels")}
+      onClick={toggleSidebar}
+      active={isOpen}
+    >
+      <PanelLeftIcon className="h-3.5 w-3.5" />
+    </HeaderIconButton>
+  );
+}
+
+function RightSidebarToggle() {
+  const { open, toggle } = useMemberSidebar();
+  return (
+    <HeaderIconButton
+      title={t("Toggle members")}
+      onClick={toggle}
+      active={open}
+    >
+      <PanelRightIcon className="h-3.5 w-3.5" />
+    </HeaderIconButton>
   );
 }
 
@@ -68,7 +110,8 @@ function DmHeaderInner({
   // bottom header would re-trigger ringing — replace it with a passive badge.
   const inThisCall = activeVoiceChannelId === channel.id;
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/60 px-4">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/60 px-2">
+      <LeftSidebarToggle />
       <div className="inline-flex items-center gap-2">
         <div className="relative">
           <Avatar size="sm">
@@ -107,6 +150,7 @@ function DmHeaderInner({
           </HeaderIconButton>
         )}
         {rightExtras}
+        <RightSidebarToggle />
       </div>
     </header>
   );
@@ -120,14 +164,18 @@ function ChannelHeaderInner({
   rightExtras?: React.ReactNode;
 }) {
   return (
-    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/60 px-4">
+    <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border/60 px-2">
+      <LeftSidebarToggle />
       <div className="inline-flex items-center gap-2">
         <ChannelIcon channel={channel} />
         <span className="text-sm font-semibold text-foreground">
           {channel.name}
         </span>
       </div>
-      {rightExtras && <div className="ml-auto">{rightExtras}</div>}
+      <div className="ml-auto inline-flex items-center gap-1">
+        {rightExtras}
+        <RightSidebarToggle />
+      </div>
     </header>
   );
 }

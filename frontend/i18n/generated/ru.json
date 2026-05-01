@@ -615,6 +615,60 @@
       ],
       "System": [
         "Системная"
+      ],
+      "Invited": [
+        "Приглашены"
+      ],
+      "Temp link — not yet used": [
+        "Временная ссылка — ещё не использована"
+      ],
+      "Permanent invite — not yet accepted": [
+        "Постоянное приглашение — ещё не принято"
+      ],
+      "Created": [
+        "Создано"
+      ],
+      "By": [
+        "Автор"
+      ],
+      "Expires": [
+        "Истекает"
+      ],
+      "Delete invite": [
+        "Удалить приглашение"
+      ],
+      "Deleting...": [
+        "Удаление..."
+      ],
+      "No permission to delete this invite": [
+        "Нет прав на удаление этого приглашения"
+      ],
+      "Enter login": [
+        "Введите логин"
+      ],
+      "Login is already taken": [
+        "Логин уже занят"
+      ],
+      "There's already a pending invite for this login": [
+        "Уже есть активное приглашение на этот логин"
+      ],
+      "Invalid email format": [
+        "Некорректный формат email"
+      ],
+      "Email is already in use": [
+        "Email уже используется"
+      ],
+      "There's already a pending invite for this email": [
+        "Уже есть активное приглашение на этот email"
+      ],
+      "No permission to create invitations": [
+        "Нет прав на создание приглашений"
+      ],
+      "Toggle channels": [
+        "Переключить каналы"
+      ],
+      "Toggle members": [
+        "Переключить участников"
       ]
     }
   }

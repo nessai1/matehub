@@ -615,6 +615,60 @@
       ],
       "System": [
         "System"
+      ],
+      "Invited": [
+        "Invited"
+      ],
+      "Temp link — not yet used": [
+        "Temp link — not yet used"
+      ],
+      "Permanent invite — not yet accepted": [
+        "Permanent invite — not yet accepted"
+      ],
+      "Created": [
+        "Created"
+      ],
+      "By": [
+        "By"
+      ],
+      "Expires": [
+        "Expires"
+      ],
+      "Delete invite": [
+        "Delete invite"
+      ],
+      "Deleting...": [
+        "Deleting..."
+      ],
+      "No permission to delete this invite": [
+        "No permission to delete this invite"
+      ],
+      "Enter login": [
+        "Enter login"
+      ],
+      "Login is already taken": [
+        "Login is already taken"
+      ],
+      "There's already a pending invite for this login": [
+        "There's already a pending invite for this login"
+      ],
+      "Invalid email format": [
+        "Invalid email format"
+      ],
+      "Email is already in use": [
+        "Email is already in use"
+      ],
+      "There's already a pending invite for this email": [
+        "There's already a pending invite for this email"
+      ],
+      "No permission to create invitations": [
+        "No permission to create invitations"
+      ],
+      "Toggle channels": [
+        "Toggle channels"
+      ],
+      "Toggle members": [
+        "Toggle members"
       ]
     }
   }

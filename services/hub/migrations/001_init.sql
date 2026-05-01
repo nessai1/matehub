@@ -4,18 +4,34 @@
 -- in Rust so every service in the cluster agrees on the ID space.
 
 -- ── Users ────────────────────────────────────────
+-- One identity model for everyone: permanent accounts, SSO accounts, AND
+-- temp/guest sessions. The `user_type` discriminator tells them apart;
+-- type-specific metadata lives in side-tables (temp_users, refresh_tokens).
+-- Putting guests here means messages.sender_id, mentions, reactions, etc.
+-- all FK to a single users.id space — history JOINs work the same way for
+-- guests as for members, including after the guest's session expires.
+--
 -- account_id: link to the SaaS-side `general.accounts.id` for users that
--- came through SSO. NULL for on-prem users and temp_users — those live
--- entirely inside the hub. UNIQUE so one general account maps to exactly
--- one hub user (multiple NULLs allowed by Postgres).
+-- came through SSO. NULL for on-prem users and temp users. UNIQUE so one
+-- general account maps to exactly one hub user (multiple NULLs allowed by
+-- Postgres).
+--
+-- expires_at / deleted_at: lifecycle gates checked on every login / token
+-- issue. Hard DELETE FROM users is forbidden — it would cascade-nuke chat
+-- history. Instead we soft-delete (set deleted_at, scrub PII) so JOINs keep
+-- resolving to "Deleted User" instead of NULL.
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
     display_name  TEXT NOT NULL,
     avatar_url    TEXT,
     email         TEXT,
-    password_hash TEXT,
+    password_hash TEXT,                                 -- NULL for SSO and temp
     account_id    BIGINT UNIQUE,
+    user_type     TEXT NOT NULL DEFAULT 'permanent'
+                       CHECK (user_type IN ('permanent', 'temp')),
+    expires_at    TIMESTAMPTZ,                          -- only set for temp
+    deleted_at    TIMESTAMPTZ,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
@@ -109,17 +125,26 @@ CREATE TABLE IF NOT EXISTS channel_permissions (
     PRIMARY KEY (channel_id, group_id)
 );
 
--- ── Temporary users ─────────────────────────────────
+-- ── Temporary users (side metadata) ────────────────────
+-- The temp user's principal identity lives in `users` (user_type='temp').
+-- This table only carries what's specific to the magic-link mechanism: the
+-- secret token, the inviter, the active WS session, and a manual revoke
+-- flag. The "is the link still good" gate is `expires_at` on users; this
+-- table's `revoked_at` is the early-revoke override.
+--
+-- Pending vs walked-through:
+--   * Row exists, active_session IS NULL → link issued, nobody walked yet
+--     (shows up in pending-invites; users.id is NOT in hub_members yet)
+--   * active_session IS NOT NULL → guest walked through; hub_members +
+--     member_groups rows have been inserted at that point
 CREATE TABLE IF NOT EXISTS temp_users (
-    id              BIGINT PRIMARY KEY,
+    user_id         BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     hub_id          BIGINT NOT NULL REFERENCES hubs(id) ON DELETE CASCADE,
-    token           TEXT NOT NULL UNIQUE,           -- the magic-link secret
-    nickname        TEXT NOT NULL,
+    token           TEXT NOT NULL UNIQUE,
     group_id        BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     created_by      BIGINT NOT NULL REFERENCES users(id),
-    expires_at      TIMESTAMPTZ NOT NULL,
     revoked_at      TIMESTAMPTZ,
-    active_session  TEXT,                            -- current WS session ID (null = nobody connected)
+    active_session  TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_temp_users_hub ON temp_users(hub_id);

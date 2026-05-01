@@ -5,6 +5,7 @@ import {
   seedVoiceOccupancy,
   setVoiceOccupancy,
 } from "@/lib/voice-occupancy-store";
+import { pendingInvitesKey } from "@/hooks/use-pending-invites";
 
 const HUB_API = "/api/hub";
 
@@ -145,6 +146,10 @@ export function usePresence() {
               }
               break;
             case "member_joined":
+              // Someone accepted — they're a member now AND no longer pending.
+              globalMutate(membersKey(session.hubId));
+              globalMutate(pendingInvitesKey(session.hubId));
+              break;
             case "member_left":
             case "member_groups_changed":
               // Roster delta — invalidate the SWR cache, every consumer

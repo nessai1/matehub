@@ -10,13 +10,17 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
+use email_address::EmailAddress;
 use matehub_common::{
     perms::{bits, resolve_user_perms},
     snowflake,
 };
+use serde::Serialize;
 use sqlx::PgPool;
+use std::str::FromStr;
 
 use crate::api::auth_api::{ACCESS_TOKEN_TTL_SECS, issue_access_token, issue_refresh_token};
 use crate::auth::AuthUser;
@@ -36,26 +40,114 @@ pub fn routes(pool: PgPool) -> Router {
 
 // ── Create (admin) ──────────────────────────────────────────────
 
+/// Discriminated error body so the FE can tell *which* field is wrong
+/// without re-parsing prose. Serializes as `{"error": "username_taken"}`.
+#[derive(Serialize)]
+struct CreateInviteError {
+    error: &'static str,
+}
+
+impl CreateInviteError {
+    fn into_response(self, status: StatusCode) -> Response {
+        (status, Json(self)).into_response()
+    }
+}
+
 async fn create_invitation(
     State(pool): State<PgPool>,
     Path(hub_id): Path<i64>,
     auth: AuthUser,
     Json(body): Json<CreateInvitationRequest>,
-) -> Result<(StatusCode, Json<InvitationLink>), StatusCode> {
-    if body.username.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
+) -> Result<(StatusCode, Json<InvitationLink>), Response> {
+    let username = body.username.trim();
+    if username.is_empty() {
+        return Err(CreateInviteError { error: "username_required" }
+            .into_response(StatusCode::BAD_REQUEST));
+    }
+
+    // Email is optional; normalise empty string to None so the rest of the
+    // pipeline doesn't have to keep checking both shapes.
+    let email = body
+        .email
+        .as_deref()
+        .map(|e| e.trim())
+        .filter(|e| !e.is_empty());
+
+    if let Some(addr) = email {
+        if !is_valid_email(addr) {
+            return Err(CreateInviteError { error: "invalid_email" }
+                .into_response(StatusCode::BAD_REQUEST));
+        }
     }
 
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| internal_error())?;
     if !caller.has(bits::INVITE_PERMANENT) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(CreateInviteError { error: "forbidden" }
+            .into_response(StatusCode::FORBIDDEN));
     }
 
     let mut conn = hub_connection(&pool, hub_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| internal_error())?;
+
+    // Pre-flight uniqueness checks. Race-loser still hits the users.username
+    // UNIQUE on accept (and the partial unique index on email), but checking
+    // here saves the inviter from handing out a link that's already
+    // doomed — the common case where an admin types a login that's
+    // already in use.
+    let username_taken_in_users: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE username = $1)")
+            .bind(username)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|_| internal_error())?;
+    if username_taken_in_users {
+        return Err(CreateInviteError { error: "username_taken" }
+            .into_response(StatusCode::CONFLICT));
+    }
+
+    let username_pending: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM invitations
+                        WHERE hub_id = $1 AND username = $2 AND used_at IS NULL)",
+    )
+    .bind(hub_id)
+    .bind(username)
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(|_| internal_error())?;
+    if username_pending {
+        return Err(CreateInviteError { error: "username_pending" }
+            .into_response(StatusCode::CONFLICT));
+    }
+
+    if let Some(addr) = email {
+        let email_taken_in_users: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM users WHERE email = $1)")
+                .bind(addr)
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(|_| internal_error())?;
+        if email_taken_in_users {
+            return Err(CreateInviteError { error: "email_taken" }
+                .into_response(StatusCode::CONFLICT));
+        }
+
+        let email_pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM invitations
+                            WHERE hub_id = $1 AND email = $2 AND used_at IS NULL)",
+        )
+        .bind(hub_id)
+        .bind(addr)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(|_| internal_error())?;
+        if email_pending {
+            return Err(CreateInviteError { error: "email_pending" }
+                .into_response(StatusCode::CONFLICT));
+        }
+    }
 
     let token = generate_token();
 
@@ -66,22 +158,26 @@ async fn create_invitation(
     .bind(snowflake::next_id())
     .bind(hub_id)
     .bind(&token)
-    .bind(&body.username)
-    .bind(&body.email)
+    .bind(username)
+    .bind(email)
     .bind(auth.0.sub)
     .execute(&mut *conn)
     .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|_| internal_error())?;
 
     Ok((
         StatusCode::CREATED,
         Json(InvitationLink {
             token: token.clone(),
-            username: body.username,
-            email: body.email,
+            username: username.to_string(),
+            email: email.map(str::to_string),
             invite_url: format!("/invite/{token}"),
         }),
     ))
+}
+
+fn internal_error() -> Response {
+    CreateInviteError { error: "internal" }.into_response(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 // ── Public preview ──────────────────────────────────────────────
@@ -270,6 +366,92 @@ async fn accept_invitation(
         hub_id,
         hub_slug,
     }))
+}
+
+// ── Email validation ────────────────────────────────────────────
+//
+// RFC 5321 technically allows bare hostnames as email domains
+// (`alice@localhost` parses fine), so the `email_address` crate alone
+// would let "wera@dad" through. For our UX — admin types a coworker's
+// real email — we add one extra rule on top of the parser:
+//
+//   * the domain must contain at least one dot, with that dot not at
+//     either end of the domain.
+//
+// That's it. Anything stricter (TLD length, character class) starts
+// rejecting valid-but-unfamiliar shapes (`name@host.d`, punycode IDNs,
+// etc.) and turns into a "validator vs reality" tug-of-war. Format
+// validation is a shape check; deliverability is DNS's problem.
+
+fn is_valid_email(s: &str) -> bool {
+    if EmailAddress::from_str(s).is_err() {
+        return false;
+    }
+
+    // EmailAddress accepted it, so we know there's exactly one '@'.
+    let Some(domain) = s.rsplit('@').next() else {
+        return false;
+    };
+
+    domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_email;
+
+    #[test]
+    fn accepts_normal_addresses() {
+        assert!(is_valid_email("alice@example.com"));
+        assert!(is_valid_email("alice.smith@example.co.uk"));
+        assert!(is_valid_email("alice+tag@example.com"));
+        assert!(is_valid_email("a@b.io"));
+        assert!(is_valid_email("with-dash@sub.domain.example"));
+    }
+
+    #[test]
+    fn accepts_unusual_but_structurally_valid() {
+        // Single-char TLDs aren't in the public DNS root, but the address
+        // is structurally fine. We're a format validator, not a registry.
+        assert!(is_valid_email("adad@dadad.d"));
+        // Punycode IDN — perfectly real, just has a hyphen.
+        assert!(is_valid_email("alice@xn--mxail-6qa.de"));
+    }
+
+    #[test]
+    fn rejects_obvious_garbage() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("not-an-email"));
+        assert!(!is_valid_email("@"));
+        assert!(!is_valid_email("@example.com"));
+        assert!(!is_valid_email("alice@"));
+        assert!(!is_valid_email("alice@@example.com"));
+        assert!(!is_valid_email("alice example.com"));
+    }
+
+    #[test]
+    fn rejects_missing_tld() {
+        // The exact case that motivated this validator:
+        assert!(!is_valid_email("wera@dad"));
+        // Common typo — forgetting the TLD on a known provider:
+        assert!(!is_valid_email("alice@gmail"));
+        // A bare hostname that RFC 5321 technically accepts but we don't:
+        assert!(!is_valid_email("test@localhost"));
+    }
+
+    #[test]
+    fn rejects_dots_at_domain_edges() {
+        assert!(!is_valid_email("alice@.com"));
+        assert!(!is_valid_email("alice@example."));
+        assert!(!is_valid_email("alice@.example.com"));
+    }
+
+    #[test]
+    fn rejects_whitespace() {
+        assert!(!is_valid_email(" alice@example.com"));
+        assert!(!is_valid_email("alice@example.com "));
+        assert!(!is_valid_email("alice@ example.com"));
+    }
 }
 
 // ── Token gen (same scheme as temp_users) ───────────────────────
