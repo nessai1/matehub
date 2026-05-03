@@ -56,7 +56,7 @@ export function HubSettingsDialog({ open, onOpenChange }: Props) {
     })
       .then((r) => (r.ok ? r.json() : []))
       .then((data: ServiceInfo[]) => {
-        if (!cancelled) setServices(data);
+        if (!cancelled) setServices(data.filter((s) => s.name !== "general"));
       })
       .catch(() => {
         if (!cancelled) setServices([]);
