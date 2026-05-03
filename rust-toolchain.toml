@@ -1,0 +1,8 @@
+[toolchain]
+# Single source of truth for the Rust version across the workspace and CI.
+# Bump this file when you want to upgrade -- rustup auto-installs the listed
+# toolchain on first cargo invocation, and CI's actions-rust-lang/setup-rust-toolchain
+# picks it up without any extra config.
+channel = "1.95.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

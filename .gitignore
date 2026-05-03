@@ -1,6 +1,8 @@
 # Rust
 /target/
-Cargo.lock
+# Cargo.lock IS committed: this workspace ships binaries (services/*) and
+# every CI/release build must use the exact dependency versions we tested
+# locally. Only library crates published to crates.io should ignore it.
 
 # Node
 node_modules/
