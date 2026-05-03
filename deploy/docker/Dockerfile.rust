@@ -83,11 +83,19 @@ COPY services/transcoder/Cargo.toml services/transcoder/Cargo.toml
 # Stub mains for every workspace member -- needed to make the workspace
 # valid before we have real sources. They get overwritten only for the
 # target service below; the others stay as stubs and are never compiled.
+#
+# Same trick for services/video/benches/sfu_forward.rs: video's Cargo.toml
+# declares a [[bench]], and cargo refuses to even parse the manifest if
+# the listed bench file is missing on disk. The stub is never compiled
+# (cargo build doesn't touch benches; cargo bench would, but we don't run
+# it from the image).
 RUN mkdir -p services/hub/src services/chat/src services/video/src \
-             services/general/src services/transcoder/src && \
+             services/general/src services/transcoder/src \
+             services/video/benches && \
     for s in hub chat video general transcoder; do \
         echo "fn main() {}" > services/$s/src/main.rs; \
-    done
+    done && \
+    echo "fn main() {}" > services/video/benches/sfu_forward.rs
 
 # Pre-build dependencies for the target service. `|| true` because the
 # dep-only graph technically can't link (no real main), but the side-
