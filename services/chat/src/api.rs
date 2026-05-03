@@ -32,8 +32,14 @@ pub struct AppState {
 
 pub fn routes(state: AppState) -> Router {
     Router::new()
-        .route("/v1/channels/{channel_id}/messages", post(send_message).get(get_history))
-        .route("/v1/channels/{channel_id}/messages/{message_id}", patch(edit_message).delete(delete_message))
+        .route(
+            "/v1/channels/{channel_id}/messages",
+            post(send_message).get(get_history),
+        )
+        .route(
+            "/v1/channels/{channel_id}/messages/{message_id}",
+            patch(edit_message).delete(delete_message),
+        )
         .route("/v1/channels/{channel_id}/typing", post(typing))
         .route("/v1/channels/{channel_id}/ack", post(mark_read))
         .route("/v1/read-states", get(get_read_states))
@@ -116,17 +122,31 @@ async fn send_message(
 
     // Idempotency: if client_id was seen, return cached message_id
     if let (Some(client_id), Some(mut redis)) = (body.client_id.as_deref(), state.redis.clone()) {
-        if let Some(existing_id) = read_state::check_idempotency(&mut redis, &user_id, client_id).await {
+        if let Some(existing_id) =
+            read_state::check_idempotency(&mut redis, &user_id, client_id).await
+        {
             tracing::debug!(client_id, existing_id, "idempotent duplicate");
             // Return minimal response -- client already has the message
-            return Ok((StatusCode::OK, Json(Message {
-                hub_id, channel_id, message_id: existing_id,
-                author_id: user_id.clone(), author_type: auth.0.user_type.clone(),
-                content: body.content.clone(), thread_root_id: body.thread_root_id,
-                mentions: vec![], mention_groups: vec![], mention_everyone: false,
-                attachments: vec![], edited_at: None, deleted_at: None,
-                client_id: Some(client_id.to_string()), bucket: snowflake::current_bucket(),
-            })));
+            return Ok((
+                StatusCode::OK,
+                Json(Message {
+                    hub_id,
+                    channel_id,
+                    message_id: existing_id,
+                    author_id: user_id.clone(),
+                    author_type: auth.0.user_type.clone(),
+                    content: body.content.clone(),
+                    thread_root_id: body.thread_root_id,
+                    mentions: vec![],
+                    mention_groups: vec![],
+                    mention_everyone: false,
+                    attachments: vec![],
+                    edited_at: None,
+                    deleted_at: None,
+                    client_id: Some(client_id.to_string()),
+                    bucket: snowflake::current_bucket(),
+                }),
+            ));
         }
     }
 
@@ -136,11 +156,17 @@ async fn send_message(
     let msg = state
         .data
         .write_message(
-            hub_id, channel_id, &user_id, &auth.0.user_type,
-            &content, mentions, vec![],
+            hub_id,
+            channel_id,
+            &user_id,
+            &auth.0.user_type,
+            &content,
+            mentions,
+            vec![],
             content.contains("@everyone"),
             body.attachments.unwrap_or_default(),
-            body.thread_root_id, body.client_id.clone(),
+            body.thread_root_id,
+            body.client_id.clone(),
         )
         .await
         .map_err(|e| {
@@ -240,10 +266,16 @@ async fn edit_message(
 
     let mentions = parse_mentions(&content);
 
-    state.data
+    state
+        .data
         .edit_message(
-            hub_id, channel_id, bucket, message_id,
-            &content, mentions, vec![],
+            hub_id,
+            channel_id,
+            bucket,
+            message_id,
+            &content,
+            mentions,
+            vec![],
             content.contains("@everyone"),
         )
         .await
@@ -253,12 +285,20 @@ async fn edit_message(
         })?;
 
     // Fan out edit event. IDs as strings — see `Message` docstring for why.
-    state.fanout.publish_event(hub_id, channel_id, events::MESSAGE_UPDATE, &serde_json::json!({
-        "message_id": message_id.to_string(),
-        "channel_id": channel_id.to_string(),
-        "content": body.content.trim(),
-        "edited": true,
-    })).await;
+    state
+        .fanout
+        .publish_event(
+            hub_id,
+            channel_id,
+            events::MESSAGE_UPDATE,
+            &serde_json::json!({
+                "message_id": message_id.to_string(),
+                "channel_id": channel_id.to_string(),
+                "content": body.content.trim(),
+                "edited": true,
+            }),
+        )
+        .await;
 
     Ok(StatusCode::OK)
 }
@@ -278,7 +318,8 @@ async fn delete_message(
 
     let bucket = snowflake::bucket_from_id(message_id);
 
-    state.data
+    state
+        .data
         .delete_message(hub_id, channel_id, bucket, message_id)
         .await
         .map_err(|e| {
@@ -286,10 +327,18 @@ async fn delete_message(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    state.fanout.publish_event(hub_id, channel_id, events::MESSAGE_DELETE, &serde_json::json!({
-        "message_id": message_id.to_string(),
-        "channel_id": channel_id.to_string(),
-    })).await;
+    state
+        .fanout
+        .publish_event(
+            hub_id,
+            channel_id,
+            events::MESSAGE_DELETE,
+            &serde_json::json!({
+                "message_id": message_id.to_string(),
+                "channel_id": channel_id.to_string(),
+            }),
+        )
+        .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -308,7 +357,10 @@ async fn typing(
     }
 
     let user_id = auth.0.sub.to_string();
-    state.fanout.publish_typing(hub_id, channel_id, &user_id).await;
+    state
+        .fanout
+        .publish_typing(hub_id, channel_id, &user_id)
+        .await;
     StatusCode::NO_CONTENT
 }
 
@@ -335,12 +387,21 @@ async fn mark_read(
     let user_id = auth.0.sub.to_string();
     if let Some(mut redis) = state.redis.clone() {
         read_state::mark_read(
-            &mut redis, &state.data,
-            &user_id, hub_id, channel_id, body.message_id,
-        ).await;
+            &mut redis,
+            &state.data,
+            &user_id,
+            hub_id,
+            channel_id,
+            body.message_id,
+        )
+        .await;
     } else {
         // No Redis -- write directly to ScyllaDB
-        if let Err(e) = state.data.mark_read(&user_id, hub_id, channel_id, body.message_id).await {
+        if let Err(e) = state
+            .data
+            .mark_read(&user_id, hub_id, channel_id, body.message_id)
+            .await
+        {
             tracing::error!("mark_read failed: {e}");
         }
     }
@@ -356,7 +417,9 @@ struct HistoryQuery {
     before: Option<i64>,
 }
 
-fn default_limit() -> i32 { 50 }
+fn default_limit() -> i32 {
+    50
+}
 
 async fn get_history(
     State(state): State<AppState>,
@@ -372,7 +435,8 @@ async fn get_history(
 
     let limit = query.limit.clamp(1, 100);
 
-    let messages = state.data
+    let messages = state
+        .data
         .read_history(hub_id, channel_id, limit, query.before)
         .await
         .map_err(|e| {
@@ -413,11 +477,13 @@ async fn get_read_states(
     let items: Vec<ReadStateItem> = rows
         .into_iter()
         .filter(|(h, _, _, _)| *h == hub_id)
-        .map(|(_, channel_id, last_read_message_id, mention_count)| ReadStateItem {
-            channel_id,
-            last_read_message_id,
-            mention_count,
-        })
+        .map(
+            |(_, channel_id, last_read_message_id, mention_count)| ReadStateItem {
+                channel_id,
+                last_read_message_id,
+                mention_count,
+            },
+        )
         .collect();
 
     Ok(Json(items))
@@ -496,7 +562,9 @@ async fn sync(
 /// Returns the key (path after bucket) or None if URL shape is unexpected.
 fn build_s3_key(url: &str) -> Option<String> {
     // Strip protocol
-    let without_proto = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let without_proto = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
     // Skip host+bucket by taking everything after the 2nd slash
     let mut parts = without_proto.splitn(3, '/');
     parts.next()?; // host
@@ -525,7 +593,11 @@ fn parse_mentions(content: &str) -> Vec<String> {
     content
         .split_whitespace()
         .filter(|w| w.starts_with('@') && w.len() > 1)
-        .map(|w| w[1..].trim_end_matches(|c: char| !c.is_alphanumeric()).to_string())
+        .map(|w| {
+            w[1..]
+                .trim_end_matches(|c: char| !c.is_alphanumeric())
+                .to_string()
+        })
         .filter(|s| !s.is_empty() && s != "everyone" && s != "here")
         .collect()
 }

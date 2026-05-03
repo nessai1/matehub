@@ -16,6 +16,48 @@ jobs:
   rust-check:
     name: Rust check & test
     runs-on: ubuntu-latest
+
+    # Integration tests in services/{hub,chat,video} talk to real backing
+    # stores -- mocking them out has historically masked real bugs (TRUNCATE
+    # ordering, RLS context, ACL invalidation). The compose stack in
+    # deploy/docker-compose.dev.yml is the authoritative list; keep this in
+    # sync with that file.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: matehub
+          POSTGRES_PASSWORD: matehub-dev
+          POSTGRES_DB: matehub_test
+        options: >-
+          --health-cmd "pg_isready -U matehub"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      nats:
+        # nats:2-alpine has no shell or healthcheck binary, so we wait for
+        # the port from the test step rather than rely on docker healthcheck.
+        image: nats:2-alpine
+        ports: ["4222:4222"]
+      scylladb:
+        # No --health-cmd: scylladb/scylla image has no cqlsh, and a tcp probe
+        # is what the test step does anyway (see "Wait for Scylla" below).
+        # GitHub Actions `services:` doesn't expose `command:`, so we can't
+        # pass --smp/--memory the way docker-compose.dev.yml does. Instead we
+        # cap the container with --memory; scylla auto-tunes within that.
+        image: scylladb/scylla:6.2
+        ports: ["9042:9042"]
+        options: --memory 1500m
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +75,30 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # Wait for services that don't expose a docker healthcheck.
+      # Scylla in particular takes 30-60s to accept CQL after the container
+      # starts, so the rust-cache step running first usually hides the wait.
+      - name: Wait for NATS and Scylla
+        run: |
+          wait_port() {
+            local host=$1 port=$2 name=$3 limit=${4:-90}
+            for i in $(seq 1 "$limit"); do
+              if (echo > /dev/tcp/"$host"/"$port") 2>/dev/null; then
+                echo "$name is up"; return 0
+              fi
+              sleep 1
+            done
+            echo "$name never came up after ${limit}s"; return 1
+          }
+          wait_port 127.0.0.1 4222 nats 30
+          wait_port 127.0.0.1 9042 scylla 90
+
+      # Integration tests share a single Postgres (matehub_test) and Scylla.
+      # Running them in parallel within one binary races on TRUNCATE+seed and
+      # cross-channel WS dispatch. Keep test-threads=1 unless/until each suite
+      # gets its own isolated database.
       - name: Test
-        run: cargo test --all
+        run: cargo test --all -- --test-threads=1
 
   frontend-check:
     name: Frontend check

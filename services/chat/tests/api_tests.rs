@@ -38,7 +38,10 @@ async fn send_message_and_get_history() {
 
     assert_eq!(resp.status(), 200);
     let messages: Vec<Value> = resp.json().await.unwrap();
-    assert!(!messages.is_empty(), "history should contain at least one message");
+    assert!(
+        !messages.is_empty(),
+        "history should contain at least one message"
+    );
     assert_eq!(messages[0]["content"], "Hello ScyllaDB!");
 }
 
@@ -112,10 +115,21 @@ async fn cursor_pagination_works() {
     assert_eq!(messages.len(), 3);
 
     // First message should be the newest (DESC order)
-    assert_eq!(messages[0]["message_id"].as_str().unwrap().parse::<i64>().unwrap(), ids[4]);
+    assert_eq!(
+        messages[0]["message_id"]
+            .as_str()
+            .unwrap()
+            .parse::<i64>()
+            .unwrap(),
+        ids[4]
+    );
 
     // Paginate: get messages before the oldest in current page
-    let before_id = messages[2]["message_id"].as_str().unwrap().parse::<i64>().unwrap();
+    let before_id = messages[2]["message_id"]
+        .as_str()
+        .unwrap()
+        .parse::<i64>()
+        .unwrap();
     let older: Vec<Value> = client
         .get(format!(
             "{base}/v1/channels/{channel}/messages?limit=3&before={before_id}"
@@ -129,8 +143,22 @@ async fn cursor_pagination_works() {
         .unwrap();
 
     assert_eq!(older.len(), 2, "should have 2 older messages");
-    assert_eq!(older[0]["message_id"].as_str().unwrap().parse::<i64>().unwrap(), ids[1]);
-    assert_eq!(older[1]["message_id"].as_str().unwrap().parse::<i64>().unwrap(), ids[0]);
+    assert_eq!(
+        older[0]["message_id"]
+            .as_str()
+            .unwrap()
+            .parse::<i64>()
+            .unwrap(),
+        ids[1]
+    );
+    assert_eq!(
+        older[1]["message_id"]
+            .as_str()
+            .unwrap()
+            .parse::<i64>()
+            .unwrap(),
+        ids[0]
+    );
 }
 
 #[tokio::test]
@@ -198,7 +226,10 @@ async fn snowflake_ids_are_monotonic() {
             .unwrap();
 
         let id = resp["message_id"].as_str().unwrap().parse::<i64>().unwrap();
-        assert!(id > prev_id, "Snowflake IDs must increase: {prev_id} -> {id}");
+        assert!(
+            id > prev_id,
+            "Snowflake IDs must increase: {prev_id} -> {id}"
+        );
         prev_id = id;
     }
 }

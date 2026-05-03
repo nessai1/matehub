@@ -32,9 +32,7 @@ impl Config {
             mail_from: std::env::var("MAIL_FROM")
                 .unwrap_or_else(|_| "MateHub <noreply@matehub.io>".into()),
             hub_sso_url_template: std::env::var("HUB_SSO_URL_TEMPLATE")
-                .unwrap_or_else(|_| {
-                    "https://{slug}.matehub.io/auth/sso?code={code}".into()
-                }),
+                .unwrap_or_else(|_| "https://{slug}.matehub.io/auth/sso?code={code}".into()),
         })
     }
 

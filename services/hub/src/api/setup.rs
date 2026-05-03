@@ -8,7 +8,12 @@
 //! Once `hub_members` is non-empty the endpoints here all return 409
 //! Conflict — the wizard is single-shot, like Bitrix's first-run page.
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing::{get, post}};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+};
 use matehub_common::{perms::bits, snowflake};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -36,12 +41,10 @@ struct StatusResponse {
 }
 
 async fn status(State(pool): State<PgPool>) -> Result<Json<StatusResponse>, StatusCode> {
-    let any_member: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM hub_members LIMIT 1)",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let any_member: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM hub_members LIMIT 1)")
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(StatusResponse {
         needs_setup: !any_member,
@@ -82,7 +85,10 @@ async fn setup_admin(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let mut tx = pool.begin().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Serialize concurrent first-run attempts so only one wins.
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
@@ -91,12 +97,11 @@ async fn setup_admin(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let already_set_up: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM hub_members LIMIT 1)",
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let already_set_up: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM hub_members LIMIT 1)")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if already_set_up {
         return Err(StatusCode::CONFLICT);
@@ -164,14 +169,12 @@ async fn setup_admin(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // ── 4. Hub membership for admin ───────────────────────────
-    sqlx::query(
-        "INSERT INTO hub_members (hub_id, user_id, role) VALUES ($1, $2, 'admin')",
-    )
-    .bind(hub_id)
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("INSERT INTO hub_members (hub_id, user_id, role) VALUES ($1, $2, 'admin')")
+        .bind(hub_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     sqlx::query(
         "INSERT INTO member_groups (hub_id, user_id, group_id) VALUES ($1, $2, $3), ($1, $2, $4)",
@@ -194,7 +197,9 @@ async fn setup_admin(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    tx.commit().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tx.commit()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // ── 6. Issue tokens — admin is logged in immediately ─────
     let groups = vec![admin_group_id, everyone_group_id];

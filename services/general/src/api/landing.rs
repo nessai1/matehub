@@ -12,6 +12,7 @@ pub fn routes() -> Router<Arc<AppState>> {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)] // fields validate the wire shape; TODO consumes them
 struct ContactRequest {
     email: String,
     message: String,
@@ -26,6 +27,7 @@ async fn contact(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)] // fields validate the wire shape; TODO consumes them
 struct EarlyAccessRequest {
     email: String,
 }

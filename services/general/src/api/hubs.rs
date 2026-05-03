@@ -70,10 +70,10 @@ async fn create_hub(
     .execute(&mut *tx)
     .await
     .map_err(|e| {
-        if let Some(db_err) = e.as_database_error() {
-            if db_err.is_unique_violation() {
-                return (StatusCode::CONFLICT, "slug taken".into());
-            }
+        if let Some(db_err) = e.as_database_error()
+            && db_err.is_unique_violation()
+        {
+            return (StatusCode::CONFLICT, "slug taken".into());
         }
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?;

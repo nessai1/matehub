@@ -103,13 +103,12 @@ async fn check_uncached(
     user_id: i64,
     action: Action,
 ) -> sqlx::Result<bool> {
-    let channel_type: Option<String> = sqlx::query_scalar(
-        "SELECT type FROM channels WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(channel_id)
-    .bind(hub_id)
-    .fetch_optional(pg)
-    .await?;
+    let channel_type: Option<String> =
+        sqlx::query_scalar("SELECT type FROM channels WHERE id = $1 AND hub_id = $2")
+            .bind(channel_id)
+            .bind(hub_id)
+            .fetch_optional(pg)
+            .await?;
 
     let Some(channel_type) = channel_type else {
         return Ok(false);

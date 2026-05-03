@@ -40,12 +40,7 @@ impl K8sClient {
     /// `hub_secret` is passed through to the hub pod's K8s Secret resource
     /// as the value of the `JWT_SECRET` env var. The secret never touches
     /// disk outside of general's Postgres + the K8s Secret object.
-    pub async fn provision_hub(
-        &self,
-        slug: &str,
-        hub_id: i64,
-        hub_secret: &str,
-    ) -> Result<()> {
+    pub async fn provision_hub(&self, slug: &str, hub_id: i64, hub_secret: &str) -> Result<()> {
         // Log only a fingerprint, not the secret itself. First 8 hex chars
         // are enough to tell hubs apart in logs without leaking anything
         // useful if the log store is compromised.

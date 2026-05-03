@@ -208,7 +208,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       hubId: session.hubId,
     });
     clientRef.current = c;
-    setClient(c);
+    // Dispatch the state update via a microtask so the effect body itself
+    // doesn't synchronously fire setState. Behavior is unchanged: by the
+    // time React commits this effect's children, the microtask has run.
+    queueMicrotask(() => {
+      if (clientRef.current === c) setClient(c);
+    });
+
+    // Snapshot refs we'll touch in cleanup. Reading .current at unmount time
+    // could pick up a fresh container if anything reassigned the ref between
+    // mount and unmount; capturing here makes cleanup operate on exactly the
+    // instances this effect set up.
+    const loadingHistorySnap = loadingHistoryFor.current;
+    const loadedHistorySnap = loadedHistoryFor.current;
+    const pendingPayloadSnap = pendingPayload.current;
+    const typingTimersSnap = typingTimers.current;
+    const lastMessageAtSnap = lastMessageAt.current;
+    const rateLimitToastSnap = rateLimitToastId.current;
 
     const unsub = c.on((event: ChatClientEvent) => {
       switch (event.type) {
@@ -468,16 +484,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setTypingByChannel(new Map());
       setUnreadByChannel(new Map());
       setDividerByChannel(new Map());
-      loadingHistoryFor.current.clear();
-      loadedHistoryFor.current.clear();
-      pendingPayload.current.clear();
-      for (const chTimers of typingTimers.current.values()) {
+      loadingHistorySnap.clear();
+      loadedHistorySnap.clear();
+      pendingPayloadSnap.clear();
+      for (const chTimers of typingTimersSnap.values()) {
         for (const t of chTimers.values()) clearTimeout(t);
       }
-      typingTimers.current.clear();
-      lastMessageAt.current.clear();
-      for (const id of rateLimitToastId.current.values()) toast.dismiss(id);
-      rateLimitToastId.current.clear();
+      typingTimersSnap.clear();
+      lastMessageAtSnap.clear();
+      for (const id of rateLimitToastSnap.values()) toast.dismiss(id);
+      rateLimitToastSnap.clear();
     };
   }, [session?.token, session?.hubId, ackUpTo]);
 

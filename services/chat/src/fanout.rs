@@ -13,10 +13,7 @@ impl FanoutService {
 
     /// Publish MESSAGE_CREATE to NATS subject `hub.{hub_id}.channel.{channel_id}.message`
     pub async fn publish_message(&self, msg: &Message) {
-        let subject = format!(
-            "hub.{}.channel.{}.message",
-            msg.hub_id, msg.channel_id
-        );
+        let subject = format!("hub.{}.channel.{}.message", msg.hub_id, msg.channel_id);
 
         let payload = match serde_json::to_vec(msg) {
             Ok(p) => p,
@@ -32,7 +29,13 @@ impl FanoutService {
     }
 
     /// Publish generic event (edit, delete, etc.)
-    pub async fn publish_event(&self, hub_id: i64, channel_id: i64, event_type: &str, payload: &serde_json::Value) {
+    pub async fn publish_event(
+        &self,
+        hub_id: i64,
+        channel_id: i64,
+        event_type: &str,
+        payload: &serde_json::Value,
+    ) {
         let subject = format!("hub.{hub_id}.channel.{channel_id}.{event_type}");
         if let Ok(data) = serde_json::to_vec(payload) {
             let _ = self.nats.publish(subject, data.into()).await;

@@ -1,7 +1,7 @@
 mod common;
 
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const HUB_ID: &str = "1";
 const ALICE_ID: &str = "1001";
@@ -167,7 +167,9 @@ async fn cannot_remove_creator_from_admin() {
     let admin_id = find_group(&groups, "admin")["id"].as_str().unwrap();
 
     let res = client
-        .delete(format!("{base}/v1/hubs/{HUB_ID}/groups/{admin_id}/members/{ALICE_ID}"))
+        .delete(format!(
+            "{base}/v1/hubs/{HUB_ID}/groups/{admin_id}/members/{ALICE_ID}"
+        ))
         .header("Authorization", auth(&alice))
         .send()
         .await

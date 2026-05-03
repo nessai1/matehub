@@ -3,11 +3,7 @@ use sqlx::PgPool;
 /// Execute a closure within a transaction that has hub_id set for RLS.
 /// Every query inside the closure is automatically filtered to this hub.
 #[allow(dead_code)]
-pub async fn with_hub_context<F, Fut, T>(
-    pool: &PgPool,
-    hub_id: i64,
-    f: F,
-) -> Result<T, sqlx::Error>
+pub async fn with_hub_context<F, Fut, T>(pool: &PgPool, hub_id: i64, f: F) -> Result<T, sqlx::Error>
 where
     F: FnOnce(sqlx::pool::PoolConnection<sqlx::Postgres>) -> Fut,
     Fut: std::future::Future<Output = Result<T, sqlx::Error>>,

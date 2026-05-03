@@ -122,14 +122,13 @@ pub async fn resolve_user_perms(
     let top_position = rows.iter().map(|r| r.position).min().unwrap_or(i32::MAX);
     let is_admin = rows.iter().any(|r| r.name == "admin");
 
-    let is_creator: bool = sqlx::query_scalar(
-        "SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1",
-    )
-    .bind(hub_id)
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
+    let is_creator: bool =
+        sqlx::query_scalar("SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1")
+            .bind(hub_id)
+            .bind(user_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
 
     Ok(UserPerms {
         hub_bits,

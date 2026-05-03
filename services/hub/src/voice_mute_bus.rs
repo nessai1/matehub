@@ -101,8 +101,7 @@ async fn run(
         }
 
         if let Some(mut conn) = redis.clone() {
-            presence::voice_mute_set(&mut conn, ev.hub_id, ev.user_id, &ev.kind, ev.muted)
-                .await;
+            presence::voice_mute_set(&mut conn, ev.hub_id, ev.user_id, &ev.kind, ev.muted).await;
         }
 
         let payload = serde_json::to_string(&WireEvent {

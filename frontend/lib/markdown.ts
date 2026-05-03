@@ -42,12 +42,6 @@ export function applyMarkdown(
   const newValue = value.slice(0, selectionStart) + insert + value.slice(selectionEnd);
 
   // Schedule cursor placement after React re-renders
-  const cursorPos = action.block
-    ? selectionStart + insert.length
-    : selected
-      ? selectionStart + insert.length
-      : selectionStart + action.prefix.length + text.length;
-
   requestAnimationFrame(() => {
     textarea.focus();
     if (selected) {

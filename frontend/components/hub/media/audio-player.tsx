@@ -59,27 +59,16 @@ export function AudioPlayer({ url, name, size, duration: durationHint, className
   const barRef = useRef<HTMLDivElement>(null);
   const volBarRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  // Lazy init -- read persisted volume/muted once at mount instead of via a
+  // useEffect that synchronously fires setState. The reader is SSR-safe.
+  const [muted, setMuted] = useState(() => readPersistedMuted());
+  const [volume, setVolume] = useState(() => readPersistedVolume());
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(durationHint ?? 0);
   const [buffered, setBuffered] = useState(0);
   const [scrubPct, setScrubPct] = useState<number | null>(null);
 
-  // Restore persisted volume/muted on mount
-  useEffect(() => {
-    const v = readPersistedVolume();
-    const m = readPersistedMuted();
-    setVolume(v);
-    setMuted(m);
-    const a = audioRef.current;
-    if (a) {
-      a.volume = v;
-      a.muted = m;
-    }
-  }, []);
-
-  // Apply volume/muted to <audio> element
+  // Apply volume/muted to <audio> element. Runs on mount and on every change.
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;

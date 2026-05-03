@@ -83,7 +83,10 @@ async fn list_groups() {
         .await
         .unwrap();
 
-    assert!(resp.len() >= 3, "should have at least everyone, admin, guests");
+    assert!(
+        resp.len() >= 3,
+        "should have at least everyone, admin, guests"
+    );
 
     let names: Vec<&str> = resp.iter().filter_map(|g| g["name"].as_str()).collect();
     assert!(names.contains(&"everyone"));
@@ -195,8 +198,14 @@ async fn members_have_groups() {
 
     // Alice should have at least "everyone" and "admin"
     let group_names: Vec<&str> = groups.iter().filter_map(|g| g["name"].as_str()).collect();
-    assert!(group_names.contains(&"everyone"), "alice should have everyone group");
-    assert!(group_names.contains(&"admin"), "alice should have admin group");
+    assert!(
+        group_names.contains(&"everyone"),
+        "alice should have everyone group"
+    );
+    assert!(
+        group_names.contains(&"admin"),
+        "alice should have admin group"
+    );
 }
 
 #[tokio::test]
@@ -225,7 +234,6 @@ async fn members_have_online_field() {
 #[tokio::test]
 async fn effective_permissions_for_admin() {
     let base = common::spawn_app().await;
-    let token = common::login(&base, "alice").await;
     let client = reqwest::Client::new();
 
     // Get channels to find a channel_id
@@ -254,7 +262,9 @@ async fn effective_permissions_for_admin() {
     let user_id = login_resp["user_id"].as_str().unwrap();
 
     let resp: Value = client
-        .get(format!("{base}/v1/hubs/{HUB_ID}/channels/{ch_id}/effective/{user_id}"))
+        .get(format!(
+            "{base}/v1/hubs/{HUB_ID}/channels/{ch_id}/effective/{user_id}"
+        ))
         .send()
         .await
         .unwrap()

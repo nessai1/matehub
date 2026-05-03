@@ -90,9 +90,7 @@ async fn enter_hub(
     // URL template from config. In dev — a single-port path prefix
     // (http://localhost:3002/hub/{slug}/auth/sso). In prod —
     // https://{slug}.matehub.io/auth/sso.
-    let redirect_url = state
-        .config
-        .hub_sso_url(&slug, &code);
+    let redirect_url = state.config.hub_sso_url(&slug, &code);
 
     tracing::info!(%slug, account_id = claims.sub, "SSO auth_code minted");
 
@@ -127,12 +125,11 @@ async fn exchange_code(
 
     // Identify the hub by its pre-shared secret. The UNIQUE index on
     // hubs.hub_secret guarantees at most one row.
-    let hub_row: Option<(i64,)> =
-        sqlx::query_as("SELECT id FROM hubs WHERE hub_secret = $1")
-            .bind(hub_secret)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let hub_row: Option<(i64,)> = sqlx::query_as("SELECT id FROM hubs WHERE hub_secret = $1")
+        .bind(hub_secret)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let (hub_id,) = hub_row.ok_or((StatusCode::UNAUTHORIZED, "unknown hub secret".into()))?;
 
@@ -187,8 +184,7 @@ fn generate_code() -> String {
 }
 
 fn base64_url_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(data.len() * 4 / 3 + 1);
     for chunk in data.chunks(3) {
         let b0 = chunk[0] as u32;

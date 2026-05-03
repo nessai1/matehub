@@ -1,6 +1,11 @@
-use axum::{Json, Router, extract::{Path, State}, http::StatusCode, routing::{delete, get}};
-use matehub_common::perms::{bits, resolve_user_perms};
+use axum::{
+    Json, Router,
+    extract::{Path, State},
+    http::StatusCode,
+    routing::{delete, get},
+};
 use chrono::{DateTime, Utc};
+use matehub_common::perms::{bits, resolve_user_perms};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
@@ -150,8 +155,7 @@ async fn get_members_full(
         }
     };
 
-    let (members_result, voice_map, mute_map) =
-        tokio::join!(members_fut, voice_fut, mute_fut);
+    let (members_result, voice_map, mute_map) = tokio::join!(members_fut, voice_fut, mute_fut);
     let members = members_result.map_err(|e| {
         tracing::error!(?e, %hub_id, "members-full SQL failed");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -174,27 +178,27 @@ async fn get_members_full(
             // briefly show a green mic before the first explicit toggle.
             let (a_mute, v_mute) = mute_map.get(&m.user_id).copied().unwrap_or((true, true));
             MemberResponse {
-            is_online: online_set.contains(&m.user_id),
-            current_voice_channel_id: voice_map.get(&m.user_id).copied(),
-            voice_audio_muted: a_mute,
-            voice_video_muted: v_mute,
-            user_id: m.user_id,
-            username: m.username,
-            display_name: m.display_name,
-            avatar_url: m.avatar_url,
-            last_seen_at: m.last_seen_at,
-            groups: m
-                .groups
-                .into_iter()
-                .map(|g| GroupBadge {
-                    id: g.id,
-                    name: g.name,
-                    color: g.color,
-                })
-                .collect(),
-            user_type: m.user_type,
-            expires_at: m.expires_at,
-            deleted_at: m.deleted_at,
+                is_online: online_set.contains(&m.user_id),
+                current_voice_channel_id: voice_map.get(&m.user_id).copied(),
+                voice_audio_muted: a_mute,
+                voice_video_muted: v_mute,
+                user_id: m.user_id,
+                username: m.username,
+                display_name: m.display_name,
+                avatar_url: m.avatar_url,
+                last_seen_at: m.last_seen_at,
+                groups: m
+                    .groups
+                    .into_iter()
+                    .map(|g| GroupBadge {
+                        id: g.id,
+                        name: g.name,
+                        color: g.color,
+                    })
+                    .collect(),
+                user_type: m.user_type,
+                expires_at: m.expires_at,
+                deleted_at: m.deleted_at,
             }
         })
         .collect();
@@ -377,14 +381,13 @@ async fn delete_pending_permanent(
 
     // Lookup-then-authorize. Pre-checking the row also lets us 404 before
     // the perm lookup, so an unrelated probe gets the cheaper error path.
-    let row: Option<(i64, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
-        "SELECT created_by, used_at FROM invitations WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(invitation_id)
-    .bind(hub_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let row: Option<(i64, Option<chrono::DateTime<chrono::Utc>>)> =
+        sqlx::query_as("SELECT created_by, used_at FROM invitations WHERE id = $1 AND hub_id = $2")
+            .bind(invitation_id)
+            .bind(hub_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let (created_by, used_at) = row.ok_or(StatusCode::NOT_FOUND)?;
     // Already accepted — there's a real user now, can't undo via this route.
@@ -536,14 +539,13 @@ async fn kick_member(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let target_is_creator: bool = sqlx::query_scalar(
-        "SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1",
-    )
-    .bind(hub_id)
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(false);
+    let target_is_creator: bool =
+        sqlx::query_scalar("SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1")
+            .bind(hub_id)
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
     if target_is_creator {
         return Err(StatusCode::FORBIDDEN);
     }

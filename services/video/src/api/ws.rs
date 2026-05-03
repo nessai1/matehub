@@ -82,7 +82,10 @@ async fn publish_mute(
             return;
         }
     };
-    if let Err(e) = nats.publish(VOICE_MUTE_SUBJECT.to_string(), bytes.into()).await {
+    if let Err(e) = nats
+        .publish(VOICE_MUTE_SUBJECT.to_string(), bytes.into())
+        .await
+    {
         tracing::warn!(error = %e, "failed to publish voice.mute event");
     }
 }
@@ -412,8 +415,8 @@ async fn handle_ws(
                     (Some(source), Some(kind)) => {
                         tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
                         sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
+                            &sfu_pool,
+                            session_id,
                             SfuCommand::PublishTrack {
                                 session_id,
                                 participant_id,
@@ -472,9 +475,7 @@ async fn handle_ws(
                 // viewing the sidebar) get the update via NATS → hub →
                 // presence-WS. Without this the mic indicator next to a
                 // participant's name only updates while you're in their call.
-                if let (Some(nats), Some(uid)) =
-                    (state.nats.as_ref(), user_snowflake)
-                {
+                if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
                     publish_mute(nats, hub_id, uid, &kind, muted).await;
                 }
             }
@@ -499,8 +500,8 @@ async fn handle_ws(
 
     // Send leave to SFU (in case WS dropped without explicit leave)
     sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
+        &sfu_pool,
+        session_id,
         SfuCommand::Leave {
             session_id,
             participant_id,

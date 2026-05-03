@@ -8,10 +8,8 @@ use serde_json::json;
 
 #[tokio::test]
 async fn channel_invalidate_drops_matching_keys() {
-    let nats_url =
-        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let redis_url =
-        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
 
     let Ok(nats) = async_nats::connect(&nats_url).await else {
         eprintln!("[acl_invalidate] NATS unavailable, skipping");
@@ -45,9 +43,12 @@ async fn channel_invalidate_drops_matching_keys() {
         "hub_id": "42",
         "channel_id": "1001",
     });
-    nats.publish("acl.invalidate", serde_json::to_vec(&payload).unwrap().into())
-        .await
-        .unwrap();
+    nats.publish(
+        "acl.invalidate",
+        serde_json::to_vec(&payload).unwrap().into(),
+    )
+    .await
+    .unwrap();
 
     // SCAN+DEL is fire-and-forget — give it a moment.
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -66,10 +67,8 @@ async fn channel_invalidate_drops_matching_keys() {
 
 #[tokio::test]
 async fn user_invalidate_drops_user_keys_only() {
-    let nats_url =
-        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
-    let redis_url =
-        std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let redis_url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
 
     let Ok(nats) = async_nats::connect(&nats_url).await else {
         return;
@@ -94,9 +93,12 @@ async fn user_invalidate_drops_user_keys_only() {
         "hub_id": "42",
         "user_id": "1001",
     });
-    nats.publish("acl.invalidate", serde_json::to_vec(&payload).unwrap().into())
-        .await
-        .unwrap();
+    nats.publish(
+        "acl.invalidate",
+        serde_json::to_vec(&payload).unwrap().into(),
+    )
+    .await
+    .unwrap();
 
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 

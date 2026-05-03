@@ -27,10 +27,7 @@ use crate::data_service::DataService;
 use crate::fanout::FanoutService;
 
 /// Publish a transcode request to the queue.
-pub async fn publish_request(
-    nats: &async_nats::Client,
-    req: &TranscodeRequest,
-) -> Result<()> {
+pub async fn publish_request(nats: &async_nats::Client, req: &TranscodeRequest) -> Result<()> {
     let js = jetstream::new(nats.clone());
 
     // Idempotent stream creation
@@ -133,9 +130,15 @@ async fn handle_result(
                 } => {
                     a.url = url.clone();
                     a.content_type = content_type.clone();
-                    if let Some(w) = width { a.width = Some(*w); }
-                    if let Some(h) = height { a.height = Some(*h); }
-                    if let Some(d) = duration { a.duration = Some(*d); }
+                    if let Some(w) = width {
+                        a.width = Some(*w);
+                    }
+                    if let Some(h) = height {
+                        a.height = Some(*h);
+                    }
+                    if let Some(d) = duration {
+                        a.duration = Some(*d);
+                    }
                     a.size = *size;
                     a.status = AttachmentStatus::Ready;
                 }

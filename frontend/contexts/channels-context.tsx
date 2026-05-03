@@ -97,9 +97,34 @@ export function ChannelsProvider({ children }: { children: ReactNode }) {
     }
   }, [session?.hubId, session?.token, headers]);
 
+  // Initial load. Inline IIFE so the await chain reads as async to React
+  // Compiler -- a useCallback-then-call would look like a sync setState in
+  // the effect body.
   useEffect(() => {
-    fetchChannels();
-  }, [fetchChannels]);
+    if (!session?.hubId || !session?.token) return;
+    let cancelled = false;
+    const hubId = session.hubId;
+    const token = session.token;
+    (async () => {
+      const auth = { Authorization: `Bearer ${token}` };
+      try {
+        const [channelsRes, dmsRes] = await Promise.all([
+          fetch(`${HUB_API}/v1/hubs/${hubId}/channels`, { headers: auth }),
+          fetch(`${HUB_API}/v1/hubs/${hubId}/dms`, { headers: auth }),
+        ]);
+        const regular: Channel[] = channelsRes.ok ? await channelsRes.json() : [];
+        const dms: Channel[] = dmsRes.ok ? await dmsRes.json() : [];
+        if (!cancelled) setChannels([...regular, ...dms]);
+      } catch {
+        // ignore
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.hubId, session?.token]);
 
   const createChannel = useCallback(
     async (data: CreateChannelRequest): Promise<Channel | null> => {

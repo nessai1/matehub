@@ -93,7 +93,7 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!client) return;
-    const off = client.on((event) => {
+    return client.on((event) => {
       switch (event.type) {
         case "dm.call.invite": {
           // Echo of our own /call/start lands here too — ignore it.
@@ -141,7 +141,6 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-    return off;
   }, [client, session?.userId, activeVoiceChannelId, leaveVoice]);
 
   // ── Inviter: stamp startedAt the first time the peer's participant lands ──
@@ -155,11 +154,14 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
     if (!peerId) return;
     const peerJoined = participants.some((p) => p.userId === peerId);
     if (peerJoined) {
-      setDmCall((prev) =>
-        prev && prev.startedAt === null
-          ? { ...prev, startedAt: Date.now() }
-          : prev,
-      );
+      const stamp = Date.now();
+      // Microtask-dispatch the setState so the effect body itself stays
+      // side-effect-only; React still batches into the next render.
+      queueMicrotask(() => {
+        setDmCall((prev) =>
+          prev && prev.startedAt === null ? { ...prev, startedAt: stamp } : prev,
+        );
+      });
     }
   }, [dmCall, participants, channels, session?.userId]);
 
@@ -174,9 +176,10 @@ export function IncomingCallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!dmCall) return;
     if (activeVoiceChannelId === dmCall.channelId) return;
-    // Dropped. Capture before clearing.
+    // Dropped. Capture before clearing. State update goes through a
+    // microtask so the effect body stays side-effect-only.
     const left = dmCall;
-    setDmCall(null);
+    queueMicrotask(() => setDmCall(null));
     if (left.startedAt != null) {
       const duration = Math.max(
         0,

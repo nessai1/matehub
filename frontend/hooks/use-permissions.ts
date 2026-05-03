@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+// `refetch` was never wired to a caller; the effect below covers the
+// reload-on-session-change case on its own.
 
 const HUB_API = "/api/hub";
 
@@ -47,18 +49,26 @@ export function usePermissions() {
   const { session } = useAuth();
   const [perms, setPerms] = useState<UserPermissions | null>(null);
 
-  const fetchPerms = useCallback(async () => {
+  useEffect(() => {
     if (!session?.hubId || !session?.token) return;
-    try {
-      const res = await fetch(
-        `${HUB_API}/v1/hubs/${session.hubId}/my-permissions`,
-        { headers: { Authorization: `Bearer ${session.token}` } },
-      );
-      if (res.ok) setPerms(await res.json());
-    } catch { /* ignore */ }
+    let cancelled = false;
+    const hubId = session.hubId;
+    const token = session.token;
+    (async () => {
+      try {
+        const res = await fetch(
+          `${HUB_API}/v1/hubs/${hubId}/my-permissions`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as UserPermissions;
+        if (!cancelled) setPerms(data);
+      } catch { /* ignore */ }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [session?.hubId, session?.token]);
-
-  useEffect(() => { fetchPerms(); }, [fetchPerms]);
 
   const has = useCallback(
     (bit: number) => {
@@ -68,5 +78,5 @@ export function usePermissions() {
     [perms],
   );
 
-  return { perms, has, refetch: fetchPerms };
+  return { perms, has };
 }

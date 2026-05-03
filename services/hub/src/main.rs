@@ -48,7 +48,9 @@ async fn main() -> Result<()> {
 
     // S3 storage (optional)
     let s3 = if std::env::var("S3_ACCESS_KEY_ID").is_ok() {
-        Some(Arc::new(storage::S3Storage::from_env("S3_BUCKET_HUB_ASSETS").await))
+        Some(Arc::new(
+            storage::S3Storage::from_env("S3_BUCKET_HUB_ASSETS").await,
+        ))
     } else {
         tracing::warn!("S3_ACCESS_KEY_ID not set, avatar uploads disabled");
         None
@@ -102,8 +104,7 @@ async fn main() -> Result<()> {
         hub_id,
     };
 
-    let (metrics_layer, metrics_handle) =
-        matehub_common::observability::metrics_layer_and_handle();
+    let (metrics_layer, metrics_handle) = matehub_common::observability::metrics_layer_and_handle();
 
     // SPA bundle: when STATIC_DIR is set and exists, hub serves the Vite
     // bundle for any route the API didn't match. Unknown paths fall through
@@ -112,8 +113,7 @@ async fn main() -> Result<()> {
     // ServeDir 404s, frontend is served separately by `vite dev` on :3000.
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "/srv/dist".into());
     let index_path = format!("{static_dir}/index.html");
-    let spa_fallback =
-        ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
+    let spa_fallback = ServeDir::new(&static_dir).not_found_service(ServeFile::new(&index_path));
     if std::path::Path::new(&static_dir).is_dir() {
         tracing::info!(%static_dir, "serving SPA bundle as fallback");
     } else {

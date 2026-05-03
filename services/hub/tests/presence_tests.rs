@@ -1,6 +1,5 @@
 mod common;
 
-use futures_util::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use tokio_tungstenite::connect_async;
@@ -12,10 +11,7 @@ async fn presence_ws_connects_with_jwt() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "alice").await;
 
-    let ws_url = common::ws_url(
-        &base,
-        &format!("/ws/presence/{HUB_ID}?token={token}"),
-    );
+    let ws_url = common::ws_url(&base, &format!("/ws/presence/{HUB_ID}?token={token}"));
 
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
@@ -27,10 +23,7 @@ async fn presence_ws_connects_with_jwt() {
 async fn presence_ws_rejects_bad_token() {
     let base = common::spawn_app().await;
 
-    let ws_url = common::ws_url(
-        &base,
-        &format!("/ws/presence/{HUB_ID}?token=invalid-token"),
-    );
+    let ws_url = common::ws_url(&base, &format!("/ws/presence/{HUB_ID}?token=invalid-token"));
 
     // Should fail to upgrade or close immediately
     let result = connect_async(&ws_url).await;
@@ -44,10 +37,7 @@ async fn presence_makes_user_online() {
     let client = reqwest::Client::new();
 
     // Connect presence WS
-    let ws_url = common::ws_url(
-        &base,
-        &format!("/ws/presence/{HUB_ID}?token={token}"),
-    );
+    let ws_url = common::ws_url(&base, &format!("/ws/presence/{HUB_ID}?token={token}"));
     let (_ws, _) = connect_async(&ws_url).await.unwrap();
 
     // Give Redis time to set the key
@@ -64,7 +54,10 @@ async fn presence_makes_user_online() {
         .unwrap();
 
     let alice = members.iter().find(|m| m["username"] == "alice").unwrap();
-    assert_eq!(alice["is_online"], true, "alice should be online while WS connected");
+    assert_eq!(
+        alice["is_online"], true,
+        "alice should be online while WS connected"
+    );
 }
 
 #[tokio::test]
@@ -74,10 +67,7 @@ async fn presence_offline_after_disconnect() {
     let client = reqwest::Client::new();
 
     // Connect and immediately disconnect
-    let ws_url = common::ws_url(
-        &base,
-        &format!("/ws/presence/{HUB_ID}?token={token}"),
-    );
+    let ws_url = common::ws_url(&base, &format!("/ws/presence/{HUB_ID}?token={token}"));
     let (ws, _) = connect_async(&ws_url).await.unwrap();
     drop(ws);
 
@@ -94,5 +84,8 @@ async fn presence_offline_after_disconnect() {
         .unwrap();
 
     let bob = members.iter().find(|m| m["username"] == "bob").unwrap();
-    assert_eq!(bob["is_online"], false, "bob should be offline after WS disconnect");
+    assert_eq!(
+        bob["is_online"], false,
+        "bob should be offline after WS disconnect"
+    );
 }

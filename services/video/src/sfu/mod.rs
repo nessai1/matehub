@@ -20,7 +20,7 @@ use uuid::Uuid;
 use crate::signaling::ServerMessage;
 
 pub use session::{
-    next_layer, SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState,
+    SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState, next_layer,
 };
 
 /// Drop-on-full send to a per-WS channel. Same intent as the helper in
@@ -29,10 +29,10 @@ pub use session::{
 /// scopes work.
 #[inline]
 fn ws_try_send(tx: &mpsc::Sender<ServerMessage>, msg: ServerMessage) {
-    if let Err(e) = tx.try_send(msg) {
-        if matches!(e, mpsc::error::TrySendError::Full(_)) {
-            metrics::counter!("matehub_video_ws_send_drops_total").increment(1);
-        }
+    if let Err(e) = tx.try_send(msg)
+        && matches!(e, mpsc::error::TrySendError::Full(_))
+    {
+        metrics::counter!("matehub_video_ws_send_drops_total").increment(1);
     }
 }
 
@@ -197,10 +197,7 @@ impl SfuPool {
         cmd_buffer: usize,
     ) -> Self {
         assert!(num_shards >= 1, "need at least one media shard");
-        let local_port = udp_socket
-            .local_addr()
-            .expect("UDP socket bound")
-            .port();
+        let local_port = udp_socket.local_addr().expect("UDP socket bound").port();
         let candidate_addrs: Vec<SocketAddr> = public_ips
             .into_iter()
             .map(|ip| SocketAddr::new(ip, local_port))
@@ -275,8 +272,7 @@ fn dispatcher_loop(
                     // request — anything else is junk we can drop without
                     // burning CPU.
                     if !looks_like_stun(pkt) {
-                        metrics::counter!("matehub_video_unknown_source_drops_total")
-                            .increment(1);
+                        metrics::counter!("matehub_video_unknown_source_drops_total").increment(1);
                         None
                     } else if let Some(ufrag) = parse_stun_local_ufrag(pkt) {
                         let resolved = shared_maps.ufrag_to_target.read().get(ufrag).copied();
@@ -303,10 +299,7 @@ fn dispatcher_loop(
                     metrics::counter!("matehub_video_udp_dispatch_drops_total").increment(1);
                 }
             }
-            Err(e)
-                if e.kind() == ErrorKind::WouldBlock
-                    || e.kind() == ErrorKind::TimedOut =>
-            {
+            Err(e) if e.kind() == ErrorKind::WouldBlock || e.kind() == ErrorKind::TimedOut => {
                 // Periodic wake-up so the kernel timer drives this thread —
                 // there's no other tick mechanism.
             }
@@ -395,9 +388,7 @@ const STUN_ATTR_USERNAME: u16 = 0x0006;
 /// and magic cookie at offset 4. Drops random noise (RTP/RTCP/DTLS look
 /// nothing like this) before we burn cycles on the per-Rtc accept probe.
 fn looks_like_stun(data: &[u8]) -> bool {
-    data.len() >= 20
-        && (data[0] & 0xC0) == 0
-        && data[4..8] == STUN_MAGIC_COOKIE
+    data.len() >= 20 && (data[0] & 0xC0) == 0 && data[4..8] == STUN_MAGIC_COOKIE
 }
 
 /// Best-effort extraction of the recipient-side (LOCAL, from our POV) ufrag
@@ -486,12 +477,7 @@ impl SfuShard {
     /// stays blocking for `recv_from`, which we still need for the
     /// SO_RCVTIMEO-driven tick cadence.
     #[inline]
-    fn udp_send_one(
-        socket: &UdpSocket,
-        data: &[u8],
-        dest: SocketAddr,
-        drop_counter: &mut u64,
-    ) {
+    fn udp_send_one(socket: &UdpSocket, data: &[u8], dest: SocketAddr, drop_counter: &mut u64) {
         let sock = socket2::SockRef::from(socket);
         let addr: socket2::SockAddr = dest.into();
         match sock.send_to_with_flags(data, &addr, libc::MSG_DONTWAIT) {
@@ -851,11 +837,7 @@ impl SfuShard {
         let existing_tracks: Vec<(ParticipantId, Mid, MediaKind, Source)> = session
             .participants
             .values()
-            .flat_map(|p| {
-                p.tracks_in
-                    .iter()
-                    .map(|t| (p.id, t.mid, t.kind, t.source))
-            })
+            .flat_map(|p| p.tracks_in.iter().map(|t| (p.id, t.mid, t.kind, t.source)))
             .collect();
 
         // Add participant
@@ -907,7 +889,8 @@ impl SfuShard {
                 existing = existing_tracks.len(),
                 "queued existing tracks for new participant"
             );
-            self.pending_negotiation.insert((session_id, participant_id));
+            self.pending_negotiation
+                .insert((session_id, participant_id));
         }
 
         // Register ufrag for fast-path routing. Done last so we don't add
@@ -955,8 +938,7 @@ impl SfuShard {
                 let mut newly_opened: Vec<(ParticipantId, Mid)> = Vec::new();
                 // Collect forwarding entries to register after participant
                 // borrow is released.
-                let mut to_register: Vec<((ParticipantId, Mid), (ParticipantId, Mid))> =
-                    Vec::new();
+                let mut to_register: Vec<((ParticipantId, Mid), (ParticipantId, Mid))> = Vec::new();
 
                 for track in &mut participant.tracks_out {
                     if let TrackOutState::Negotiating(mid) = track.state {
@@ -964,18 +946,13 @@ impl SfuShard {
                         if track.kind == MediaKind::Video {
                             newly_opened.push((track.origin, track.origin_mid));
                         }
-                        to_register
-                            .push(((track.origin, track.origin_mid), (participant_id, mid)));
+                        to_register.push(((track.origin, track.origin_mid), (participant_id, mid)));
                     }
                 }
 
                 // Register fan-out entries (publishers → new subscriber).
                 for (key, pair) in to_register {
-                    session
-                        .forwarding_map
-                        .entry(key)
-                        .or_default()
-                        .push(pair);
+                    session.forwarding_map.entry(key).or_default().push(pair);
                 }
 
                 // Request keyframes from origins so the subscriber gets an IDR
@@ -1269,11 +1246,7 @@ impl SfuShard {
                         t.selected_rid = next;
                         t.last_rid_change_at = now;
                         if upgraded_to_h {
-                            keyframe_requests.push((
-                                *session_id,
-                                t.origin,
-                                t.origin_mid,
-                            ));
+                            keyframe_requests.push((*session_id, t.origin, t.origin_mid));
                         }
                     }
                 }
@@ -1380,11 +1353,7 @@ impl SfuShard {
     }
 
     /// Inner body — separated so `catch_unwind` can wrap it without nesting.
-    fn poll_participant_inner(
-        &mut self,
-        session_id: SessionId,
-        source_pid: ParticipantId,
-    ) {
+    fn poll_participant_inner(&mut self, session_id: SessionId, source_pid: ParticipantId) {
         loop {
             // Scope the mutable borrow: extract output, then release self.sessions
             let output = {
@@ -1413,11 +1382,10 @@ impl SfuShard {
                 Ok(Output::Event(event)) => match event {
                     Event::IceConnectionStateChange(state) => {
                         tracing::info!(%source_pid, ?state, "ICE state changed");
-                        if let Some(session) = self.sessions.get_mut(&session_id) {
-                            if let Some(p) = session.participants.get_mut(&source_pid) {
-                                p.ice_disconnected =
-                                    matches!(state, IceConnectionState::Disconnected);
-                            }
+                        if let Some(session) = self.sessions.get_mut(&session_id)
+                            && let Some(p) = session.participants.get_mut(&source_pid)
+                        {
+                            p.ice_disconnected = matches!(state, IceConnectionState::Disconnected);
                         }
                     }
                     Event::MediaAdded(e) => {
@@ -1462,9 +1430,10 @@ impl SfuShard {
                                         audio_loudness_ema: 64.0,
                                     });
                                 } else {
-                                    let already = p.tracks_out.iter().any(|t| {
-                                        t.origin == source_pid && t.origin_mid == e.mid
-                                    });
+                                    let already = p
+                                        .tracks_out
+                                        .iter()
+                                        .any(|t| t.origin == source_pid && t.origin_mid == e.mid);
                                     if !already {
                                         p.tracks_out.push(TrackOut {
                                             origin: source_pid,
@@ -1511,16 +1480,15 @@ impl SfuShard {
                         // the throttle so a 30-viewer fan-in coalesces into
                         // one keyframe instead of N.
                         if let Some(session) = self.sessions.get_mut(&session_id) {
-                            let origin =
-                                session.participants.get(&source_pid).and_then(|p| {
-                                    p.tracks_out.iter().find_map(|t| {
-                                        if t.open_mid() == Some(req.mid) {
-                                            Some((t.origin, t.origin_mid))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                });
+                            let origin = session.participants.get(&source_pid).and_then(|p| {
+                                p.tracks_out.iter().find_map(|t| {
+                                    if t.open_mid() == Some(req.mid) {
+                                        Some((t.origin, t.origin_mid))
+                                    } else {
+                                        None
+                                    }
+                                })
+                            });
                             if let Some((origin_pid, origin_mid)) = origin {
                                 session.request_keyframe_throttled(origin_pid, origin_mid);
                             }
@@ -1582,23 +1550,23 @@ impl SfuShard {
             let Some(p) = session.participants.get_mut(&source_pid) else {
                 return;
             };
-            let Some(track) = p.tracks_in.iter_mut().find(|t| t.mid == data.mid)
-            else {
+            let Some(track) = p.tracks_in.iter_mut().find(|t| t.mid == data.mid) else {
                 return;
             };
             let kind = track.kind;
             // Update publisher-side simulcast bookkeeping. seen_high_layer
             // remains the source of truth for the start-up fallback —
             // subscribers wanting `h` get `l` while h hasn't shown up yet.
-            if let Some(rid) = data.rid.as_ref().map(|r| &**r as &str) {
-                if rid == "h" && !track.seen_high_layer {
-                    track.seen_high_layer = true;
-                    tracing::info!(
-                        publisher = %source_pid,
-                        mid = %data.mid,
-                        "high simulcast layer live"
-                    );
-                }
+            if let Some(rid) = data.rid.as_ref().map(|r| &**r as &str)
+                && rid == "h"
+                && !track.seen_high_layer
+            {
+                track.seen_high_layer = true;
+                tracing::info!(
+                    publisher = %source_pid,
+                    mid = %data.mid,
+                    "high simulcast layer live"
+                );
             }
             let publisher_seen_high = track.seen_high_layer;
             if kind == MediaKind::Audio {
@@ -1606,8 +1574,7 @@ impl SfuShard {
                 if let Some(level_dbov) = data.ext_vals.audio_level {
                     if voice_active {
                         let loud = (-level_dbov) as f32;
-                        track.audio_loudness_ema =
-                            track.audio_loudness_ema * 0.7 + loud * 0.3;
+                        track.audio_loudness_ema = track.audio_loudness_ema * 0.7 + loud * 0.3;
                     } else {
                         track.audio_loudness_ema *= 0.7;
                     }
@@ -1754,7 +1721,9 @@ impl SfuShard {
         // Take the set so we own it; participants that re-queue (pending_offer
         // still set) re-insert themselves below for the next tick to pick up.
         let to_negotiate: Vec<(SessionId, ParticipantId)> =
-            std::mem::take(&mut self.pending_negotiation).into_iter().collect();
+            std::mem::take(&mut self.pending_negotiation)
+                .into_iter()
+                .collect();
 
         if to_negotiate.is_empty() {
             return;

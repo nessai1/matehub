@@ -114,8 +114,7 @@ async fn sso_login(
         // if general didn't recognize our hub_secret (shouldn't happen in a
         // working install, but surface it cleanly if it does).
         return Err((
-            StatusCode::from_u16(status.as_u16())
-                .unwrap_or(StatusCode::BAD_GATEWAY),
+            StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
             format!("exchange failed: {body}"),
         ));
     }
@@ -200,14 +199,13 @@ async fn sso_login(
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let groups: Vec<i64> = sqlx::query_scalar(
-        "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
-    )
-    .bind(state.hub_id)
-    .bind(user.id)
-    .fetch_all(&state.pool)
-    .await
-    .unwrap_or_default();
+    let groups: Vec<i64> =
+        sqlx::query_scalar("SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2")
+            .bind(state.hub_id)
+            .bind(user.id)
+            .fetch_all(&state.pool)
+            .await
+            .unwrap_or_default();
 
     // Issue hub-scoped JWT. Signed with HUB_SECRET (= JWT_SECRET env).
     let now = chrono::Utc::now().timestamp();

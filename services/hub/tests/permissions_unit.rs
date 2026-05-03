@@ -19,19 +19,44 @@ fn member_channel_preset_is_correct() {
 
 #[test]
 fn hub_bits_dont_overlap_channel_bits() {
-    let channel_mask = bits::READ | bits::WRITE | bits::CONNECT | bits::SPEAK | bits::VIDEO | bits::MANAGE_CHANNEL | bits::ADMIN_CHANNEL;
-    let hub_mask = bits::CREATE_TEXT_CHANNELS | bits::CREATE_VOICE_CHANNELS | bits::EDIT_OTHER_CHANNELS | bits::MANAGE_MEMBERS | bits::INVITE_PERMANENT | bits::CREATE_TEMP_LINKS | bits::MANAGE_ROLES;
-    assert_eq!(channel_mask & hub_mask, 0, "channel and hub bits must not overlap");
+    let channel_mask = bits::READ
+        | bits::WRITE
+        | bits::CONNECT
+        | bits::SPEAK
+        | bits::VIDEO
+        | bits::MANAGE_CHANNEL
+        | bits::ADMIN_CHANNEL;
+    let hub_mask = bits::CREATE_TEXT_CHANNELS
+        | bits::CREATE_VOICE_CHANNELS
+        | bits::EDIT_OTHER_CHANNELS
+        | bits::MANAGE_MEMBERS
+        | bits::INVITE_PERMANENT
+        | bits::CREATE_TEMP_LINKS
+        | bits::MANAGE_ROLES;
+    assert_eq!(
+        channel_mask & hub_mask,
+        0,
+        "channel and hub bits must not overlap"
+    );
 }
 
 #[test]
 fn each_bit_is_power_of_two() {
     let all_bits = [
-        bits::READ, bits::WRITE, bits::CONNECT, bits::SPEAK, bits::VIDEO,
-        bits::MANAGE_CHANNEL, bits::ADMIN_CHANNEL,
-        bits::CREATE_TEXT_CHANNELS, bits::CREATE_VOICE_CHANNELS,
-        bits::EDIT_OTHER_CHANNELS, bits::MANAGE_MEMBERS,
-        bits::INVITE_PERMANENT, bits::CREATE_TEMP_LINKS, bits::MANAGE_ROLES,
+        bits::READ,
+        bits::WRITE,
+        bits::CONNECT,
+        bits::SPEAK,
+        bits::VIDEO,
+        bits::MANAGE_CHANNEL,
+        bits::ADMIN_CHANNEL,
+        bits::CREATE_TEXT_CHANNELS,
+        bits::CREATE_VOICE_CHANNELS,
+        bits::EDIT_OTHER_CHANNELS,
+        bits::MANAGE_MEMBERS,
+        bits::INVITE_PERMANENT,
+        bits::CREATE_TEMP_LINKS,
+        bits::MANAGE_ROLES,
     ];
     for (i, bit) in all_bits.iter().enumerate() {
         assert_eq!(*bit, 1 << i, "bit {i} should be {}", 1 << i);
@@ -78,13 +103,16 @@ fn deny_overrides_allow() {
     ];
     let eff = effective_permissions(&perms);
     assert!(has_permission(eff, bits::READ));
-    assert!(!has_permission(eff, bits::WRITE), "deny should override allow");
+    assert!(
+        !has_permission(eff, bits::WRITE),
+        "deny should override allow"
+    );
 }
 
 #[test]
 fn deny_from_one_group_overrides_allow_from_another() {
     let perms = vec![
-        make_perm(bits::MEMBER_CHANNEL, 0),    // everyone: all channel perms
+        make_perm(bits::MEMBER_CHANNEL, 0), // everyone: all channel perms
         make_perm(0, bits::WRITE | bits::VIDEO), // muted group: deny write+video
     ];
     let eff = effective_permissions(&perms);
@@ -105,7 +133,12 @@ fn empty_permissions_means_nothing_allowed() {
 // ── UserPerms logic ────────────────────────────────
 
 fn make_perms(hub_bits: i32, top_position: i32, is_admin: bool, is_creator: bool) -> UserPerms {
-    UserPerms { hub_bits, top_position, is_admin, is_creator }
+    UserPerms {
+        hub_bits,
+        top_position,
+        is_admin,
+        is_creator,
+    }
 }
 
 #[test]
@@ -132,7 +165,12 @@ fn admin_grantable_bits_is_all() {
 
 #[test]
 fn regular_user_only_has_granted_bits() {
-    let p = make_perms(bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS, 2, false, false);
+    let p = make_perms(
+        bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS,
+        2,
+        false,
+        false,
+    );
     assert!(p.has(bits::CREATE_TEXT_CHANNELS));
     assert!(p.has(bits::MANAGE_MEMBERS));
     assert!(!p.has(bits::MANAGE_ROLES));
@@ -142,14 +180,28 @@ fn regular_user_only_has_granted_bits() {
 #[test]
 fn position_hierarchy_enforced() {
     let moderator = make_perms(bits::MANAGE_ROLES, 1, false, false);
-    assert!(moderator.can_manage_position(2), "can manage lower (higher number)");
-    assert!(!moderator.can_manage_position(1), "cannot manage same position");
-    assert!(!moderator.can_manage_position(0), "cannot manage higher position");
+    assert!(
+        moderator.can_manage_position(2),
+        "can manage lower (higher number)"
+    );
+    assert!(
+        !moderator.can_manage_position(1),
+        "cannot manage same position"
+    );
+    assert!(
+        !moderator.can_manage_position(0),
+        "cannot manage higher position"
+    );
 }
 
 #[test]
 fn grantable_bits_limited_to_own() {
-    let p = make_perms(bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS, 1, false, false);
+    let p = make_perms(
+        bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS,
+        1,
+        false,
+        false,
+    );
     let grantable = p.grantable_bits();
     assert_eq!(grantable, bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS);
     // Cannot grant MANAGE_ROLES (don't have it)
@@ -168,7 +220,10 @@ fn user_without_groups_has_no_permissions() {
 #[test]
 fn creator_flag_independent_of_admin() {
     let creator_not_admin = make_perms(0, 5, false, true);
-    assert!(!creator_not_admin.has(bits::MANAGE_ROLES), "creator without admin has no hub perms");
+    assert!(
+        !creator_not_admin.has(bits::MANAGE_ROLES),
+        "creator without admin has no hub perms"
+    );
     assert!(creator_not_admin.is_creator);
 }
 
@@ -187,7 +242,9 @@ fn has_permission_requires_all_bits_in_compound() {
 fn granting_only_own_bits_prevents_privilege_escalation() {
     let moderator = make_perms(
         bits::CREATE_TEXT_CHANNELS | bits::MANAGE_MEMBERS,
-        1, false, false,
+        1,
+        false,
+        false,
     );
     let requested = bits::MANAGE_ROLES; // doesn't have this
     let illegal = requested & !moderator.grantable_bits();

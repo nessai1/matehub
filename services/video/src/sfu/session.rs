@@ -154,7 +154,10 @@ impl SfuSession {
         let Some(mut writer) = publisher.rtc.writer(publisher_mid) else {
             return false;
         };
-        if writer.request_keyframe(None, KeyframeRequestKind::Pli).is_ok() {
+        if writer
+            .request_keyframe(None, KeyframeRequestKind::Pli)
+            .is_ok()
+        {
             self.last_keyframe_at
                 .insert((publisher_pid, publisher_mid), now);
             true
@@ -184,9 +187,7 @@ impl SfuSession {
 /// publishers, OR everyone if there are too few to bother filtering.
 /// Pulled out as a free function so it's unit-testable without standing up
 /// a full SfuParticipant (Rtc, ws_tx, etc).
-pub fn pick_top_audio(
-    mut audio: Vec<(f32, ParticipantId, Mid)>,
-) -> HashSet<(ParticipantId, Mid)> {
+pub fn pick_top_audio(mut audio: Vec<(f32, ParticipantId, Mid)>) -> HashSet<(ParticipantId, Mid)> {
     let mut out = HashSet::new();
     if audio.len() < AUDIO_FILTER_MIN_PUBLISHERS {
         for (_, pid, mid) in audio {
@@ -194,9 +195,7 @@ pub fn pick_top_audio(
         }
         return out;
     }
-    audio.sort_by(|a, b| {
-        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
-    });
+    audio.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     for (_, pid, mid) in audio.into_iter().take(AUDIO_TOP_K) {
         out.insert((pid, mid));
     }
@@ -433,7 +432,8 @@ mod tests {
         let mut s = SfuSession::new(Uuid::new_v4());
         let a = pid();
         let b = pid();
-        s.forwarding_map.insert((a, Mid::new()), vec![(b, Mid::new())]);
+        s.forwarding_map
+            .insert((a, Mid::new()), vec![(b, Mid::new())]);
         let snapshot = s.forwarding_map.clone();
 
         s.drop_from_forwarding(pid()); // unrelated

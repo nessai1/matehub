@@ -60,7 +60,10 @@ pub async fn mark_read(
     let _: Result<(), _> = conn.del(mention_key(user_id, channel_id)).await;
 
     // Persist to ScyllaDB (source of truth)
-    if let Err(e) = data.mark_read(user_id, hub_id, channel_id, last_read_message_id).await {
+    if let Err(e) = data
+        .mark_read(user_id, hub_id, channel_id, last_read_message_id)
+        .await
+    {
         tracing::error!("ScyllaDB mark_read failed: {e}");
     }
 }

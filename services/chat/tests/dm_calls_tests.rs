@@ -17,7 +17,11 @@ use matehub_hub::db::seed::{DEV_HUB_ID, DEV_USER_ALICE, DEV_USER_BOB};
 /// Open a DM Alice↔Bob directly in PG, returning the channel id.
 async fn open_dm_alice_bob(pg: &sqlx::PgPool) -> i64 {
     use matehub_common::snowflake;
-    let pair_key = format!("{}:{}", DEV_USER_ALICE.min(DEV_USER_BOB), DEV_USER_ALICE.max(DEV_USER_BOB));
+    let pair_key = format!(
+        "{}:{}",
+        DEV_USER_ALICE.min(DEV_USER_BOB),
+        DEV_USER_ALICE.max(DEV_USER_BOB)
+    );
 
     sqlx::query(
         "INSERT INTO channels (id, hub_id, name, type, position, dm_pair_key)
@@ -31,14 +35,13 @@ async fn open_dm_alice_bob(pg: &sqlx::PgPool) -> i64 {
     .await
     .unwrap();
 
-    let channel_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM channels WHERE hub_id = $1 AND dm_pair_key = $2",
-    )
-    .bind(DEV_HUB_ID)
-    .bind(&pair_key)
-    .fetch_one(pg)
-    .await
-    .unwrap();
+    let channel_id: i64 =
+        sqlx::query_scalar("SELECT id FROM channels WHERE hub_id = $1 AND dm_pair_key = $2")
+            .bind(DEV_HUB_ID)
+            .bind(&pair_key)
+            .fetch_one(pg)
+            .await
+            .unwrap();
 
     for uid in &[DEV_USER_ALICE, DEV_USER_BOB] {
         sqlx::query(
@@ -74,22 +77,17 @@ async fn try_next_json(
     >,
     timeout_ms: u64,
 ) -> Option<Value> {
-    let msg = tokio::time::timeout(
-        std::time::Duration::from_millis(timeout_ms),
-        ws.next(),
-    )
-    .await
-    .ok()??
-    .ok()?;
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), ws.next())
+        .await
+        .ok()??
+        .ok()?;
     serde_json::from_str(&msg.into_text().ok()?).ok()
 }
 
 async fn identify(
     base: &str,
     token: &str,
-) -> tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-> {
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     let ws_url = common::ws_url(base, "/gateway");
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
     let hello = next_json(&mut ws).await;
@@ -153,7 +151,10 @@ async fn dm_call_invite_reaches_recipient_only() {
 
     // Charlie does NOT.
     let leak = try_next_json(&mut charlie_ws, 400).await;
-    assert!(leak.is_none(), "DM call leaked to non-participant: {leak:?}");
+    assert!(
+        leak.is_none(),
+        "DM call leaked to non-participant: {leak:?}"
+    );
 }
 
 #[tokio::test]
@@ -209,6 +210,10 @@ async fn dm_call_endpoints_reject_non_participant() {
             .send()
             .await
             .unwrap();
-        assert_eq!(resp.status(), 403, "/{path} should be forbidden for non-participant");
+        assert_eq!(
+            resp.status(),
+            403,
+            "/{path} should be forbidden for non-participant"
+        );
     }
 }

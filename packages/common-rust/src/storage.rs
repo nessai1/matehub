@@ -33,7 +33,13 @@ pub enum UploadError {
 
 impl S3Storage {
     /// Create from explicit parameters (bucket name passed in, not from env).
-    pub async fn new(endpoint: &str, region: &str, access_key: &str, secret_key: &str, bucket: &str) -> Self {
+    pub async fn new(
+        endpoint: &str,
+        region: &str,
+        access_key: &str,
+        secret_key: &str,
+        bucket: &str,
+    ) -> Self {
         let creds = Credentials::new(access_key, secret_key, None, None, "env");
 
         // aws-sdk-s3 1.40+ defaults to CRC32 flexible-checksums on every request,
@@ -94,8 +100,10 @@ impl S3Storage {
         key: &str,
         content_type: &str,
         body: Vec<u8>,
-    ) -> Result<String, aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>>
-    {
+    ) -> Result<
+        String,
+        aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError>,
+    > {
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -200,6 +208,7 @@ impl S3Storage {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_multipart<S, E>(
         &self,
         key: &str,

@@ -75,10 +75,10 @@ async fn patch_hub(
             return Err(StatusCode::BAD_REQUEST);
         }
     }
-    if let Some(desc) = body.description.as_deref() {
-        if desc.chars().count() > 500 {
-            return Err(StatusCode::BAD_REQUEST);
-        }
+    if let Some(desc) = body.description.as_deref()
+        && desc.chars().count() > 500
+    {
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     // COALESCE($1, name) keeps the existing value when the field is null in
@@ -148,7 +148,10 @@ async fn upload_hub_avatar(
     auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, StatusCode> {
-    let storage = state.storage.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let storage = state
+        .storage
+        .as_ref()
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
     if auth.0.hub_id != hub_id {
         return Err(StatusCode::FORBIDDEN);

@@ -9,7 +9,11 @@ const HUB_ID: i64 = 7001;
 const CHANNEL_ID: i64 = 8001;
 
 /// Helper: read next WS text frame, parse as JSON.
-async fn next_json(ws: &mut tokio_tungstenite::WebSocketStream<impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>) -> Value {
+async fn next_json(
+    ws: &mut tokio_tungstenite::WebSocketStream<
+        impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+    >,
+) -> Value {
     let msg = tokio::time::timeout(std::time::Duration::from_secs(3), ws.next())
         .await
         .expect("timeout")
@@ -20,7 +24,13 @@ async fn next_json(ws: &mut tokio_tungstenite::WebSocketStream<impl tokio::io::A
 
 /// Helper: connect, receive HELLO, send IDENTIFY, receive READY.
 /// Returns (ws_stream, session_id).
-async fn identify(base: &str, token: &str) -> (tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>, String) {
+async fn identify(
+    base: &str,
+    token: &str,
+) -> (
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    String,
+) {
     let ws_url = common::ws_url(base, "/gateway");
     let (mut ws, _) = connect_async(&ws_url).await.unwrap();
 
@@ -97,7 +107,9 @@ async fn gateway_invalid_token_gets_invalid_session() {
 
     // IDENTIFY with bad token
     ws.send(Message::Text(
-        json!({"op": 2, "d": {"token": "invalid"}}).to_string().into(),
+        json!({"op": 2, "d": {"token": "invalid"}})
+            .to_string()
+            .into(),
     ))
     .await
     .unwrap();
@@ -115,11 +127,9 @@ async fn gateway_heartbeat_ack() {
     let (mut ws, _session_id) = identify(&base, &token).await;
 
     // Send HEARTBEAT (op=1)
-    ws.send(Message::Text(
-        json!({"op": 1, "d": 0}).to_string().into(),
-    ))
-    .await
-    .unwrap();
+    ws.send(Message::Text(json!({"op": 1, "d": 0}).to_string().into()))
+        .await
+        .unwrap();
 
     // HEARTBEAT_ACK (op=11)
     let parsed = next_json(&mut ws).await;

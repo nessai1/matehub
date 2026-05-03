@@ -154,12 +154,10 @@ async fn list_dms(
     auth: AuthUser,
 ) -> Result<Json<Vec<DmChannelResponse>>, StatusCode> {
     let me = auth.0.sub;
-    let mut conn = hub_connection(&pool, hub_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(?e, %hub_id, "hub_connection failed in list_dms");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let mut conn = hub_connection(&pool, hub_id).await.map_err(|e| {
+        tracing::error!(?e, %hub_id, "hub_connection failed in list_dms");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let channels = sqlx::query_as::<_, Channel>(
         "SELECT c.* FROM channels c

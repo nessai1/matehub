@@ -7,7 +7,13 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "stage1.txt"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      ".next/**",
+      "next-env.d.ts",
+      "stage1.txt",
+    ],
   },
   js.configs.recommended,
   {
@@ -25,12 +31,26 @@ export default [
     rules: {
       ...tsPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      // TS already enforces this and knows DOM/lib globals (React, RTCIceServer, …);
+      // duplicating it in eslint just produces noise on JSX-runtime imports.
+      "no-undef": "off",
       "@typescript-eslint/no-unused-vars": [
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
+      // Hint at React Compiler readiness, but don't block CI on it: the
+      // project doesn't have the compiler enabled yet, so manual useCallback
+      // is still load-bearing for referential stability.
+      "react-hooks/preserve-manual-memoization": "warn",
       "react-refresh/only-export-components": "off",
+    },
+  },
+  {
+    files: ["**/*.cjs", "scripts/**/*.{js,cjs}"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: { ...globals.node },
     },
   },
 ];

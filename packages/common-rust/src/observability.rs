@@ -28,8 +28,8 @@ use tracing_subscriber::EnvFilter;
 /// before any log macros fire. Subsequent calls panic (subscriber is
 /// install-once).
 pub fn init_tracing(default_filter: &str) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_filter));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     let format = std::env::var("LOG_FORMAT").unwrap_or_default();
 

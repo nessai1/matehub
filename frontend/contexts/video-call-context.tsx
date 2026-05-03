@@ -16,7 +16,7 @@ import type {
   Participant,
   ScreenShareProfile,
   VideoClient,
-} from "../../packages/sdk-video/src";
+} from "@matehub/sdk-video";
 
 const VIDEO_SERVER_URL = "/api/video";
 
@@ -157,7 +157,6 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // ship more reasons (admin kick, etc.) without FE changes here.
   useEffect(() => {
     if (forceKickReason === null) return;
-    leaveVoice();
     if (forceKickReason === "joined_elsewhere") {
       toast.warning(t("Disconnected from call"), {
         description: t(
@@ -169,7 +168,12 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         description: forceKickReason,
       });
     }
-    setForceKickReason(null);
+    // setState calls are dispatched via a microtask so the effect body
+    // stays side-effect-only (toast above is a side effect, not setState).
+    queueMicrotask(() => {
+      leaveVoice();
+      setForceKickReason(null);
+    });
   }, [forceKickReason, leaveVoice]);
 
   const value = useMemo<VideoCallContextValue>(

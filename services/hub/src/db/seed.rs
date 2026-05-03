@@ -33,7 +33,12 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     let users = [
         (DEV_USER_ALICE, "alice", "Alice", "alice@matehub.dev"),
         (DEV_USER_BOB, "bob", "Bob", "bob@matehub.dev"),
-        (DEV_USER_CHARLIE, "charlie", "Charlie", "charlie@matehub.dev"),
+        (
+            DEV_USER_CHARLIE,
+            "charlie",
+            "Charlie",
+            "charlie@matehub.dev",
+        ),
     ];
     for (id, username, display_name, email) in &users {
         sqlx::query(
@@ -134,13 +139,12 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
         ("stage-test", "stage", 3),
     ];
     for (name, ch_type, position) in extra_channels {
-        let existing: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM channels WHERE hub_id = $1 AND name = $2",
-        )
-        .bind(DEV_HUB_ID)
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
+        let existing: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM channels WHERE hub_id = $1 AND name = $2")
+                .bind(DEV_HUB_ID)
+                .bind(name)
+                .fetch_optional(pool)
+                .await?;
         if existing.is_some() {
             continue;
         }

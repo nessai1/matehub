@@ -130,11 +130,13 @@ function TempInviteForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const placeholderNick = useMemo(() => {
-    if (!hubId) return "tempuser";
-    const rand = Math.random().toString(36).slice(2, 8);
-    return `tempuser-${hubId.slice(-4)}-${rand}`;
-  }, [hubId]);
+  // Random suffix is generated once per dialog mount; recomputing it on every
+  // render would be impure and would also flicker the placeholder text.
+  const [randSuffix] = useState(() => Math.random().toString(36).slice(2, 8));
+  const placeholderNick = useMemo(
+    () => (hubId ? `tempuser-${hubId.slice(-4)}-${randSuffix}` : "tempuser"),
+    [hubId, randSuffix],
+  );
 
   const submit = async () => {
     if (!hubId || !token || !groupId) {

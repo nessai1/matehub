@@ -78,13 +78,11 @@ async fn update_profile(
         avatar_url: Option<String>,
     }
 
-    let row = sqlx::query_as::<_, Row>(
-        "SELECT display_name, avatar_url FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let row = sqlx::query_as::<_, Row>("SELECT display_name, avatar_url FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(ProfileResponse {
         user_id,

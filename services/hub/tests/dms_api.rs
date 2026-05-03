@@ -45,10 +45,8 @@ async fn open_dm_creates_channel_with_two_participants() {
     assert_eq!(body["name"], "");
     let participants = body["participants"].as_array().unwrap();
     assert_eq!(participants.len(), 2);
-    let pset: std::collections::HashSet<&str> = participants
-        .iter()
-        .filter_map(|v| v.as_str())
-        .collect();
+    let pset: std::collections::HashSet<&str> =
+        participants.iter().filter_map(|v| v.as_str()).collect();
     assert!(pset.contains(ALICE_ID));
     assert!(pset.contains(BOB_ID));
 }

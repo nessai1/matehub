@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -45,33 +45,44 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const headers = (): Record<string, string> => ({
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${session?.token}`,
-  });
+  const headers = useMemo(
+    (): Record<string, string> => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.token}`,
+    }),
+    [session?.token],
+  );
 
-  // Reset on close, fetch on open
+  // Fetch groups when the dialog opens. Inline IIFE so the await chain is
+  // visible to React Compiler (a separate useCallback would look like a
+  // sync setState in the effect body).
   useEffect(() => {
-    if (!open) {
-      setSelectedId(null);
-    }
-  }, [open]);
-
-  // Fetch groups
-  const fetchGroups = useCallback(async () => {
-    if (!session?.hubId || !session?.token) return;
-    const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    });
-    if (res.ok) {
+    if (!open || !session?.hubId || !session?.token) return;
+    let cancelled = false;
+    const hubId = session.hubId;
+    const token = session.token;
+    (async () => {
+      const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/groups`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || !res.ok) return;
       const data: Group[] = await res.json();
-      setGroups(data.sort((a, b) => a.position - b.position));
-    }
-  }, [session?.hubId, session?.token]);
+      if (!cancelled) {
+        setGroups(data.sort((a, b) => a.position - b.position));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session?.hubId, session?.token]);
 
-  useEffect(() => {
-    if (open) fetchGroups();
-  }, [open, fetchGroups]);
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) setSelectedId(null);
+      onOpenChange(next);
+    },
+    [onOpenChange],
+  );
 
   const selected = groups.find((g) => g.id === selectedId) ?? null;
   const isProtected = selected?.name === "admin" || selected?.name === "everyone";
@@ -83,7 +94,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
     if (!session?.hubId) return;
     const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups`, {
       method: "POST",
-      headers: headers(),
+      headers,
       body: JSON.stringify({ name: "New Role", color: "#6366f1" }),
     });
     if (res.ok) {
@@ -92,7 +103,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
       setSelectedId(g.id);
       onGroupsChanged?.();
     }
-  }, [session, onGroupsChanged]);
+  }, [session, headers, onGroupsChanged]);
 
   // ── Update group ──
   const updateGroup = useCallback(
@@ -100,7 +111,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
       if (!session?.hubId) return;
       const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups/${groupId}`, {
         method: "PATCH",
-        headers: headers(),
+        headers,
         body: JSON.stringify(data),
       });
       if (res.ok) {
@@ -109,7 +120,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
         onGroupsChanged?.();
       }
     },
-    [session, onGroupsChanged],
+    [session, headers, onGroupsChanged],
   );
 
   // ── Delete group ──
@@ -118,7 +129,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
       if (!session?.hubId) return;
       const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups/${groupId}`, {
         method: "DELETE",
-        headers: headers(),
+        headers,
       });
       if (res.ok) {
         setGroups((prev) => prev.filter((g) => g.id !== groupId));
@@ -126,7 +137,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
         onGroupsChanged?.();
       }
     },
-    [session, onGroupsChanged],
+    [session, headers, onGroupsChanged],
   );
 
   // ── Toggle permission bit ──
@@ -149,7 +160,7 @@ export function GroupsRolesDialog({ open, onOpenChange, onGroupsChanged }: Props
   ];
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg p-0 gap-0">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle className="flex items-center gap-2">

@@ -40,15 +40,23 @@ pub async fn transcode_to_mp4(input: &Path, output: &Path) -> Result<VideoInfo> 
     // Fast preset, reasonable quality. No hardware accel yet (works everywhere).
     let status = Command::new("ffmpeg")
         .args([
-            "-y",                    // overwrite output
-            "-i", &input.to_string_lossy(),
-            "-c:v", "libx264",       // H.264 video
-            "-preset", "veryfast",   // speed over compression
-            "-crf", "23",            // quality (lower = better, 18-28 reasonable)
-            "-movflags", "+faststart", // web streaming (moov atom at front)
-            "-c:a", "aac",           // AAC audio
-            "-b:a", "128k",          // audio bitrate
-            "-pix_fmt", "yuv420p",   // broad compatibility
+            "-y", // overwrite output
+            "-i",
+            &input.to_string_lossy(),
+            "-c:v",
+            "libx264", // H.264 video
+            "-preset",
+            "veryfast", // speed over compression
+            "-crf",
+            "23", // quality (lower = better, 18-28 reasonable)
+            "-movflags",
+            "+faststart", // web streaming (moov atom at front)
+            "-c:a",
+            "aac", // AAC audio
+            "-b:a",
+            "128k", // audio bitrate
+            "-pix_fmt",
+            "yuv420p", // broad compatibility
             &output.to_string_lossy(),
         ])
         .status()
@@ -73,10 +81,14 @@ pub async fn transcode_to_mp4(input: &Path, output: &Path) -> Result<VideoInfo> 
 async fn probe_video(path: &Path) -> Result<VideoInfo> {
     let out = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height:format=duration",
-            "-of", "json",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height:format=duration",
+            "-of",
+            "json",
             &path.to_string_lossy(),
         ])
         .output()
@@ -95,5 +107,9 @@ async fn probe_video(path: &Path) -> Result<VideoInfo> {
         .as_str()
         .and_then(|s| s.parse::<f32>().ok());
 
-    Ok(VideoInfo { width, height, duration })
+    Ok(VideoInfo {
+        width,
+        height,
+        duration,
+    })
 }

@@ -61,8 +61,10 @@ async fn create_invitation(
 ) -> Result<(StatusCode, Json<InvitationLink>), Response> {
     let username = body.username.trim();
     if username.is_empty() {
-        return Err(CreateInviteError { error: "username_required" }
-            .into_response(StatusCode::BAD_REQUEST));
+        return Err(CreateInviteError {
+            error: "username_required",
+        }
+        .into_response(StatusCode::BAD_REQUEST));
     }
 
     // Email is optional; normalise empty string to None so the rest of the
@@ -73,19 +75,20 @@ async fn create_invitation(
         .map(|e| e.trim())
         .filter(|e| !e.is_empty());
 
-    if let Some(addr) = email {
-        if !is_valid_email(addr) {
-            return Err(CreateInviteError { error: "invalid_email" }
-                .into_response(StatusCode::BAD_REQUEST));
+    if let Some(addr) = email
+        && !is_valid_email(addr)
+    {
+        return Err(CreateInviteError {
+            error: "invalid_email",
         }
+        .into_response(StatusCode::BAD_REQUEST));
     }
 
     let caller = resolve_user_perms(&pool, hub_id, auth.0.sub)
         .await
         .map_err(|_| internal_error())?;
     if !caller.has(bits::INVITE_PERMANENT) {
-        return Err(CreateInviteError { error: "forbidden" }
-            .into_response(StatusCode::FORBIDDEN));
+        return Err(CreateInviteError { error: "forbidden" }.into_response(StatusCode::FORBIDDEN));
     }
 
     let mut conn = hub_connection(&pool, hub_id)
@@ -104,8 +107,10 @@ async fn create_invitation(
             .await
             .map_err(|_| internal_error())?;
     if username_taken_in_users {
-        return Err(CreateInviteError { error: "username_taken" }
-            .into_response(StatusCode::CONFLICT));
+        return Err(CreateInviteError {
+            error: "username_taken",
+        }
+        .into_response(StatusCode::CONFLICT));
     }
 
     let username_pending: bool = sqlx::query_scalar(
@@ -118,8 +123,10 @@ async fn create_invitation(
     .await
     .map_err(|_| internal_error())?;
     if username_pending {
-        return Err(CreateInviteError { error: "username_pending" }
-            .into_response(StatusCode::CONFLICT));
+        return Err(CreateInviteError {
+            error: "username_pending",
+        }
+        .into_response(StatusCode::CONFLICT));
     }
 
     if let Some(addr) = email {
@@ -130,8 +137,10 @@ async fn create_invitation(
                 .await
                 .map_err(|_| internal_error())?;
         if email_taken_in_users {
-            return Err(CreateInviteError { error: "email_taken" }
-                .into_response(StatusCode::CONFLICT));
+            return Err(CreateInviteError {
+                error: "email_taken",
+            }
+            .into_response(StatusCode::CONFLICT));
         }
 
         let email_pending: bool = sqlx::query_scalar(
@@ -144,8 +153,10 @@ async fn create_invitation(
         .await
         .map_err(|_| internal_error())?;
         if email_pending {
-            return Err(CreateInviteError { error: "email_pending" }
-                .into_response(StatusCode::CONFLICT));
+            return Err(CreateInviteError {
+                error: "email_pending",
+            }
+            .into_response(StatusCode::CONFLICT));
         }
     }
 
@@ -188,17 +199,22 @@ async fn get_invitation(
 ) -> Result<Json<InvitationPreview>, StatusCode> {
     // Public endpoint: no RLS context (invitations are looked up by an
     // unguessable token, not by hub_id).
-    let row: Option<(String, Option<String>, Option<chrono::DateTime<chrono::Utc>>, String)> =
-        sqlx::query_as(
-            "SELECT i.username, i.email, i.used_at, h.name
+    type InvitationRow = (
+        String,                                // i.username
+        Option<String>,                        // i.email
+        Option<chrono::DateTime<chrono::Utc>>, // i.used_at
+        String,                                // h.name
+    );
+    let row: Option<InvitationRow> = sqlx::query_as(
+        "SELECT i.username, i.email, i.used_at, h.name
              FROM invitations i
              JOIN hubs h ON h.id = i.hub_id
              WHERE i.token = $1",
-        )
-        .bind(&token)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    )
+    .bind(&token)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let (username, email, used_at, hub_name) = row.ok_or(StatusCode::NOT_FOUND)?;
 
@@ -244,13 +260,12 @@ async fn accept_invitation(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Lock the row so two concurrent accepts can't both win.
-    let invitation: Option<Invitation> = sqlx::query_as::<_, Invitation>(
-        "SELECT * FROM invitations WHERE token = $1 FOR UPDATE",
-    )
-    .bind(&token)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let invitation: Option<Invitation> =
+        sqlx::query_as::<_, Invitation>("SELECT * FROM invitations WHERE token = $1 FOR UPDATE")
+            .bind(&token)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let invitation = invitation.ok_or(StatusCode::NOT_FOUND)?;
     if invitation.used_at.is_some() {
@@ -286,23 +301,20 @@ async fn accept_invitation(
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     })?;
 
-    sqlx::query(
-        "INSERT INTO hub_members (hub_id, user_id, role) VALUES ($1, $2, 'member')",
-    )
-    .bind(hub_id)
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("INSERT INTO hub_members (hub_id, user_id, role) VALUES ($1, $2, 'member')")
+        .bind(hub_id)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Drop the new user into the hub's default group ("everyone").
-    let everyone_group_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1",
-    )
-    .bind(hub_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let everyone_group_id: i64 =
+        sqlx::query_scalar("SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1")
+            .bind(hub_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let group_ids: Vec<i64> = if let Some(invite_group_id) = invitation.group_id {
         vec![everyone_group_id, invite_group_id]
@@ -323,14 +335,12 @@ async fn accept_invitation(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
 
-    sqlx::query(
-        "UPDATE invitations SET used_at = now(), used_by = $1 WHERE id = $2",
-    )
-    .bind(user_id)
-    .bind(invitation.id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    sqlx::query("UPDATE invitations SET used_at = now(), used_by = $1 WHERE id = $2")
+        .bind(user_id)
+        .bind(invitation.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     tx.commit()
         .await
@@ -396,6 +406,35 @@ fn is_valid_email(s: &str) -> bool {
     domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
 }
 
+// ── Token gen (same scheme as temp_users) ───────────────────────
+
+fn generate_token() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let bytes: [u8; 24] = rng.random();
+    base64_url_encode(&bytes)
+}
+
+fn base64_url_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut result = String::with_capacity(data.len() * 4 / 3 + 1);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize] as char);
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_valid_email;
@@ -452,33 +491,4 @@ mod tests {
         assert!(!is_valid_email("alice@example.com "));
         assert!(!is_valid_email("alice@ example.com"));
     }
-}
-
-// ── Token gen (same scheme as temp_users) ───────────────────────
-
-fn generate_token() -> String {
-    use rand::Rng;
-    let mut rng = rand::rng();
-    let bytes: [u8; 24] = rng.random();
-    base64_url_encode(&bytes)
-}
-
-fn base64_url_encode(data: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut result = String::with_capacity(data.len() * 4 / 3 + 1);
-    for chunk in data.chunks(3) {
-        let b0 = chunk[0] as u32;
-        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
-        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if chunk.len() > 1 {
-            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        }
-        if chunk.len() > 2 {
-            result.push(CHARS[(triple & 0x3F) as usize] as char);
-        }
-    }
-    result
 }

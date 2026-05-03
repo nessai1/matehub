@@ -54,6 +54,10 @@ pub async fn spawn_app() -> String {
 }
 
 /// Login as a dev user and return the JWT token.
+// Each integration-test file is a separate crate that pulls common.rs in via
+// `mod common;`. If a given test binary doesn't call `login`, clippy flags it
+// as dead in that crate. The helper still pulls its weight for the others.
+#[allow(dead_code)]
 pub async fn login(base: &str, username: &str) -> String {
     let client = reqwest::Client::new();
     let resp: serde_json::Value = client

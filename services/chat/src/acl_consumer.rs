@@ -94,10 +94,7 @@ async fn apply(conn: &mut RedisPool, payload: &InvalidatePayload) {
     tracing::info!(%pattern, deleted = count, "ACL cache invalidated");
 }
 
-async fn collect_matching(
-    conn: &mut RedisPool,
-    pattern: &str,
-) -> redis::RedisResult<Vec<String>> {
+async fn collect_matching(conn: &mut RedisPool, pattern: &str) -> redis::RedisResult<Vec<String>> {
     let mut cursor: u64 = 0;
     let mut out = Vec::new();
     loop {

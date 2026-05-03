@@ -163,7 +163,15 @@ async fn start(
     if !access::check(&state, hub_id, channel_id, auth.0.sub, Action::Write).await {
         return Err(StatusCode::FORBIDDEN);
     }
-    publish_call_event(&state, hub_id, channel_id, auth.0.sub, "dm_call_invite", None).await;
+    publish_call_event(
+        &state,
+        hub_id,
+        channel_id,
+        auth.0.sub,
+        "dm_call_invite",
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -228,7 +236,15 @@ async fn cancel(
     // Cancel is the inviter's own bail-out before the recipient picked up.
     // No system message — the recipient will see the modal close and that's
     // it. (If we ever want a "missed call from X" entry we'd write it here.)
-    publish_call_event(&state, hub_id, channel_id, auth.0.sub, "dm_call_cancel", None).await;
+    publish_call_event(
+        &state,
+        hub_id,
+        channel_id,
+        auth.0.sub,
+        "dm_call_cancel",
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 

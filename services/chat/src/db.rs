@@ -86,10 +86,7 @@ CREATE TABLE IF NOT EXISTS matehub_chat.attachments (
 "#;
 
 pub async fn connect(scylla_url: &str) -> Result<ScyllaPool> {
-    let session = SessionBuilder::new()
-        .known_node(scylla_url)
-        .build()
-        .await?;
+    let session = SessionBuilder::new().known_node(scylla_url).build().await?;
 
     tracing::info!(%scylla_url, "ScyllaDB connected");
     Ok(Arc::new(session))

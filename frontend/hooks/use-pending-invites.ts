@@ -29,15 +29,13 @@ export function pendingInvitesKey(hubId: string | undefined) {
   return hubId ? (["pending-invites", hubId] as const) : null;
 }
 
-let _session: { token?: string } = {};
-
-async function fetchPending([, hubId]: readonly [
-  "pending-invites",
-  string,
-]): Promise<PendingInvite[]> {
-  if (!_session.token) return [];
+async function fetchPending(
+  hubId: string,
+  token: string | undefined,
+): Promise<PendingInvite[]> {
+  if (!token) return [];
   const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/pending-invites`, {
-    headers: { Authorization: `Bearer ${_session.token}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) {
     window.location.href = "/login";
@@ -49,11 +47,11 @@ async function fetchPending([, hubId]: readonly [
 
 export function usePendingInvites() {
   const { session } = useAuth();
-  _session = session ?? {};
 
   const { data, isLoading, mutate } = useSWR<PendingInvite[]>(
     pendingInvitesKey(session?.hubId),
-    fetchPending,
+    ([, hubId]: readonly ["pending-invites", string]) =>
+      fetchPending(hubId, session?.token),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,

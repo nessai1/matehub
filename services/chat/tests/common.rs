@@ -8,10 +8,8 @@ use tokio::net::TcpListener;
 /// We need a live PG so access::check resolves correctly — without it every
 /// chat endpoint would 403.
 pub async fn spawn_app() -> String {
-    let scylla_url =
-        std::env::var("SCYLLA_URL").unwrap_or_else(|_| "127.0.0.1:9042".into());
-    let nats_url =
-        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let scylla_url = std::env::var("SCYLLA_URL").unwrap_or_else(|_| "127.0.0.1:9042".into());
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
     let pg_url = std::env::var("TEST_DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://matehub:matehub-dev@localhost:5432/matehub_test".into());
 
@@ -77,8 +75,8 @@ pub async fn spawn_app() -> String {
 pub fn test_jwt(username: &str, hub_id: i64) -> String {
     use jsonwebtoken::{EncodingKey, Header, encode};
 
-    let secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "matehub-dev-secret-change-in-prod".into());
+    let secret =
+        std::env::var("JWT_SECRET").unwrap_or_else(|_| "matehub-dev-secret-change-in-prod".into());
 
     let now = chrono::Utc::now().timestamp();
     let sub = test_user_id(username);
@@ -108,12 +106,7 @@ async fn seed_legacy_test_hub(pg: &sqlx::PgPool) {
     seed_legacy_one(pg, 7001, 1_900_002, &[8001]).await;
 }
 
-async fn seed_legacy_one(
-    pg: &sqlx::PgPool,
-    legacy_hub: i64,
-    legacy_group: i64,
-    channels: &[i64],
-) {
+async fn seed_legacy_one(pg: &sqlx::PgPool, legacy_hub: i64, legacy_group: i64, channels: &[i64]) {
     use matehub_hub::db::seed::{DEV_USER_ALICE, DEV_USER_BOB, DEV_USER_CHARLIE};
     const RW_BITS: i32 = 1 | 2; // READ | WRITE
 
@@ -215,14 +208,12 @@ pub fn test_user_id(username: &str) -> i64 {
 /// `voice-test`, `stage-test` from `run_dev_seed`.
 #[allow(dead_code)]
 pub async fn seed_channel_id(pg: &sqlx::PgPool, name: &str) -> i64 {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM channels WHERE hub_id = $1 AND name = $2",
-    )
-    .bind(matehub_hub::db::seed::DEV_HUB_ID)
-    .bind(name)
-    .fetch_one(pg)
-    .await
-    .unwrap_or_else(|e| panic!("seed channel '{name}' not found: {e}"))
+    sqlx::query_scalar::<_, i64>("SELECT id FROM channels WHERE hub_id = $1 AND name = $2")
+        .bind(matehub_hub::db::seed::DEV_HUB_ID)
+        .bind(name)
+        .fetch_one(pg)
+        .await
+        .unwrap_or_else(|e| panic!("seed channel '{name}' not found: {e}"))
 }
 
 #[allow(dead_code)]

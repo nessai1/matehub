@@ -48,12 +48,10 @@ async fn list_channels(
     State(state): State<ChannelsState>,
     Path(hub_id): Path<i64>,
 ) -> Result<Json<Vec<Channel>>, StatusCode> {
-    let mut conn = hub_connection(&state.pool, hub_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(?e, %hub_id, "hub_connection failed in list_channels");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let mut conn = hub_connection(&state.pool, hub_id).await.map_err(|e| {
+        tracing::error!(?e, %hub_id, "hub_connection failed in list_channels");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Generic listing: text/voice/stage only. DM channels live behind
     // /v1/hubs/{id}/dms and are scoped to their participants — leaking their
@@ -82,15 +80,14 @@ async fn get_channel(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let channel = sqlx::query_as::<_, Channel>(
-        "SELECT * FROM channels WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(channel_id)
-    .bind(hub_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    let channel =
+        sqlx::query_as::<_, Channel>("SELECT * FROM channels WHERE id = $1 AND hub_id = $2")
+            .bind(channel_id)
+            .bind(hub_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(channel))
 }
@@ -130,12 +127,10 @@ async fn create_channel(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let mut conn = hub_connection(&state.pool, hub_id)
-        .await
-        .map_err(|e| {
-            tracing::error!(?e, %hub_id, "hub_connection failed in create_channel");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    let mut conn = hub_connection(&state.pool, hub_id).await.map_err(|e| {
+        tracing::error!(?e, %hub_id, "hub_connection failed in create_channel");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let max_pos: Option<i32> =
         sqlx::query_scalar("SELECT MAX(position) FROM channels WHERE hub_id = $1")
@@ -177,16 +172,15 @@ async fn create_channel(
     // chat::access::check finds no channel_permissions row and denies READ.
     // The seed does this for the bootstrap channels (db/seed.rs:170); the
     // runtime path was missing the same step.
-    let default_group_id: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1",
-    )
-    .bind(hub_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|e| {
-        tracing::error!(?e, %hub_id, "SELECT default group_id failed");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let default_group_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1")
+            .bind(hub_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| {
+                tracing::error!(?e, %hub_id, "SELECT default group_id failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     if let Some(group_id) = default_group_id {
         sqlx::query(
@@ -227,10 +221,10 @@ async fn update_channel(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    if let Some(ref name) = body.name {
-        if name.trim().is_empty() || name.len() > 100 {
-            return Err(StatusCode::BAD_REQUEST);
-        }
+    if let Some(ref name) = body.name
+        && (name.trim().is_empty() || name.len() > 100)
+    {
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     let mut conn = hub_connection(&state.pool, hub_id)
@@ -359,15 +353,14 @@ async fn upload_icon(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let result = sqlx::query(
-        "UPDATE channels SET icon_image_url = $1 WHERE id = $2 AND hub_id = $3",
-    )
-    .bind(&url)
-    .bind(channel_id)
-    .bind(hub_id)
-    .execute(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result =
+        sqlx::query("UPDATE channels SET icon_image_url = $1 WHERE id = $2 AND hub_id = $3")
+            .bind(&url)
+            .bind(channel_id)
+            .bind(hub_id)
+            .execute(&mut *conn)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Silent-success was the original bug: S3 write happens, DB update touches
     // zero rows (e.g. channel_id mismatch), caller sees "uploaded" but icon

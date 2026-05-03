@@ -50,8 +50,7 @@ async fn main() -> Result<()> {
         config.mail_from.clone(),
     ));
 
-    let (metrics_layer, metrics_handle) =
-        matehub_common::observability::metrics_layer_and_handle();
+    let (metrics_layer, metrics_handle) = matehub_common::observability::metrics_layer_and_handle();
 
     let app = Router::new()
         .merge(api::auth::routes())

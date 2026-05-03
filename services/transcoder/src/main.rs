@@ -115,7 +115,11 @@ async fn main() -> Result<()> {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                if inp_handle.ack_with(async_nats::jetstream::AckKind::Progress).await.is_err() {
+                if inp_handle
+                    .ack_with(async_nats::jetstream::AckKind::Progress)
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -128,7 +132,9 @@ async fn main() -> Result<()> {
             Ok(ok) => ok,
             Err(e) => {
                 tracing::error!(%attachment_id, "transcode failed: {e:?}");
-                TranscodeStatus::Failed { error: e.to_string() }
+                TranscodeStatus::Failed {
+                    error: e.to_string(),
+                }
             }
         };
 
@@ -157,10 +163,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn process(
-    s3: &S3Storage,
-    req: TranscodeRequest,
-) -> Result<TranscodeStatus> {
+async fn process(s3: &S3Storage, req: TranscodeRequest) -> Result<TranscodeStatus> {
     // Download source from S3 to tmp
     let tmp_dir = std::env::temp_dir();
     let src_path: PathBuf = tmp_dir.join(format!("in_{}.bin", req.attachment_id));

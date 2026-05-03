@@ -20,7 +20,6 @@ import {
   PanelLeftIcon,
   PanelRightIcon,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,7 +34,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MemberCard } from "@/components/hub/member-card";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
@@ -46,7 +44,6 @@ import { useAttachmentUpload } from "@/hooks/use-attachment-upload";
 import { useMembers, type Member, type MemberGroup } from "@/hooks/use-members";
 import { MessageAttachments } from "@/components/hub/media/message-attachments";
 import { UploadPreview } from "@/components/hub/media/upload-preview";
-import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { mdActions, applyMarkdown, renderMarkdown } from "@/lib/markdown";
 import type { ChatMessage as ChatMessageT } from "@/contexts/chat-context";
@@ -356,7 +353,6 @@ function TypingIndicator({
 // ── Main component ───────────────────────────────
 
 export function TextChannelView({ channelId, channelName, channel, hideHeader }: TextChannelViewProps) {
-  const { session } = useAuth();
   const { toggleSidebar: toggleLeftSidebar, open: leftOpen, openMobile: leftOpenMobile, isMobile: leftIsMobile } =
     useSidebar();
   const { open: rightOpen, toggle: toggleRightSidebar } = useMemberSidebar();
@@ -369,7 +365,6 @@ export function TextChannelView({ channelId, channelName, channel, hideHeader }:
     dividerPos,
     sendMessage,
     sendTyping,
-    loadMore,
     retryMessage,
     cancelMessage,
   } = useChatClient(channelId);

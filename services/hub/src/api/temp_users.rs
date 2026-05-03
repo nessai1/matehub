@@ -7,12 +7,11 @@
 //! one mutates the other in the same transaction.
 //!
 //! Lifecycle:
-//!   1. POST /temp-users        → users (user_type=temp) + temp_users
-//!   2. GET  /join/{token}      → hub_members + member_groups + active_session
-//!   3. POST /temp-users/{id}/revoke
-//!                              → temp_users.revoked_at; access dies on next
-//!                                JWT verification once exp lapses (or sooner
-//!                                if we add a Redis blacklist later).
+//! 1. POST /temp-users → users (user_type=temp) + temp_users
+//! 2. GET  /join/{token} → hub_members + member_groups + active_session
+//! 3. POST /temp-users/{id}/revoke → temp_users.revoked_at; access dies on
+//!    next JWT verification once exp lapses (or sooner if we add a Redis
+//!    blacklist later).
 
 use axum::{
     Json, Router,
@@ -271,13 +270,12 @@ async fn join_via_token(
     // everything that JOINs hub_members (members-full, RLS, ACL checks in
     // chat-service) starts working. Subsequent walk-throughs (refresh,
     // re-open) are no-ops thanks to ON CONFLICT.
-    let everyone_group_id: i64 = sqlx::query_scalar(
-        "SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1",
-    )
-    .bind(row.hub_id)
-    .fetch_one(&pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let everyone_group_id: i64 =
+        sqlx::query_scalar("SELECT id FROM groups WHERE hub_id = $1 AND is_default = true LIMIT 1")
+            .bind(row.hub_id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut tx = pool
         .begin()

@@ -5,7 +5,6 @@ mod acl_consumer;
 mod api;
 mod attachment;
 mod attachments;
-mod transcode;
 mod auth;
 mod data_service;
 mod db;
@@ -15,6 +14,7 @@ mod gateway;
 mod models;
 mod read_state;
 mod session;
+mod transcode;
 
 use std::sync::Arc;
 
@@ -37,10 +37,8 @@ async fn main() -> Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(3003);
 
-    let scylla_url =
-        std::env::var("SCYLLA_URL").unwrap_or_else(|_| "127.0.0.1:9042".into());
-    let nats_url =
-        std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
+    let scylla_url = std::env::var("SCYLLA_URL").unwrap_or_else(|_| "127.0.0.1:9042".into());
+    let nats_url = std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".into());
 
     // Initialize Snowflake ID generator
     matehub_common::snowflake::init();
@@ -123,8 +121,7 @@ async fn main() -> Result<()> {
     };
 
     // Prometheus /metrics + HTTP-request instrumentation layer.
-    let (metrics_layer, metrics_handle) =
-        matehub_common::observability::metrics_layer_and_handle();
+    let (metrics_layer, metrics_handle) = matehub_common::observability::metrics_layer_and_handle();
 
     // HTTP + WS
     let app = api::routes(state.clone())

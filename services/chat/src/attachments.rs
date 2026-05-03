@@ -1,10 +1,10 @@
 use axum::{
     Json, Router,
+    body::Body,
     extract::{DefaultBodyLimit, Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
-    body::Body,
 };
 use axum_extra::extract::Multipart;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -25,15 +25,15 @@ const MAX_IMAGE_BUFFER: usize = 32 * 1024 * 1024; // 32 MB
 // users expect to drop docx/xlsx/keynote/sketch/whatever and have it round-trip.
 // S3 stores opaquely, browser doesn't auto-execute downloads.
 const BLOCKED_MIMES: &[&str] = &[
-    "application/x-msdownload",     // .exe / .dll
-    "application/x-ms-installer",   // .msi
+    "application/x-msdownload",   // .exe / .dll
+    "application/x-ms-installer", // .msi
     "application/x-msi",
-    "application/x-bat",            // .bat
-    "application/x-sh",             // .sh
+    "application/x-bat", // .bat
+    "application/x-sh",  // .sh
     "application/x-csh",
     "application/x-msdos-program",
     "application/vnd.microsoft.portable-executable",
-    "application/x-mach-binary",    // mach-o
+    "application/x-mach-binary", // mach-o
     "application/x-elf",
     "application/x-executable",
 ];
@@ -61,7 +61,15 @@ async fn upload_attachment(
 ) -> Result<Json<Attachment>, StatusCode> {
     let hub_id = auth.0.hub_id;
 
-    if !crate::access::check(&state, hub_id, channel_id, auth.0.sub, crate::access::Action::Write).await {
+    if !crate::access::check(
+        &state,
+        hub_id,
+        channel_id,
+        auth.0.sub,
+        crate::access::Action::Write,
+    )
+    .await
+    {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -99,7 +107,10 @@ async fn upload_attachment(
     // For non-images we just stream directly -- upload_stream controls RAM.
     let image_probe: std::sync::Arc<parking_lot::Mutex<Option<BytesMut>>> =
         std::sync::Arc::new(parking_lot::Mutex::new(if is_image {
-            Some(BytesMut::with_capacity(std::cmp::min(MAX_IMAGE_BUFFER, 1 << 20)))
+            Some(BytesMut::with_capacity(std::cmp::min(
+                MAX_IMAGE_BUFFER,
+                1 << 20,
+            )))
         } else {
             None
         }));
@@ -119,7 +130,10 @@ async fn upload_attachment(
                             buf.put_slice(&chunk[..take]);
                         }
                     }
-                    Some((Ok::<Bytes, axum_extra::extract::multipart::MultipartError>(chunk), f))
+                    Some((
+                        Ok::<Bytes, axum_extra::extract::multipart::MultipartError>(chunk),
+                        f,
+                    ))
                 }
                 Ok(None) => None,
                 Err(e) => Some((Err(e), f)),
@@ -147,7 +161,8 @@ async fn upload_attachment(
     // Extract image dimensions from buffered prefix (best effort).
     let (width, height) = if is_image {
         let buf = image_probe.lock().take();
-        buf.map(|b| extract_image_dimensions(&b)).unwrap_or((None, None))
+        buf.map(|b| extract_image_dimensions(&b))
+            .unwrap_or((None, None))
     } else {
         (None, None)
     };
@@ -236,7 +251,15 @@ async fn stream_attachment(
 
     // Plus per-channel ACL: an attachment in someone else's DM is not yours
     // to fetch even if you happen to know the snowflake id.
-    if !crate::access::check(&state, row.hub_id, row.channel_id, auth.0.sub, crate::access::Action::Read).await {
+    if !crate::access::check(
+        &state,
+        row.hub_id,
+        row.channel_id,
+        auth.0.sub,
+        crate::access::Action::Read,
+    )
+    .await
+    {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -252,8 +275,7 @@ async fn stream_attachment(
         StatusCode::BAD_GATEWAY
     })?;
 
-    let status = StatusCode::from_u16(s3_resp.status().as_u16())
-        .unwrap_or(StatusCode::BAD_GATEWAY);
+    let status = StatusCode::from_u16(s3_resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
 
     // Pass through the headers S3 set so the browser video element knows
     // how to drive range requests. We don't blindly forward every header —
@@ -266,7 +288,11 @@ async fn stream_attachment(
             .unwrap_or_else(|_| HeaderValue::from_static("application/octet-stream")),
     );
     out_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    for name in [header::CONTENT_LENGTH, header::CONTENT_RANGE, header::LAST_MODIFIED] {
+    for name in [
+        header::CONTENT_LENGTH,
+        header::CONTENT_RANGE,
+        header::LAST_MODIFIED,
+    ] {
         if let Some(v) = s3_resp.headers().get(&name) {
             out_headers.insert(name, v.clone());
         }

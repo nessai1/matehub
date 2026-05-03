@@ -87,9 +87,5 @@ async fn profile_handler(Query(q): Query<ProfileQuery>) -> Response {
             .into_response();
     }
 
-    (
-        [(header::CONTENT_TYPE, "image/svg+xml")],
-        svg_buf,
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "image/svg+xml")], svg_buf).into_response()
 }

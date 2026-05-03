@@ -59,11 +59,13 @@ export function membersKey(hubId: string | undefined) {
   return hubId ? (["members", hubId] as const) : null;
 }
 
-async function fetchMembers([, hubId]: readonly [
-  "members",
-  string,
-]): Promise<Member[]> {
-  const { token } = currentSession();
+// SWR's fetcher receives the key but not the auth context. We close over the
+// token from useMembers below at render time — partitioning by token in the
+// key would needlessly bust the cache on every refresh rotation.
+async function fetchMembers(
+  hubId: string,
+  token: string | undefined,
+): Promise<Member[]> {
   if (!token) return [];
 
   const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/members-full`, {
@@ -77,22 +79,13 @@ async function fetchMembers([, hubId]: readonly [
   return (await res.json()) as Member[];
 }
 
-// SWR's fetcher receives the key but not the auth context. We read it from a
-// module-level slot that useMembers keeps in sync below — cleaner than passing
-// the token through the cache key (where it would needlessly partition the
-// cache per-token rotation).
-let _session: { token?: string } = {};
-function currentSession() {
-  return _session;
-}
-
 export function useMembers() {
   const { session } = useAuth();
-  _session = session ?? {};
 
   const { data, isLoading, mutate } = useSWR<Member[]>(
     membersKey(session?.hubId),
-    fetchMembers,
+    ([, hubId]: readonly ["members", string]) =>
+      fetchMembers(hubId, session?.token),
     {
       // No polling. Live updates come via the presence WS (member_joined,
       // member_left, member_groups_changed → see usePresence below) which

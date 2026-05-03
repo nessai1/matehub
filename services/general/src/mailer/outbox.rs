@@ -91,13 +91,11 @@ pub async fn mark_failed(pool: &PgPool, id: i64, err: &str, attempts: i32) -> Re
         4 => 3600,
         5 => 6 * 3600,
         _ => {
-            sqlx::query(
-                "UPDATE mail_outbox SET status = 'failed', last_error = $2 WHERE id = $1",
-            )
-            .bind(id)
-            .bind(err)
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE mail_outbox SET status = 'failed', last_error = $2 WHERE id = $1")
+                .bind(id)
+                .bind(err)
+                .execute(pool)
+                .await?;
             return Ok(());
         }
     };

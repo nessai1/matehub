@@ -46,29 +46,38 @@ export function HubSettingsDialog({ open, onOpenChange }: Props) {
 
   // Lazy-fetch service versions only when the dialog opens. Re-fetch on
   // each open so the operator sees fresh data after a deploy without
-  // reloading the whole SPA.
+  // reloading the whole SPA. We don't reset to null up front -- the brief
+  // flash of stale data on re-open is preferable to a "Loading..." flicker,
+  // and synchronous setState in the effect body trips React Compiler.
   useEffect(() => {
     if (!open || !session?.token) return;
     let cancelled = false;
-    setServices(null);
-    fetch(`/api/hub/v1/services/versions`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((data: ServiceInfo[]) => {
+    const token = session.token;
+    (async () => {
+      try {
+        const r = await fetch(`/api/hub/v1/services/versions`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data: ServiceInfo[] = r.ok ? await r.json() : [];
         if (!cancelled) setServices(data.filter((s) => s.name !== "general"));
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setServices([]);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [open, session?.token]);
 
-  // Re-seed draft state every time the dialog opens — covers both the
-  // first open and repeat opens after another tab edited the hub.
-  useEffect(() => {
+  // Re-seed draft state when the dialog opens or the hub object changes
+  // beneath us (e.g. another tab edited it, or our own save just refreshed
+  // the SWR cache). Implemented as a render-time prop snapshot so we don't
+  // need a useEffect that synchronously fires setState on every open.
+  const [seedSnapshot, setSeedSnapshot] = useState<{ open: boolean; hub: typeof hub }>(
+    { open: false, hub: null },
+  );
+  if (seedSnapshot.open !== open || seedSnapshot.hub !== hub) {
+    setSeedSnapshot({ open, hub });
     if (open && hub) {
       setName(hub.name);
       setDescription(hub.description ?? "");
@@ -77,7 +86,7 @@ export function HubSettingsDialog({ open, onOpenChange }: Props) {
       setCropSource(null);
       setError("");
     }
-  }, [open, hub]);
+  }
 
   const handlePick = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

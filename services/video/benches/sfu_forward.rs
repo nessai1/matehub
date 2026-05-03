@@ -152,14 +152,10 @@ fn bench_addr_demux(c: &mut Criterion) {
         // Simulate the slow path: compare addr to each entry's key. This
         // mirrors the shape of rtc.accepts() — one `== addr` check per
         // participant — which is what we used to do O(N) times per packet.
-        let entries: Vec<(SocketAddr, (Uuid, Pid))> =
-            map.iter().map(|(k, v)| (*k, *v)).collect();
+        let entries: Vec<(SocketAddr, (Uuid, Pid))> = map.iter().map(|(k, v)| (*k, *v)).collect();
         group.bench_with_input(BenchmarkId::new("linear_scan", n), &n, |b, _| {
             b.iter(|| {
-                let hit = entries
-                    .iter()
-                    .find(|(a, _)| *a == target)
-                    .map(|(_, v)| *v);
+                let hit = entries.iter().find(|(a, _)| *a == target).map(|(_, v)| *v);
                 black_box(hit);
             });
         });

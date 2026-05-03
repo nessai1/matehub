@@ -86,12 +86,7 @@ fn validate_token(token: &str, hub_id: i64) -> Option<auth::Claims> {
     Some(claims)
 }
 
-async fn handle_presence(
-    socket: WebSocket,
-    state: PresenceState,
-    hub_id: i64,
-    user_id: i64,
-) {
+async fn handle_presence(socket: WebSocket, state: PresenceState, hub_id: i64, user_id: i64) {
     use futures_util::SinkExt;
 
     let session_id = if let Some(mut redis) = state.redis.clone() {

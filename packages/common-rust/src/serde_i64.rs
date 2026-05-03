@@ -85,10 +85,7 @@ pub mod option_as_string {
             None => Ok(None),
             Some(Inner::Num(n)) => Ok(Some(n)),
             Some(Inner::Str(s)) if s.is_empty() => Ok(None),
-            Some(Inner::Str(s)) => s
-                .parse()
-                .map(Some)
-                .map_err(serde::de::Error::custom),
+            Some(Inner::Str(s)) => s.parse().map(Some).map_err(serde::de::Error::custom),
         }
     }
 }

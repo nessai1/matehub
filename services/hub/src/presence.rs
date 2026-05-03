@@ -35,7 +35,10 @@ fn presence_key(hub_id: i64, user_id: i64) -> String {
 pub async fn set_online(conn: &mut RedisPool, hub_id: i64, user_id: i64) -> String {
     let session_id = Uuid::new_v4().to_string();
     let key = presence_key(hub_id, user_id);
-    match conn.set_ex::<_, _, ()>(&key, &session_id, PRESENCE_TTL_SECS).await {
+    match conn
+        .set_ex::<_, _, ()>(&key, &session_id, PRESENCE_TTL_SECS)
+        .await
+    {
         Ok(()) => tracing::debug!(%key, %session_id, "presence SET OK"),
         Err(e) => tracing::error!(%key, "presence SET failed: {e}"),
     }
@@ -74,12 +77,7 @@ fn voice_occupancy_key(hub_id: i64) -> String {
 }
 
 /// Mark user as being in a voice channel. Idempotent.
-pub async fn voice_occupancy_set(
-    conn: &mut RedisPool,
-    hub_id: i64,
-    user_id: i64,
-    channel_id: i64,
-) {
+pub async fn voice_occupancy_set(conn: &mut RedisPool, hub_id: i64, user_id: i64, channel_id: i64) {
     let key = voice_occupancy_key(hub_id);
     match conn
         .hset::<_, _, _, ()>(&key, user_id.to_string(), channel_id.to_string())
@@ -169,8 +167,7 @@ pub async fn voice_mute_snapshot(
     let key = voice_mute_key(hub_id);
     let map: std::collections::HashMap<String, String> =
         conn.hgetall(&key).await.unwrap_or_default();
-    let mut out: std::collections::HashMap<i64, (bool, bool)> =
-        std::collections::HashMap::new();
+    let mut out: std::collections::HashMap<i64, (bool, bool)> = std::collections::HashMap::new();
     for (k, v) in map {
         let Some((uid_s, kind)) = k.split_once(':') else {
             continue;

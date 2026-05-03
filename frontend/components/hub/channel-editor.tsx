@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -176,30 +176,36 @@ export function ChannelEditor({
     onOpenChange(false);
   }, [name, channelType, iconId, iconMode, iconColor, iconImage, pendingFile, selectedGroups, onSave, onOpenChange]);
 
-  // Reset state when dialog opens (useEffect sees updated props after batch setState)
-  useEffect(() => {
-    if (!open) return;
-    const defIcon = channelType === "text" ? "hash" : "mic";
-    if (mode === "edit" && initial) {
-      setName(initial.name ?? "");
-      setIconId(initial.iconId ?? defIcon);
-      setIconColor(initial.iconColor ?? null);
-      setIconImage(initial.iconImage ?? null);
-      setIconMode(initial.iconImage ? "image" : initial.iconColor ? "color" : "icon");
-      setSelectedGroups(new Set(initial.allowedGroups ?? allGroups.map((g) => g.id)));
-    } else {
-      setName("");
-      setIconId(defIcon);
-      setIconColor(null);
-      setIconImage(null);
-      setIconMode("icon");
-      setSelectedGroups(new Set(allGroups.map((g) => g.id)));
+  // Reset form when the dialog transitions closed → open. Implemented as a
+  // render-time prop snapshot (React's "Adjusting state on prop change"
+  // recipe) so we don't need a useEffect that synchronously fires setState
+  // on every open. The setState calls below run during render; React
+  // discards the in-flight render and restarts with the fresh values.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      const defIcon = channelType === "text" ? "hash" : "mic";
+      if (mode === "edit" && initial) {
+        setName(initial.name ?? "");
+        setIconId(initial.iconId ?? defIcon);
+        setIconColor(initial.iconColor ?? null);
+        setIconImage(initial.iconImage ?? null);
+        setIconMode(initial.iconImage ? "image" : initial.iconColor ? "color" : "icon");
+        setSelectedGroups(new Set(initial.allowedGroups ?? allGroups.map((g) => g.id)));
+      } else {
+        setName("");
+        setIconId(defIcon);
+        setIconColor(null);
+        setIconImage(null);
+        setIconMode("icon");
+        setSelectedGroups(new Set(allGroups.map((g) => g.id)));
+      }
+      setIconPickerOpen(false);
+      setPendingFile(null);
+      setCropSource(null);
     }
-    setIconPickerOpen(false);
-    setPendingFile(null);
-    setCropSource(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }
 
   // ── Render channel icon preview ──
   const renderIconPreview = () => {

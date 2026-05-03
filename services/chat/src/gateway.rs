@@ -291,8 +291,7 @@ async fn run_session<R: AsyncRead + Unpin>(
         }
     });
 
-    let mut heartbeat_timer =
-        tokio::time::interval(Duration::from_millis(HEARTBEAT_INTERVAL_MS));
+    let mut heartbeat_timer = tokio::time::interval(Duration::from_millis(HEARTBEAT_INTERVAL_MS));
     let mut last_heartbeat = tokio::time::Instant::now();
     let mut seq = initial_seq;
     let username = session.claims().username;

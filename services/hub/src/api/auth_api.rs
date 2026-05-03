@@ -87,7 +87,10 @@ async fn login(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let hash = user.password_hash.as_deref().ok_or(StatusCode::UNAUTHORIZED)?;
+    let hash = user
+        .password_hash
+        .as_deref()
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     if !bcrypt::verify(&body.password, hash).unwrap_or(false) {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -105,14 +108,13 @@ async fn login(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let groups: Vec<i64> = sqlx::query_scalar(
-        "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
-    )
-    .bind(body.hub_id)
-    .bind(user.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let groups: Vec<i64> =
+        sqlx::query_scalar("SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2")
+            .bind(body.hub_id)
+            .bind(user.id)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
 
     let hub_slug: String = sqlx::query_scalar("SELECT slug FROM hubs WHERE id = $1")
         .bind(body.hub_id)
@@ -186,14 +188,13 @@ async fn refresh(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let groups: Vec<i64> = sqlx::query_scalar(
-        "SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2",
-    )
-    .bind(row.hub_id)
-    .bind(row.user_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default();
+    let groups: Vec<i64> =
+        sqlx::query_scalar("SELECT group_id FROM member_groups WHERE hub_id = $1 AND user_id = $2")
+            .bind(row.hub_id)
+            .bind(row.user_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
 
     let access_token = issue_access_token(row.user_id, &username, row.hub_id, &groups)?;
 
@@ -215,10 +216,7 @@ async fn refresh(
 
 // ── Logout ──────────────────────────────────────
 
-async fn logout(
-    State(pool): State<PgPool>,
-    Json(body): Json<LogoutRequest>,
-) -> StatusCode {
+async fn logout(State(pool): State<PgPool>, Json(body): Json<LogoutRequest>) -> StatusCode {
     let token_hash = hash_token(&body.refresh_token);
     let _ = sqlx::query("DELETE FROM refresh_tokens WHERE token_hash = $1")
         .bind(&token_hash)

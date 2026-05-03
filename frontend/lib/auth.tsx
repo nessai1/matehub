@@ -116,7 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  // Schedule refresh before token expires (at 80% of TTL)
+  // Schedule refresh before token expires (at 80% of TTL).
+  // The timeout callback re-arms the next refresh by calling scheduleRefresh
+  // again. Naïvely closing over scheduleRefresh from inside its own useCallback
+  // hits the React Compiler's use-before-declare rule, so we route the
+  // recursive call through a ref that always points at the latest version.
+  const scheduleRefreshRef = useRef<((s: AuthSession) => void) | null>(null);
   const scheduleRefresh = useCallback(
     (s: AuthSession) => {
       if (refreshTimerRef.current) {
@@ -132,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const updated = await tryRefresh(s);
         if (updated) {
           setSession(updated);
-          scheduleRefresh(updated);
+          scheduleRefreshRef.current?.(updated);
         } else {
           // Refresh failed -- force re-login
           setSession(null);
@@ -143,6 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [tryRefresh],
   );
+  useEffect(() => {
+    scheduleRefreshRef.current = scheduleRefresh;
+  }, [scheduleRefresh]);
 
   // Restore session on mount
   useEffect(() => {
@@ -252,11 +260,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!session || session.type !== "temp") return;
     const secs = jwtSecondsLeft(session.token);
-    if (secs <= 0) {
-      setSessionExpired(true);
-      return;
-    }
-    const t = setTimeout(() => setSessionExpired(true), secs * 1000);
+    // Always go through setTimeout (even for already-expired tokens at mount)
+    // so we don't synchronously setState inside the effect body.
+    const t = setTimeout(() => setSessionExpired(true), Math.max(0, secs * 1000));
     return () => clearTimeout(t);
   }, [session]);
 

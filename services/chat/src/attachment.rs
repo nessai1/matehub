@@ -73,7 +73,11 @@ impl Attachment {
     pub fn needs_transcode(content_type: &str) -> bool {
         matches!(
             content_type,
-            "video/quicktime" | "video/x-msvideo" | "video/x-matroska" | "video/3gpp" | "video/x-ms-wmv"
+            "video/quicktime"
+                | "video/x-msvideo"
+                | "video/x-matroska"
+                | "video/3gpp"
+                | "video/x-ms-wmv"
         )
     }
 

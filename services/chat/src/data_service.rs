@@ -69,9 +69,7 @@ impl DataService {
             .await?;
 
         let insert_bucket = session
-            .prepare(
-                "INSERT INTO channel_buckets (hub_id, channel_id, bucket) VALUES (?, ?, ?)",
-            )
+            .prepare("INSERT INTO channel_buckets (hub_id, channel_id, bucket) VALUES (?, ?, ?)")
             .await?;
 
         let select_buckets = session
@@ -277,7 +275,11 @@ impl DataService {
 
             // Fetch extra when cursor filtering (before_id skips rows post-query)
             let base_need = remaining - messages.len() as i32;
-            let need = if before_id.is_some() { (base_need * 3).min(300) } else { base_need.min(100) };
+            let need = if before_id.is_some() {
+                (base_need * 3).min(300)
+            } else {
+                base_need.min(100)
+            };
 
             let rows = self
                 .session
@@ -285,21 +287,21 @@ impl DataService {
                 .await?;
 
             for row in rows.into_rows_result()?.rows::<(
-                i64,    // hub_id
-                i64,    // channel_id
-                i32,    // bucket
-                i64,    // message_id
-                String, // author_id
-                String, // author_type
-                String, // content
-                Option<i64>,            // thread_root_id
-                Option<HashSet<String>>, // mentions
-                Option<HashSet<String>>, // mention_groups
-                Option<bool>,           // mention_everyone
-                Option<Vec<String>>,    // attachments
+                i64,                                 // hub_id
+                i64,                                 // channel_id
+                i32,                                 // bucket
+                i64,                                 // message_id
+                String,                              // author_id
+                String,                              // author_type
+                String,                              // content
+                Option<i64>,                         // thread_root_id
+                Option<HashSet<String>>,             // mentions
+                Option<HashSet<String>>,             // mention_groups
+                Option<bool>,                        // mention_everyone
+                Option<Vec<String>>,                 // attachments
                 Option<scylla::value::CqlTimestamp>, // edited_at
                 Option<scylla::value::CqlTimestamp>, // deleted_at
-                Option<String>,         // client_id
+                Option<String>,                      // client_id
             )>()? {
                 let row = row?;
 
@@ -327,7 +329,8 @@ impl DataService {
                     mentions: row.8.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_groups: row.9.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_everyone: row.10.unwrap_or(false),
-                    attachments: row.11
+                    attachments: row
+                        .11
                         .unwrap_or_default()
                         .iter()
                         .map(|s: &String| Attachment::from_stored(s))
@@ -384,10 +387,20 @@ impl DataService {
                 .await?;
 
             for row in rows.into_rows_result()?.rows::<(
-                i64, i64, i32, i64, String, String, String,
-                Option<i64>, Option<HashSet<String>>, Option<HashSet<String>>,
-                Option<bool>, Option<Vec<String>>,
-                Option<scylla::value::CqlTimestamp>, Option<scylla::value::CqlTimestamp>,
+                i64,
+                i64,
+                i32,
+                i64,
+                String,
+                String,
+                String,
+                Option<i64>,
+                Option<HashSet<String>>,
+                Option<HashSet<String>>,
+                Option<bool>,
+                Option<Vec<String>>,
+                Option<scylla::value::CqlTimestamp>,
+                Option<scylla::value::CqlTimestamp>,
                 Option<String>,
             )>()? {
                 let row = row?;
@@ -406,7 +419,8 @@ impl DataService {
                     mentions: row.8.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_groups: row.9.map(|s| s.into_iter().collect()).unwrap_or_default(),
                     mention_everyone: row.10.unwrap_or(false),
-                    attachments: row.11
+                    attachments: row
+                        .11
                         .unwrap_or_default()
                         .iter()
                         .map(|s: &String| Attachment::from_stored(s))
@@ -429,6 +443,7 @@ impl DataService {
     }
 
     /// Edit message content. Only the author should call this (checked in API layer).
+    #[allow(clippy::too_many_arguments)]
     pub async fn edit_message(
         &self,
         hub_id: i64,
@@ -470,10 +485,7 @@ impl DataService {
         message_id: i64,
     ) -> Result<()> {
         self.session
-            .execute_unpaged(
-                &self.soft_delete,
-                (hub_id, channel_id, bucket, message_id),
-            )
+            .execute_unpaged(&self.soft_delete, (hub_id, channel_id, bucket, message_id))
             .await?;
         Ok(())
     }
@@ -506,10 +518,7 @@ impl DataService {
     ) -> Result<Option<(i64, i32)>> {
         let rows = self
             .session
-            .execute_unpaged(
-                &self.select_read_state,
-                (user_id, hub_id, channel_id),
-            )
+            .execute_unpaged(&self.select_read_state, (user_id, hub_id, channel_id))
             .await?;
 
         let result = rows
@@ -523,16 +532,10 @@ impl DataService {
 
     /// Get all read states for a user (for initial sync / cache warm-up).
     /// Returns Vec<(hub_id, channel_id, last_read_message_id, mention_count)>.
-    pub async fn get_all_read_states(
-        &self,
-        user_id: &str,
-    ) -> Result<Vec<(i64, i64, i64, i32)>> {
+    pub async fn get_all_read_states(&self, user_id: &str) -> Result<Vec<(i64, i64, i64, i32)>> {
         let rows = self
             .session
-            .execute_unpaged(
-                &self.select_read_states_for_user,
-                (user_id,),
-            )
+            .execute_unpaged(&self.select_read_states_for_user, (user_id,))
             .await?;
 
         let result: Vec<(i64, i64, i64, i32)> = rows

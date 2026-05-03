@@ -11,9 +11,7 @@ pub async fn connect(database_url: &str) -> Result<PgPool> {
     Ok(pool)
 }
 
-const MIGRATIONS: &[(&str, &str)] = &[
-    ("001_init", include_str!("../../migrations/001_init.sql")),
-];
+const MIGRATIONS: &[(&str, &str)] = &[("001_init", include_str!("../../migrations/001_init.sql"))];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
     sqlx::raw_sql(
@@ -26,12 +24,11 @@ pub async fn migrate(pool: &PgPool) -> Result<()> {
     .await?;
 
     for (name, sql) in MIGRATIONS {
-        let applied: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = $1)",
-        )
-        .bind(name)
-        .fetch_one(pool)
-        .await?;
+        let applied: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _migrations WHERE name = $1)")
+                .bind(name)
+                .fetch_one(pool)
+                .await?;
 
         if applied {
             continue;

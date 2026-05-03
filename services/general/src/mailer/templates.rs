@@ -152,19 +152,19 @@ mod tests {
         )
         .unwrap();
         assert!(mail.html.contains("Confirm email"));
-        assert!(mail.html.contains("https://matehub.io/verify-email?token=abc"));
-        assert!(mail.text.contains("https://matehub.io/verify-email?token=abc"));
+        assert!(
+            mail.html
+                .contains("https://matehub.io/verify-email?token=abc")
+        );
+        assert!(
+            mail.text
+                .contains("https://matehub.io/verify-email?token=abc")
+        );
     }
 
     #[test]
     fn rejects_unknown_template() {
-        let err = render(
-            "nonexistent",
-            "u@e.com",
-            &serde_json::json!({}),
-            "x@y.z",
-        )
-        .unwrap_err();
+        let err = render("nonexistent", "u@e.com", &serde_json::json!({}), "x@y.z").unwrap_err();
         assert!(err.to_string().contains("unknown mail template"));
     }
 

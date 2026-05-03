@@ -84,8 +84,7 @@ async fn main() -> Result<()> {
 
     let state = AppState::new(sfu_pool, nats);
 
-    let (metrics_layer, metrics_handle) =
-        matehub_common::observability::metrics_layer_and_handle();
+    let (metrics_layer, metrics_handle) = matehub_common::observability::metrics_layer_and_handle();
 
     // HTTP + WebSocket server
     let app = api::routes(state)

@@ -24,6 +24,11 @@ pub fn init(sender: broadcast::Sender<PresenceEvent>) {
 
 /// Wire format. `kind` is the discriminator the frontend switches on.
 /// IDs go out as decimal strings -- Snowflakes overflow JS safe-int.
+///
+/// The `Member*` prefix is part of the wire contract via `rename_all =
+/// "snake_case"` (frontend matches on `member_joined`/`member_left`/...).
+/// Renaming the variants would silently break the FE.
+#[allow(clippy::enum_variant_names)]
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum WireEvent {

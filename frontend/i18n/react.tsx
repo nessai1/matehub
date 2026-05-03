@@ -8,7 +8,6 @@ import {
   useCallback,
   useContext,
   useMemo,
-  useState,
   type ReactNode,
 } from "react";
 import {
@@ -21,23 +20,18 @@ import {
 interface LocaleContextValue {
   locale: LocaleCode;
   setLocale: (code: LocaleCode) => Promise<void>;
-  /** Bumps on every locale change — useful as a key to force re-render. */
-  generation: number;
 }
 
 const LocaleContext = createContext<LocaleContextValue>({
   locale: DEFAULT_LOCALE,
   setLocale: async () => {},
-  generation: 0,
 });
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<LocaleCode>(detectInitialLocale);
-  const [generation, setGeneration] = useState(0);
-
-  // No first-load effect needed: main.tsx hydrates the translator with the
-  // initial locale before this provider mounts. setLocale below reloads the
-  // page on switch, which re-runs that bootstrap.
+  // Locale is fixed for the provider's lifetime: setLocale reloads the page
+  // and bootstrap re-detects from localStorage on the next mount, so there's
+  // no in-place state to track.
+  const locale = useMemo(() => detectInitialLocale(), []);
 
   const setLocale = useCallback(async (code: LocaleCode) => {
     // Persist the choice and reload — same approach Superset uses. Avoids
@@ -47,10 +41,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     window.location.reload();
   }, []);
 
-  const value = useMemo(
-    () => ({ locale, setLocale, generation }),
-    [locale, setLocale, generation],
-  );
+  const value = useMemo(() => ({ locale, setLocale }), [locale, setLocale]);
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
 }

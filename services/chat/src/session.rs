@@ -133,6 +133,12 @@ pub struct SessionStore {
     sessions: Arc<Mutex<std::collections::HashMap<String, SessionHandle>>>,
 }
 
+impl Default for SessionStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SessionStore {
     pub fn new() -> Self {
         Self {
@@ -184,5 +190,10 @@ impl SessionStore {
     /// Number of active sessions (for metrics).
     pub fn len(&self) -> usize {
         self.sessions.lock().len()
+    }
+
+    /// True iff `len() == 0`. Required by clippy whenever `len()` exists.
+    pub fn is_empty(&self) -> bool {
+        self.sessions.lock().is_empty()
     }
 }

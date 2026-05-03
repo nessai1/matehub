@@ -70,6 +70,15 @@ export function MemberCard({
   const [kicking, setKicking] = useState(false);
   const [apiGroups, setApiGroups] = useState<AllGroup[]>([]);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  // "now" snapshot used by relative-time formatters below. Reading Date.now()
+  // directly during render is impure (React Compiler flags it) and also makes
+  // the displayed strings drift between renders. The minute-tick interval
+  // also doubles as a live-refresh for "5m ago" → "6m ago".
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const canManageRoles = has(P.MANAGE_ROLES);
   const canManageMembers = has(P.MANAGE_MEMBERS);
@@ -99,18 +108,26 @@ export function MemberCard({
     }
   }, [openDm, startCall, member.user_id]);
 
-  // Fetch all groups from API when picker opens (includes groups with 0 members)
-  const fetchApiGroups = useCallback(async () => {
-    if (!session?.hubId || !session?.token) return;
-    const res = await fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    });
-    if (res.ok) setApiGroups(await res.json());
-  }, [session?.hubId, session?.token]);
-
+  // Fetch all groups from API when picker opens (includes groups with 0 members).
+  // Inline IIFE so the await chain is visible to React Compiler -- a separate
+  // useCallback called from useEffect reads as sync setState in effect body.
   useEffect(() => {
-    if (groupPickerOpen) fetchApiGroups();
-  }, [groupPickerOpen, fetchApiGroups]);
+    if (!groupPickerOpen || !session?.hubId || !session?.token) return;
+    let cancelled = false;
+    const hubId = session.hubId;
+    const token = session.token;
+    (async () => {
+      const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/groups`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (cancelled || !res.ok) return;
+      const data: AllGroup[] = await res.json();
+      if (!cancelled) setApiGroups(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupPickerOpen, session?.hubId, session?.token]);
 
   const memberGroupIds = new Set(member.groups.map((g) => g.id));
   // Use API groups for picker (has all groups), fallback to allGroups prop
@@ -155,11 +172,11 @@ export function MemberCard({
   const formatExpiry = (iso: string): string => {
     try {
       const d = new Date(iso);
-      const now = new Date();
+      const today = new Date(now);
       const sameDay =
-        d.getFullYear() === now.getFullYear() &&
-        d.getMonth() === now.getMonth() &&
-        d.getDate() === now.getDate();
+        d.getFullYear() === today.getFullYear() &&
+        d.getMonth() === today.getMonth() &&
+        d.getDate() === today.getDate();
       return d.toLocaleString(
         undefined,
         sameDay
@@ -179,7 +196,7 @@ export function MemberCard({
   const formatLastSeen = (iso: string | null) => {
     if (!iso) return t("Never");
     const d = new Date(iso);
-    const diffMin = Math.floor((Date.now() - d.getTime()) / 60000);
+    const diffMin = Math.floor((now - d.getTime()) / 60000);
     if (diffMin < 1) return t("Just now");
     if (diffMin < 60) return t("%dm ago", diffMin);
     const diffH = Math.floor(diffMin / 60);

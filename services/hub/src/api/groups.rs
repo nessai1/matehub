@@ -108,15 +108,13 @@ async fn update_group(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let target = sqlx::query_as::<_, Group>(
-        "SELECT * FROM groups WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(group_id)
-    .bind(hub_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    let target = sqlx::query_as::<_, Group>("SELECT * FROM groups WHERE id = $1 AND hub_id = $2")
+        .bind(group_id)
+        .bind(hub_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     let is_protected = target.name == "admin" || target.name == "everyone";
 
@@ -131,10 +129,10 @@ async fn update_group(
         if !caller.can_manage_position(target.position) {
             return Err(StatusCode::FORBIDDEN);
         }
-        if let Some(new_bits) = body.hub_permissions {
-            if new_bits & !caller.grantable_bits() != 0 {
-                return Err(StatusCode::FORBIDDEN);
-            }
+        if let Some(new_bits) = body.hub_permissions
+            && new_bits & !caller.grantable_bits() != 0
+        {
+            return Err(StatusCode::FORBIDDEN);
         }
     }
 
@@ -177,15 +175,13 @@ async fn delete_group(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let target = sqlx::query_as::<_, Group>(
-        "SELECT * FROM groups WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(group_id)
-    .bind(hub_id)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    let target = sqlx::query_as::<_, Group>("SELECT * FROM groups WHERE id = $1 AND hub_id = $2")
+        .bind(group_id)
+        .bind(hub_id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     if target.name == "admin" || target.name == "everyone" || target.is_default {
         return Err(StatusCode::FORBIDDEN);
@@ -228,15 +224,14 @@ async fn add_member_to_group(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    let target_group_pos: i32 = sqlx::query_scalar(
-        "SELECT position FROM groups WHERE id = $1 AND hub_id = $2",
-    )
-    .bind(group_id)
-    .bind(hub_id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::NOT_FOUND)?;
+    let target_group_pos: i32 =
+        sqlx::query_scalar("SELECT position FROM groups WHERE id = $1 AND hub_id = $2")
+            .bind(group_id)
+            .bind(hub_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::NOT_FOUND)?;
 
     if !caller.can_manage_position(target_group_pos) {
         return Err(StatusCode::FORBIDDEN);
@@ -276,7 +271,10 @@ async fn remove_member_from_group(
     }
 
     #[derive(sqlx::FromRow)]
-    struct GroupInfo { name: String, position: i32 }
+    struct GroupInfo {
+        name: String,
+        position: i32,
+    }
     let target_group = sqlx::query_as::<_, GroupInfo>(
         "SELECT name, position FROM groups WHERE id = $1 AND hub_id = $2",
     )
@@ -292,14 +290,13 @@ async fn remove_member_from_group(
     }
 
     if target_group.name == "admin" {
-        let is_creator: bool = sqlx::query_scalar(
-            "SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1",
-        )
-        .bind(hub_id)
-        .bind(user_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(false);
+        let is_creator: bool =
+            sqlx::query_scalar("SELECT COALESCE(creator_id = $2, false) FROM hubs WHERE id = $1")
+                .bind(hub_id)
+                .bind(user_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or(false);
 
         if is_creator {
             return Err(StatusCode::FORBIDDEN);
