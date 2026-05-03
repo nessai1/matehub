@@ -53,7 +53,9 @@ WORKDIR /app/frontend
 RUN npm run build
 
 # ── Rust builder ─────────────────────────────────────────────────────
-FROM rust:1.87-bookworm AS builder
+# Match /rust-toolchain.toml so rustup doesn't have to download a second
+# toolchain on top of the base image's bundled one.
+FROM rust:1.95-bookworm AS builder
 ARG SERVICE
 # Release tag like "0.1.2", baked into the binary via option_env!() so
 # /version reports the same string the image is tagged with. Falls back

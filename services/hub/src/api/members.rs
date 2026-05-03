@@ -353,7 +353,7 @@ async fn get_pending_invites(
     }
 
     // Newest first — admins typically care about what they just sent out.
-    result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    result.sort_by_key(|r| std::cmp::Reverse(r.created_at));
 
     Ok(Json(result))
 }
