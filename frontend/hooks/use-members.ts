@@ -50,8 +50,8 @@ export interface Member {
  *  you can interact with. */
 export function isMemberActive(m: Member): boolean {
   if (m.deleted_at) return false;
-  if (m.expires_at && new Date(m.expires_at) <= new Date()) return false;
-  return true;
+  return !(m.expires_at && new Date(m.expires_at) <= new Date());
+
 }
 
 /** SWR cache key. Exported so usePresence can target it via mutate(). */
