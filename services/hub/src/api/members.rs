@@ -525,8 +525,7 @@ async fn delete_pending_temp(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

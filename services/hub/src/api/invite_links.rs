@@ -281,15 +281,7 @@ async fn redeem_invite_link(
     // default-group lookup. Owners bypass RLS in our setup, but be
     // explicit so a future tightening (FORCE ROW LEVEL SECURITY) doesn't
     // silently break this path.
-    //
-    // `set_config(name, value, is_local=true)` is the parameterized
-    // equivalent of `SET LOCAL <name> = '<value>'`. We use the bind form
-    // so the surrounding pattern doesn't tempt anyone to interpolate a
-    // value that comes from request body (hub_id today is `i64` — safe —
-    // but the format-bang shape is a foot-gun waiting for a copy-paste).
-    sqlx::query("SELECT set_config('app.current_hub_id', $1, true)")
-        .bind(hub_id.to_string())
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| internal())?;
 

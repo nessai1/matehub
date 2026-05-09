@@ -275,8 +275,7 @@ async fn accept_invitation(
     let hub_id = invitation.hub_id;
 
     // Need RLS context for member_groups + (later) any hub-scoped reads.
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 

@@ -146,8 +146,7 @@ async fn setup_admin(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // RLS gate for groups/members/channels inserts inside this txn.
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
