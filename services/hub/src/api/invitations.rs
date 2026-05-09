@@ -275,13 +275,21 @@ async fn accept_invitation(
     let hub_id = invitation.hub_id;
 
     // Need RLS context for member_groups + (later) any hub-scoped reads.
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let password_hash = bcrypt::hash(&body.password, bcrypt::DEFAULT_COST)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // bcrypt at DEFAULT_COST burns ~250ms of CPU per hash. Done on the
+    // tokio worker thread it would block every other task scheduled on
+    // it; under concurrent invite accepts that turns the runtime into a
+    // half-second-per-CPU bottleneck. spawn_blocking moves the hash to
+    // the dedicated blocking pool while the tx keeps its connection.
+    let password = body.password.clone();
+    let password_hash =
+        tokio::task::spawn_blocking(move || bcrypt::hash(&password, bcrypt::DEFAULT_COST))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let user_id = snowflake::next_id();
 
     // Username UNIQUE → 409 if someone else snagged it between create/accept.
@@ -393,7 +401,7 @@ async fn accept_invitation(
 // etc.) and turns into a "validator vs reality" tug-of-war. Format
 // validation is a shape check; deliverability is DNS's problem.
 
-fn is_valid_email(s: &str) -> bool {
+pub(super) fn is_valid_email(s: &str) -> bool {
     if EmailAddress::from_str(s).is_err() {
         return false;
     }
@@ -408,7 +416,7 @@ fn is_valid_email(s: &str) -> bool {
 
 // ── Token gen (same scheme as temp_users) ───────────────────────
 
-fn generate_token() -> String {
+pub(super) fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();

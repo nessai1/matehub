@@ -22,9 +22,11 @@ const MEMBER_PERMS: i32 = bits::MEMBER_CHANNEL;
 pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     tracing::info!("running dev seed...");
 
-    // Bypass RLS for seeding (the pooled connection sets this per-session).
-    sqlx::raw_sql(&format!("SET LOCAL app.current_hub_id = '{DEV_HUB_ID}'"))
-        .execute(pool)
+    // Bypass RLS for seeding. We bind at session scope on the pool — seed
+    // runs once at startup before any user traffic, so the leak that
+    // worries us in handler paths (a returned connection still carrying
+    // this hub_id) doesn't apply here.
+    crate::db::rls::set_hub_context_session(pool, DEV_HUB_ID)
         .await
         .ok();
 

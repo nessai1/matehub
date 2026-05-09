@@ -29,6 +29,10 @@ pub fn routes(state: MembersState) -> Router {
             "/hubs/{hub_id}/pending-invites/temp/{id}",
             delete(delete_pending_temp),
         )
+        .route(
+            "/hubs/{hub_id}/pending-invites/link/{id}",
+            delete(delete_pending_link),
+        )
         .route("/hubs/{hub_id}/members/{user_id}", delete(kick_member))
         .route("/hubs/{hub_id}/my-permissions", get(my_permissions))
         .with_state(state)
@@ -221,15 +225,15 @@ async fn get_members_full(
 
 #[derive(Serialize)]
 struct PendingInvite {
-    /// "permanent" | "temp" — drives the icon/tooltip on the FE.
+    /// "permanent" | "temp" | "link" — drives the icon/tooltip on the FE.
     kind: &'static str,
     #[serde(with = "matehub_common::serde_i64::as_string")]
     id: i64,
-    /// Pre-set username (permanent) or nickname (temp). All we know about
-    /// the invitee until they actually show up.
+    /// Pre-set username (permanent), nickname (temp), or short descriptor
+    /// (link — there's no per-invitee identity yet).
     name: String,
     email: Option<String>,
-    /// TTL only meaningful for temp links.
+    /// TTL meaningful for temp links and (always-set) for invite links.
     expires_at: Option<DateTime<Utc>>,
     created_at: DateTime<Utc>,
     #[serde(with = "matehub_common::serde_i64::option_as_string", default)]
@@ -240,6 +244,10 @@ struct PendingInvite {
     /// so the FE can render "by Alice" without a second round-trip.
     created_by_name: String,
     created_by_username: String,
+    /// Invite-link cap. None for `permanent` and `temp` rows.
+    max_uses: Option<i32>,
+    /// Invite-link counter (uses already redeemed). None for non-link kinds.
+    uses_count: Option<i32>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -262,6 +270,19 @@ struct PendingTempRow {
     nickname: String,
     group_id: i64,
     expires_at: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+    created_by: i64,
+    created_by_name: String,
+    created_by_username: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingLinkRow {
+    id: i64,
+    expires_at: DateTime<Utc>,
+    max_uses: Option<i32>,
+    uses_count: i32,
+    group_id: Option<i64>,
     created_at: DateTime<Utc>,
     created_by: i64,
     created_by_name: String,
@@ -322,7 +343,29 @@ async fn get_pending_invites(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let mut result: Vec<PendingInvite> = Vec::with_capacity(permanents.len() + temps.len());
+    // Active invite-links: not revoked, not expired, not maxed-out.
+    let links = sqlx::query_as::<_, PendingLinkRow>(
+        "SELECT il.id, il.expires_at, il.max_uses, il.uses_count, il.group_id,
+                il.created_at, il.created_by,
+                u.display_name AS created_by_name,
+                u.username AS created_by_username
+         FROM invite_links il
+         JOIN users u ON u.id = il.created_by
+         WHERE il.hub_id = $1
+           AND il.revoked_at IS NULL
+           AND il.expires_at > now()
+           AND (il.max_uses IS NULL OR il.uses_count < il.max_uses)",
+    )
+    .bind(hub_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(|e| {
+        tracing::error!(?e, %hub_id, "pending invite_links SQL failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let mut result: Vec<PendingInvite> =
+        Vec::with_capacity(permanents.len() + temps.len() + links.len());
     for p in permanents {
         result.push(PendingInvite {
             kind: "permanent",
@@ -335,6 +378,8 @@ async fn get_pending_invites(
             created_by: p.created_by,
             created_by_name: p.created_by_name,
             created_by_username: p.created_by_username,
+            max_uses: None,
+            uses_count: None,
         });
     }
     for t in temps {
@@ -349,6 +394,26 @@ async fn get_pending_invites(
             created_by: t.created_by,
             created_by_name: t.created_by_name,
             created_by_username: t.created_by_username,
+            max_uses: None,
+            uses_count: None,
+        });
+    }
+    for l in links {
+        result.push(PendingInvite {
+            kind: "link",
+            id: l.id,
+            // No per-invitee name yet. The FE keys off `kind` and renders a
+            // counter (uses_count / max_uses) instead of a username.
+            name: String::new(),
+            email: None,
+            expires_at: Some(l.expires_at),
+            created_at: l.created_at,
+            group_id: l.group_id,
+            created_by: l.created_by,
+            created_by_name: l.created_by_name,
+            created_by_username: l.created_by_username,
+            max_uses: l.max_uses,
+            uses_count: Some(l.uses_count),
         });
     }
 
@@ -460,8 +525,7 @@ async fn delete_pending_temp(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
-        .execute(&mut *tx)
+    crate::db::rls::set_hub_context_local(&mut *tx, hub_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -486,6 +550,55 @@ async fn delete_pending_temp(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     tracing::info!(%hub_id, %user_id, caller = auth.0.sub, "pending temp invite revoked");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_pending_link(
+    State(state): State<MembersState>,
+    Path((hub_id, link_id)): Path<(i64, i64)>,
+    auth: crate::auth::AuthUser,
+) -> Result<StatusCode, StatusCode> {
+    let mut conn = crate::db::rls::hub_connection(&state.pool, hub_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let row: Option<(i64, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT created_by, revoked_at FROM invite_links WHERE id = $1 AND hub_id = $2",
+    )
+    .bind(link_id)
+    .bind(hub_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (created_by, revoked_at) = row.ok_or(StatusCode::NOT_FOUND)?;
+    if revoked_at.is_some() {
+        return Err(StatusCode::GONE);
+    }
+
+    if created_by != auth.0.sub {
+        let caller = resolve_user_perms(&state.pool, hub_id, auth.0.sub)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        if !caller.has(bits::INVITE_PERMANENT) && !caller.has(bits::MANAGE_MEMBERS) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    // Soft revoke (matches `delete_pending_temp` semantics): we keep the row
+    // for audit but stop accepting new redemptions. The atomic UPDATE in the
+    // redeem path's `WHERE revoked_at IS NULL` clause closes the window.
+    sqlx::query(
+        "UPDATE invite_links SET revoked_at = now()
+         WHERE id = $1 AND hub_id = $2 AND revoked_at IS NULL",
+    )
+    .bind(link_id)
+    .bind(hub_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    tracing::info!(%hub_id, %link_id, caller = auth.0.sub, "pending invite-link revoked");
     Ok(StatusCode::NO_CONTENT)
 }
 

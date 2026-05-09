@@ -732,6 +732,57 @@
       ],
       "You joined this call from another window. Only one tab can be active at a time.": [
         "別のウィンドウからこの通話に参加しました。同時にアクティブにできるタブは1つだけです。"
+      ],
+      "Invite link": [
+        "招待リンク"
+      ],
+      "Limit number of registrations": [
+        "登録数を制限する"
+      ],
+      "Max registrations": [
+        "最大登録数"
+      ],
+      "Add to group": [
+        "グループに追加"
+      ],
+      "Select group": [
+        "グループを選択"
+      ],
+      "default": [
+        "デフォルト"
+      ],
+      "Enter a positive whole number": [
+        "正の整数を入力してください"
+      ],
+      "Pick a future date": [
+        "未来の日付を選択してください"
+      ],
+      "Selected group is no longer available": [
+        "選択したグループは利用できません"
+      ],
+      "%d used": [
+        "%d 件使用済み"
+      ],
+      "Invite link — share to register": [
+        "招待リンク — 共有して登録"
+      ],
+      "This link is no longer valid": [
+        "このリンクは無効です"
+      ],
+      "Group": [
+        "グループ"
+      ],
+      "%d of %d spots left": [
+        "%d / %d 枠が残っています"
+      ],
+      "Login must be 3–32 chars: letters, digits, . _ -": [
+        "ログイン: 3〜32文字、英数字 . _ -"
+      ],
+      "Sign up": [
+        "登録"
+      ],
+      "Share a link, send a temporary guest pass, or pre-allocate a login.": [
+        "リンクを共有、一時ゲストパスを送信、またはログインを予約します。"
       ]
     }
   }

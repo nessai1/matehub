@@ -20,7 +20,7 @@ pub async fn spawn_app() -> String {
 
     // Clean data tables in FK-safe order, then re-seed.
     sqlx::raw_sql(
-        "TRUNCATE temp_users, channel_permissions, member_groups, groups, channels, hub_members, refresh_tokens, hubs, users CASCADE;"
+        "TRUNCATE invite_links, temp_users, channel_permissions, member_groups, groups, channels, hub_members, refresh_tokens, hubs, users CASCADE;"
     )
     .execute(&pool)
     .await

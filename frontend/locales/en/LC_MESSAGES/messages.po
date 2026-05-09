@@ -757,3 +757,54 @@ msgstr "Disconnected from call"
 
 msgid "You joined this call from another window. Only one tab can be active at a time."
 msgstr "You joined this call from another window. Only one tab can be active at a time."
+
+msgid "Invite link"
+msgstr "Invite link"
+
+msgid "Limit number of registrations"
+msgstr "Limit number of registrations"
+
+msgid "Max registrations"
+msgstr "Max registrations"
+
+msgid "Add to group"
+msgstr "Add to group"
+
+msgid "Select group"
+msgstr "Select group"
+
+msgid "default"
+msgstr "default"
+
+msgid "Enter a positive whole number"
+msgstr "Enter a positive whole number"
+
+msgid "Pick a future date"
+msgstr "Pick a future date"
+
+msgid "Selected group is no longer available"
+msgstr "Selected group is no longer available"
+
+msgid "%d used"
+msgstr "%d used"
+
+msgid "Invite link — share to register"
+msgstr "Invite link — share to register"
+
+msgid "This link is no longer valid"
+msgstr "This link is no longer valid"
+
+msgid "Group"
+msgstr "Group"
+
+msgid "%d of %d spots left"
+msgstr "%d of %d spots left"
+
+msgid "Login must be 3–32 chars: letters, digits, . _ -"
+msgstr "Login must be 3–32 chars: letters, digits, . _ -"
+
+msgid "Sign up"
+msgstr "Sign up"
+
+msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
+msgstr "Share a link, send a temporary guest pass, or pre-allocate a login."

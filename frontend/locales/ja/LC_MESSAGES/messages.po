@@ -732,3 +732,54 @@ msgstr "通話から切断されました"
 
 msgid "You joined this call from another window. Only one tab can be active at a time."
 msgstr "別のウィンドウからこの通話に参加しました。同時にアクティブにできるタブは1つだけです。"
+
+msgid "Invite link"
+msgstr "招待リンク"
+
+msgid "Limit number of registrations"
+msgstr "登録数を制限する"
+
+msgid "Max registrations"
+msgstr "最大登録数"
+
+msgid "Add to group"
+msgstr "グループに追加"
+
+msgid "Select group"
+msgstr "グループを選択"
+
+msgid "default"
+msgstr "デフォルト"
+
+msgid "Enter a positive whole number"
+msgstr "正の整数を入力してください"
+
+msgid "Pick a future date"
+msgstr "未来の日付を選択してください"
+
+msgid "Selected group is no longer available"
+msgstr "選択したグループは利用できません"
+
+msgid "%d used"
+msgstr "%d 件使用済み"
+
+msgid "Invite link — share to register"
+msgstr "招待リンク — 共有して登録"
+
+msgid "This link is no longer valid"
+msgstr "このリンクは無効です"
+
+msgid "Group"
+msgstr "グループ"
+
+msgid "%d of %d spots left"
+msgstr "%d / %d 枠が残っています"
+
+msgid "Login must be 3–32 chars: letters, digits, . _ -"
+msgstr "ログイン: 3〜32文字、英数字 . _ -"
+
+msgid "Sign up"
+msgstr "登録"
+
+msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
+msgstr "リンクを共有、一時ゲストパスを送信、またはログインを予約します。"

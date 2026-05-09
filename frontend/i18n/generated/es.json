@@ -732,6 +732,57 @@
       ],
       "You joined this call from another window. Only one tab can be active at a time.": [
         "Te uniste a esta llamada desde otra ventana. Solo una pestaña puede estar activa a la vez."
+      ],
+      "Invite link": [
+        "Enlace de invitación"
+      ],
+      "Limit number of registrations": [
+        "Limitar número de registros"
+      ],
+      "Max registrations": [
+        "Máximo de registros"
+      ],
+      "Add to group": [
+        "Añadir al grupo"
+      ],
+      "Select group": [
+        "Seleccionar grupo"
+      ],
+      "default": [
+        "predeterminado"
+      ],
+      "Enter a positive whole number": [
+        "Introduce un número entero positivo"
+      ],
+      "Pick a future date": [
+        "Elige una fecha futura"
+      ],
+      "Selected group is no longer available": [
+        "El grupo seleccionado ya no está disponible"
+      ],
+      "%d used": [
+        "%d usados"
+      ],
+      "Invite link — share to register": [
+        "Enlace de invitación — compártelo para registrarse"
+      ],
+      "This link is no longer valid": [
+        "Este enlace ya no es válido"
+      ],
+      "Group": [
+        "Grupo"
+      ],
+      "%d of %d spots left": [
+        "%d de %d plazas disponibles"
+      ],
+      "Login must be 3–32 chars: letters, digits, . _ -": [
+        "Usuario: 3–32 caracteres, letras, dígitos, . _ -"
+      ],
+      "Sign up": [
+        "Registrarse"
+      ],
+      "Share a link, send a temporary guest pass, or pre-allocate a login.": [
+        "Comparte un enlace, envía un pase de invitado temporal o reserva un usuario."
       ]
     }
   }

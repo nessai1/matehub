@@ -72,6 +72,19 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: No format!-shaped SET app.current_hub_id
+        # Catches regressions of the RLS-context idiom: any
+        # `format!("SET [LOCAL] app.current_hub_id = '{...}'")` interpolates
+        # a value into the SQL string. Today every callsite uses an `i64`,
+        # but the shape is a copy-paste foot-gun if someone later passes a
+        # request-body string. Use db::rls::set_hub_context_local /
+        # set_hub_context_session instead — they pass the value via bind.
+        run: |
+          if git grep -nE 'format!.*SET( LOCAL)? app\.current_hub_id' services/; then
+            echo "::error::Use db::rls::set_hub_context_{local,session} instead of format!() with SET app.current_hub_id"
+            exit 1
+          fi
+
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 

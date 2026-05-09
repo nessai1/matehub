@@ -732,6 +732,57 @@
       ],
       "You joined this call from another window. Only one tab can be active at a time.": [
         "您已从另一个窗口加入此通话。同一时间只能激活一个标签页。"
+      ],
+      "Invite link": [
+        "邀请链接"
+      ],
+      "Limit number of registrations": [
+        "限制注册人数"
+      ],
+      "Max registrations": [
+        "最大注册数"
+      ],
+      "Add to group": [
+        "添加到群组"
+      ],
+      "Select group": [
+        "选择群组"
+      ],
+      "default": [
+        "默认"
+      ],
+      "Enter a positive whole number": [
+        "请输入正整数"
+      ],
+      "Pick a future date": [
+        "请选择未来的日期"
+      ],
+      "Selected group is no longer available": [
+        "所选群组已不可用"
+      ],
+      "%d used": [
+        "已使用 %d"
+      ],
+      "Invite link — share to register": [
+        "邀请链接 — 分享以注册"
+      ],
+      "This link is no longer valid": [
+        "此链接已失效"
+      ],
+      "Group": [
+        "群组"
+      ],
+      "%d of %d spots left": [
+        "剩余 %d / %d 名额"
+      ],
+      "Login must be 3–32 chars: letters, digits, . _ -": [
+        "登录名：3–32 个字符，字母、数字、. _ -"
+      ],
+      "Sign up": [
+        "注册"
+      ],
+      "Share a link, send a temporary guest pass, or pre-allocate a login.": [
+        "分享链接、发送临时访客通行证或预分配登录名。"
       ]
     }
   }

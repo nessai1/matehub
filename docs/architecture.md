@@ -179,6 +179,64 @@ Endpoint `/auth/sso` не регистрируется. Вместо него �
 `user_type: "temp"`, `sub: temp_users.id`. Не пересекается ни с general, ни с
 SSO-механикой.
 
+### Invite links (общая ссылка-приглашение)
+
+Третий тип приглашения, рядом с temp-link и permanent-invite. Админ
+выпускает одну ссылку с дедлайном и опциональным `max_uses`; первые N
+посетителей сами заполняют login + password + display_name + email на
+странице `/signup/{token}` и попадают в выбранную группу + everyone.
+
+**Таблица `hub.invite_links`** (миграция `002_invite_links.sql`):
+`id`, `hub_id`, `token` (24 random bytes → base64-url),
+`expires_at TIMESTAMPTZ NOT NULL`, `max_uses INT NULL` (NULL = unlimited),
+`uses_count INT NOT NULL DEFAULT 0`, `group_id` (опц.), `revoked_at`,
+`created_by`, `created_at`. CHECK гарантирует `uses_count <= max_uses`.
+RLS-policy `hub_id = current_setting('app.current_hub_id', true)::bigint`
+— как у `invitations`/`temp_users`.
+
+**Атомарный claim slot'а** на пути redeem (`POST /v1/invite-links/{token}/redeem`):
+
+```sql
+UPDATE invite_links
+   SET uses_count = uses_count + 1
+ WHERE token = $1
+   AND revoked_at IS NULL
+   AND expires_at > now()
+   AND (max_uses IS NULL OR uses_count < max_uses)
+RETURNING id, hub_id, group_id;
+```
+
+`0 rows` → 410 Gone. `1 row` → продолжаем регистрацию в той же
+транзакции: pre-flight uniqueness checks → `INSERT INTO users` →
+`INSERT INTO hub_members` → `INSERT INTO member_groups` для everyone +
+chosen group → issue access+refresh tokens → commit.
+
+**Race-property:** инкремент счётчика и INSERT в `users` живут в одной
+транзакции. Username UNIQUE collision (SQLSTATE 23505) откатывает всю
+tx, в т.ч. инкремент — слот **не** считается потраченным. Это значит,
+что атакующий не может выжечь ссылку, спамя коллизионными username'ами.
+Покрыто тестом `username_collision_does_not_consume_slot` в
+`services/hub/tests/invite_links_tests.rs`.
+
+**Concurrency-property:** конкурирующие redeem'ы на последний слот
+соревнуются за `UPDATE` в БД (без `FOR UPDATE`/Mutex). 10 одновременных
+запросов на `max_uses=3` дают ровно 3 успешных и 7 × 410 Gone. Покрыто
+тестом `concurrent_redeem_respects_cap`.
+
+**Permission**: создание/revoke под `INVITE_PERMANENT` (бит 2048),
+шарится с permanent invitations. Отдельный бит не вводился, чтобы не
+двигать `bits::ALL` и не мигрировать существующие admin-группы.
+
+**Pending-invites листинг** (`GET /v1/hubs/{hub_id}/pending-invites`)
+агрегирует все три типа с `kind: "permanent" | "temp" | "link"`. Для
+link строки `name = ""`; UI рендерит `Invite link · used/cap`.
+
+**Не сделано в первой итерации:** rate-limit/CAPTCHA на public
+`/redeem` (отдельный тикет — это shared concern с существующим
+`accept_invitation`), email verification, фоновый cleanup истёкших
+ссылок. Никаких дублей логики безопасности — pre-flight uniqueness +
+atomic claim покрывают highload-сценарии.
+
 ---
 
 ## 3. Один WebSocket на пользователя (chat)

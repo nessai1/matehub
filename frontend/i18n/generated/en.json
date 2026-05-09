@@ -732,6 +732,57 @@
       ],
       "You joined this call from another window. Only one tab can be active at a time.": [
         "You joined this call from another window. Only one tab can be active at a time."
+      ],
+      "Invite link": [
+        "Invite link"
+      ],
+      "Limit number of registrations": [
+        "Limit number of registrations"
+      ],
+      "Max registrations": [
+        "Max registrations"
+      ],
+      "Add to group": [
+        "Add to group"
+      ],
+      "Select group": [
+        "Select group"
+      ],
+      "default": [
+        "default"
+      ],
+      "Enter a positive whole number": [
+        "Enter a positive whole number"
+      ],
+      "Pick a future date": [
+        "Pick a future date"
+      ],
+      "Selected group is no longer available": [
+        "Selected group is no longer available"
+      ],
+      "%d used": [
+        "%d used"
+      ],
+      "Invite link — share to register": [
+        "Invite link — share to register"
+      ],
+      "This link is no longer valid": [
+        "This link is no longer valid"
+      ],
+      "Group": [
+        "Group"
+      ],
+      "%d of %d spots left": [
+        "%d of %d spots left"
+      ],
+      "Login must be 3–32 chars: letters, digits, . _ -": [
+        "Login must be 3–32 chars: letters, digits, . _ -"
+      ],
+      "Sign up": [
+        "Sign up"
+      ],
+      "Share a link, send a temporary guest pass, or pre-allocate a login.": [
+        "Share a link, send a temporary guest pass, or pre-allocate a login."
       ]
     }
   }

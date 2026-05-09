@@ -1,7 +1,7 @@
 // Roster's quiet sibling: people who've been invited but haven't shown up
-// yet. The Rust side (`GET /v1/hubs/{hub_id}/pending-invites`) merges two
-// stores — invitations.used_at IS NULL and temp_users.active_session IS NULL
-// — into one list, freshest first.
+// yet. The Rust side (`GET /v1/hubs/{hub_id}/pending-invites`) merges three
+// stores — invitations.used_at IS NULL, temp_users.active_session IS NULL,
+// and active invite_links — into one list, freshest first.
 //
 // Cache is invalidated by:
 //   * usePresence on `member_joined` (an accept removes one of these rows)
@@ -13,8 +13,10 @@ import { useAuth } from "@/lib/auth";
 const HUB_API = "/api/hub";
 
 export interface PendingInvite {
-  kind: "permanent" | "temp";
+  kind: "permanent" | "temp" | "link";
   id: string;
+  /// For permanent: pre-allocated username. For temp: nickname. For link:
+  /// empty string — the FE renders a counter instead.
   name: string;
   email: string | null;
   expires_at: string | null;
@@ -23,6 +25,10 @@ export interface PendingInvite {
   created_by: string;
   created_by_name: string;
   created_by_username: string;
+  /// Invite-link cap. null for `permanent` and `temp`.
+  max_uses: number | null;
+  /// Invite-link counter. null for non-link kinds.
+  uses_count: number | null;
 }
 
 export function pendingInvitesKey(hubId: string | undefined) {

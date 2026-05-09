@@ -204,9 +204,21 @@ function PendingInviteItem({
   const [error, setError] = useState("");
 
   const isTemp = invite.kind === "temp";
-  const kindLabel = isTemp
-    ? t("Temp link — not yet used")
-    : t("Permanent invite — not yet accepted");
+  const isLink = invite.kind === "link";
+
+  // Display name: pre-allocated username for permanent, nickname for temp,
+  // synthesized "Invite link · used/cap" for the new general-link kind
+  // (the API returns `name: ""` for it because there's no per-invitee
+  // identity yet).
+  const displayName = isLink
+    ? formatLinkLabel(invite.uses_count, invite.max_uses)
+    : invite.name;
+
+  const kindLabel = isLink
+    ? t("Invite link — share to register")
+    : isTemp
+      ? t("Temp link — not yet used")
+      : t("Permanent invite — not yet accepted");
 
   // Authoritative check still happens server-side; this just hides the
   // button when we know the call would 403.
@@ -235,13 +247,17 @@ function PendingInviteItem({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          title={collapsed ? invite.name : undefined}
+          title={collapsed ? displayName : undefined}
           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted"
         >
           <div className="relative shrink-0">
             <Avatar className="h-7 w-7">
               <AvatarFallback className="bg-muted/40 text-[10px] font-medium text-muted-foreground">
-                <ClockIcon className="h-3.5 w-3.5" />
+                {isLink ? (
+                  <LinkIcon className="h-3.5 w-3.5" />
+                ) : (
+                  <ClockIcon className="h-3.5 w-3.5" />
+                )}
               </AvatarFallback>
             </Avatar>
             {isTemp && (
@@ -257,7 +273,7 @@ function PendingInviteItem({
             )}
           >
             <div className="truncate whitespace-nowrap text-[13px] italic text-muted-foreground">
-              {invite.name}
+              {displayName}
             </div>
           </div>
         </button>
@@ -268,7 +284,7 @@ function PendingInviteItem({
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {kindLabel}
             </div>
-            <div className="text-sm font-medium">{invite.name}</div>
+            <div className="text-sm font-medium">{displayName}</div>
             {invite.email && (
               <div className="text-xs text-muted-foreground">{invite.email}</div>
             )}
@@ -321,6 +337,13 @@ function Row({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+
+/** "Invite link · 2/5" or "Invite link · 2 used" for unlimited links. */
+function formatLinkLabel(used: number | null, cap: number | null): string {
+  const u = used ?? 0;
+  if (cap == null) return `${t("Invite link")} · ${t("%d used", u)}`;
+  return `${t("Invite link")} · ${u}/${cap}`;
 }
 
 /** Locale-aware short timestamp ("12 Mar 14:32" / "12 мар 14:32"). */
