@@ -1,0 +1,41 @@
+# Prometheus scrape config for box deployments.
+#
+# Differs from `deploy/observability/prometheus/prometheus.yml` in one way:
+# the targets are compose service names, not `host.docker.internal`. On a
+# box install every matehub service runs as a sibling container in the
+# same `matehub` network, so DNS resolves `hub`, `chat`, `video` straight
+# to their internal IPs.
+#
+# Each service exposes `/metrics` on the same HTTP port the API uses
+# (`matehub_common::observability::metrics_layer_and_handle`). Transcoder
+# has no HTTP server and is intentionally absent — when it grows one
+# (or NATS heartbeats land), add it here.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    cluster: matehub-box
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: matehub-hub
+    static_configs:
+      - targets: ["hub:3002"]
+        labels:
+          service: hub
+
+  - job_name: matehub-chat
+    static_configs:
+      - targets: ["chat:3003"]
+        labels:
+          service: chat
+
+  - job_name: matehub-video
+    static_configs:
+      - targets: ["video:4000"]
+        labels:
+          service: video

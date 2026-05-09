@@ -19,6 +19,10 @@ on:
       - 'video/*'
       - 'transcoder/*'
       - 'general/*'
+      # `box/vX.Y.Z` triggers the box archive build instead of an image
+      # push -- see the second job below. Kept in the same workflow so a
+      # single tag of the right shape produces a publishable artifact.
+      - 'box/v*'
 
 env:
   REGISTRY: cr.yandex
@@ -27,6 +31,9 @@ jobs:
   build-push:
     name: Build & push
     runs-on: ubuntu-latest
+    # Per-service tags only -- box/* tags hit the build-box-archives job
+    # below instead.
+    if: ${{ !startsWith(github.ref_name, 'box/') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -104,3 +111,87 @@ jobs:
           echo "- Service: \`${{ steps.parse.outputs.service }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Version: \`${{ steps.parse.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Image: \`${{ steps.parse.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Box archive build (`box/vX.Y.Z` tags)
+  #
+  # Resolves the latest `<service>/X.Y.Z` tag for each service, packs
+  # three Linux-family-flavoured tarballs (debian/ubuntu/rhel — content
+  # is the same today, distinct names for delivery), and attaches them
+  # as assets on the matching GitHub Release.
+  #
+  # Required repo secrets:
+  #   YC_PULLER_KEY — a Yandex Cloud SA key file (raw JSON, not base64)
+  #                   for an SA holding only `container-registry.images.puller`.
+  #                   This is what end-users authenticate with from inside
+  #                   the archive; an admin/push key here would be a
+  #                   serious leak vector.
+  # ─────────────────────────────────────────────────────────────────────
+
+  build-box-archives:
+    name: Box archive (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref_name, 'box/') }}
+    permissions:
+      # Required by softprops/action-gh-release to create / update the
+      # release and attach assets.
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [debian, ubuntu, rhel]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The pack script resolves image versions from per-service git
+          # tags via `git tag --sort=-v:refname`. fetch-depth=0 makes
+          # them all visible.
+          fetch-depth: 0
+
+      - name: Resolve archive version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#box/}" >> "$GITHUB_OUTPUT"
+
+      - name: Materialise puller.json from secret
+        run: |
+          mkdir -p /tmp/secrets
+          # The secret is the raw JSON SA key file as exported by `yc iam
+          # key create`. Don't try to be clever with base64 encoding --
+          # GitHub's secret store handles multi-line values fine.
+          printf '%s' "${{ secrets.YC_PULLER_KEY }}" > /tmp/secrets/puller.json
+          chmod 0600 /tmp/secrets/puller.json
+          # Quick shape check so a missing/empty secret fails fast with a
+          # clear message instead of crashing pack-box-archive.sh.
+          jq -e '.id and .service_account_id and .private_key' /tmp/secrets/puller.json > /dev/null \
+            || { echo "::error::YC_PULLER_KEY is missing or malformed"; exit 1; }
+
+      - name: Pack archive
+        run: |
+          ./scripts/pack-box-archive.sh \
+            --variant ${{ matrix.variant }} \
+            --version ${{ steps.ver.outputs.version }} \
+            --puller /tmp/secrets/puller.json \
+            --out dist
+
+      # Tag is `box/vX.Y.Z`. softprops creates the release on the tag
+      # (or updates it) and uploads files from the matching glob. Each
+      # matrix variant uploads its own tarball to the same release in
+      # parallel.
+      #
+      # noinspection YAMLSchemaValidation -- IntelliJ's bundled GH Actions
+      # schema doesn't index third-party action inputs; `files` is a
+      # valid input on softprops/action-gh-release@v2.
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/matehub-box-${{ matrix.variant }}-*.tar.gz
+
+      - name: Summary
+        run: |
+          {
+            echo "### Box archive — ${{ matrix.variant }}"
+            echo
+            echo "- Tag:     \`${{ github.ref_name }}\`"
+            echo "- Version: \`${{ steps.ver.outputs.version }}\`"
+            echo "- Asset:   \`matehub-box-${{ matrix.variant }}-${{ steps.ver.outputs.version }}.tar.gz\`"
+          } >> "$GITHUB_STEP_SUMMARY"
