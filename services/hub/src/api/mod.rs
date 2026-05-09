@@ -6,6 +6,7 @@ pub mod dms;
 pub mod groups;
 pub mod hubs;
 pub mod invitations;
+pub mod invite_links;
 pub mod members;
 pub mod permissions;
 pub mod presence_ws;
@@ -68,6 +69,7 @@ pub fn routes(
         .merge(config::routes())
         .merge(setup::routes(pool.clone()))
         .merge(invitations::routes(pool.clone()))
+        .merge(invite_links::routes(pool.clone()))
         .nest("/v1", auth_api::routes(pool.clone()))
         .nest("/v1", hubs::routes(hubs_state))
         .nest("/v1", channels::routes(channels_state))

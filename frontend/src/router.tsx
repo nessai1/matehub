@@ -6,6 +6,7 @@ import RootRedirect from "@/app/page";
 import LoginPage from "@/app/(auth)/login/page";
 import InvitePage from "@/app/(auth)/register/page";
 import JoinPage from "@/app/(auth)/join/page";
+import SignupPage from "@/app/(auth)/signup/page";
 import SetupPage from "@/app/setup/page";
 import DashboardPage from "@/app/dashboard/page";
 import HubPage from "@/app/hub/page";
@@ -21,6 +22,7 @@ export const router = createBrowserRouter([
       { path: "/login", element: <LoginPage /> },
       { path: "/invite/:token", element: <InvitePage /> },
       { path: "/join/:token", element: <JoinPage /> },
+      { path: "/signup/:token", element: <SignupPage /> },
     ],
   },
   { path: "/dashboard", element: <DashboardPage /> },

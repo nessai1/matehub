@@ -1,7 +1,9 @@
-// "Add Teammates" — one popup, two tabs.
-//   Temp link:       guest with TTL, comes through /join/{token}
+// "Add Teammates" — one popup, three tabs.
+//   Invite link:     shared link, multi-use, deadline + optional cap.
+//                    Visitor self-registers at /signup/{token}. Default tab.
+//   Temp link:       guest with TTL, comes through /join/{token}.
 //   Permanent user:  pre-allocated login, the invitee finishes signup
-//                    at /invite/{token} (boxed; SaaS will mail later)
+//                    at /invite/{token} (boxed; SaaS will mail later).
 //
 // On boxed deploys we don't send invite emails — admin copies the
 // generated URL and shares it however they like.
@@ -10,6 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { Copy, Check, ChevronDownIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +23,13 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -48,19 +58,21 @@ interface Props {
 
 export function AddTeammatesDialog({ open, onOpenChange }: Props) {
   const { session } = useAuth();
-  const [defaultGroupId, setDefaultGroupId] = useState<string | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const defaultGroupId = useMemo(
+    () => groups.find((g) => g.is_default)?.id ?? null,
+    [groups],
+  );
 
-  // Load groups once we have a session — needed for the temp-user form.
+  // Load groups once we have a session — needed for both the temp-user form
+  // (default group only) and the invite-link form (full picker).
   useEffect(() => {
     if (!session || !open) return;
     fetch(`${HUB_API}/v1/hubs/${session.hubId}/groups`, {
       headers: { Authorization: `Bearer ${session.token}` },
     })
       .then((r) => (r.ok ? r.json() : []))
-      .then((groups: Group[]) => {
-        const def = groups.find((g) => g.is_default);
-        if (def) setDefaultGroupId(def.id);
-      })
+      .then((data: Group[]) => setGroups(data))
       .catch(() => {});
   }, [open, session]);
 
@@ -70,15 +82,18 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>{t("Invite participants")}</DialogTitle>
           <DialogDescription>
-            {t("Temporary link expires by timer. Permanent link is bound to a login.")}
+            {t("Share a link, send a temporary guest pass, or pre-allocate a login.")}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="temp" className="mt-4">
+        <Tabs defaultValue="link" className="mt-4">
           {/* Pill is content-sized (inline-flex w-fit, shadcn default) so the
-              longer "Постоянный пользователь" gets natural breathing room
-              instead of being squeezed into a forced 50% column. */}
+              longer labels get natural breathing room instead of being
+              squeezed into forced equal columns. */}
           <TabsList>
+            <TabsTrigger value="link" className="px-4">
+              {t("Invite link")}
+            </TabsTrigger>
             <TabsTrigger value="temp" className="px-4">
               {t("Temporary link")}
             </TabsTrigger>
@@ -86,6 +101,15 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
               {t("Permanent user")}
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="link" className="mt-4">
+            <InviteLinkForm
+              hubId={session?.hubId}
+              token={session?.token}
+              groups={groups}
+              defaultGroupId={defaultGroupId}
+            />
+          </TabsContent>
 
           <TabsContent value="temp" className="mt-4">
             <TempInviteForm
@@ -104,6 +128,228 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Invite link tab ─────────────────────────────────────────────
+
+function InviteLinkForm({
+  hubId,
+  token,
+  groups,
+  defaultGroupId,
+}: {
+  hubId?: string;
+  token?: string;
+  groups: Group[];
+  defaultGroupId: string | null;
+}) {
+  const defaultExpiry = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d;
+  }, []);
+  const [expiresAt, setExpiresAt] = useState<Date>(defaultExpiry);
+  const [dateOpen, setDateOpen] = useState(false);
+  const [limited, setLimited] = useState(false);
+  const [maxUses, setMaxUses] = useState("10");
+  // groupId is null until the user explicitly picks something; the Select
+  // shows the hub default as the placeholder-fallback. Keeping state strictly
+  // user-driven avoids the "syncing prop into state in useEffect" cascade
+  // that react-compiler (rightly) flags.
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const effectiveGroupId = groupId ?? defaultGroupId;
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [maxUsesErr, setMaxUsesErr] = useState("");
+  const [formErr, setFormErr] = useState("");
+
+  const submit = async () => {
+    if (!hubId || !token) return;
+    setMaxUsesErr("");
+    setFormErr("");
+
+    let cap: number | null = null;
+    if (limited) {
+      const n = Number(maxUses);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+        setMaxUsesErr(t("Enter a positive whole number"));
+        return;
+      }
+      cap = n;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(`${HUB_API}/v1/hubs/${hubId}/invite-links`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          expires_at: expiresAt.toISOString(),
+          max_uses: cap,
+          group_id: effectiveGroupId,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const code = (body as { error?: string }).error;
+        switch (code) {
+          case "expires_in_past":
+            setFormErr(t("Pick a future date"));
+            break;
+          case "invalid_max_uses":
+            setMaxUsesErr(t("Enter a positive whole number"));
+            break;
+          case "invalid_group":
+            setFormErr(t("Selected group is no longer available"));
+            break;
+          case "forbidden":
+            setFormErr(t("No permission to create invitations"));
+            break;
+          default:
+            setFormErr(`${t("Error")}: ${res.status}`);
+        }
+        setSubmitting(false);
+        return;
+      }
+      const data = await res.json();
+      setInviteUrl(`${window.location.origin}${data.invite_url}`);
+      invalidatePendingInvites(hubId);
+    } catch {
+      setFormErr(t("Could not reach the server"));
+    }
+    setSubmitting(false);
+  };
+
+  if (inviteUrl) {
+    return <InviteResult url={inviteUrl} onReset={() => setInviteUrl("")} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <FieldGroup className="flex-row">
+        <Field>
+          <FieldLabel htmlFor="link-expires-date">{t("Valid until")}</FieldLabel>
+          <Popover open={dateOpen} onOpenChange={setDateOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                id="link-expires-date"
+                variant="outline"
+                className="w-40 justify-between font-normal"
+              >
+                {format(expiresAt, "PPP")}
+                <ChevronDownIcon className="h-4 w-4 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto overflow-hidden p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={expiresAt}
+                captionLayout="dropdown"
+                defaultMonth={expiresAt}
+                onSelect={(d) => {
+                  if (!d) return;
+                  const next = new Date(d);
+                  next.setHours(
+                    expiresAt.getHours(),
+                    expiresAt.getMinutes(),
+                    0,
+                    0,
+                  );
+                  setExpiresAt(next);
+                  setDateOpen(false);
+                }}
+                disabled={(d) => {
+                  const startOfToday = new Date();
+                  startOfToday.setHours(0, 0, 0, 0);
+                  return d < startOfToday;
+                }}
+              />
+            </PopoverContent>
+          </Popover>
+        </Field>
+        <Field className="w-32">
+          <FieldLabel htmlFor="link-expires-time">{t("Time")}</FieldLabel>
+          <Input
+            id="link-expires-time"
+            type="time"
+            step="60"
+            value={`${pad2(expiresAt.getHours())}:${pad2(expiresAt.getMinutes())}`}
+            onChange={(e) => {
+              const [h, m] = e.target.value.split(":").map(Number);
+              if (Number.isNaN(h) || Number.isNaN(m)) return;
+              const next = new Date(expiresAt);
+              next.setHours(h, m, 0, 0);
+              setExpiresAt(next);
+            }}
+            className="appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
+          />
+        </Field>
+      </FieldGroup>
+
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="link-limited"
+          checked={limited}
+          onCheckedChange={(v) => {
+            setLimited(v === true);
+            if (v !== true) setMaxUsesErr("");
+          }}
+        />
+        <Label htmlFor="link-limited" className="cursor-pointer">
+          {t("Limit number of registrations")}
+        </Label>
+      </div>
+
+      {limited && (
+        <div className="space-y-2">
+          <Label htmlFor="link-max-uses">{t("Max registrations")}</Label>
+          <Input
+            id="link-max-uses"
+            type="number"
+            min={1}
+            value={maxUses}
+            onChange={(e) => {
+              setMaxUses(e.target.value);
+              if (maxUsesErr) setMaxUsesErr("");
+            }}
+            aria-invalid={!!maxUsesErr}
+          />
+          {maxUsesErr && (
+            <p className="text-xs text-destructive">{maxUsesErr}</p>
+          )}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="link-group">{t("Add to group")}</Label>
+        <Select
+          value={effectiveGroupId ?? undefined}
+          onValueChange={(v) => setGroupId(v)}
+        >
+          <SelectTrigger id="link-group" className="w-full">
+            <SelectValue placeholder={t("Select group")} />
+          </SelectTrigger>
+          <SelectContent>
+            {groups.map((g) => (
+              <SelectItem key={g.id} value={g.id}>
+                {g.name}
+                {g.is_default ? ` · ${t("default")}` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {formErr && <p className="text-sm text-destructive">{formErr}</p>}
+
+      <Button onClick={submit} disabled={submitting} className="w-full">
+        {submitting ? t("Creating...") : t("Generate link")}
+      </Button>
+    </div>
   );
 }
 

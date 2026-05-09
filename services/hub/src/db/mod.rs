@@ -11,7 +11,13 @@ pub async fn connect(database_url: &str) -> Result<PgPool> {
     Ok(pool)
 }
 
-const MIGRATIONS: &[(&str, &str)] = &[("001_init", include_str!("../../migrations/001_init.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("001_init", include_str!("../../migrations/001_init.sql")),
+    (
+        "002_invite_links",
+        include_str!("../../migrations/002_invite_links.sql"),
+    ),
+];
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
     sqlx::raw_sql(

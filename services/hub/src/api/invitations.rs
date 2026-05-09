@@ -393,7 +393,7 @@ async fn accept_invitation(
 // etc.) and turns into a "validator vs reality" tug-of-war. Format
 // validation is a shape check; deliverability is DNS's problem.
 
-fn is_valid_email(s: &str) -> bool {
+pub(super) fn is_valid_email(s: &str) -> bool {
     if EmailAddress::from_str(s).is_err() {
         return false;
     }
@@ -408,7 +408,7 @@ fn is_valid_email(s: &str) -> bool {
 
 // ── Token gen (same scheme as temp_users) ───────────────────────
 
-fn generate_token() -> String {
+pub(super) fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();
