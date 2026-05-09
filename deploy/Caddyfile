@@ -32,6 +32,20 @@
         reverse_proxy video:4000
     }
 
+    # ── object storage proxy ───────────────────────────────────────
+    # Browser-facing path for MinIO. The internal compose hostname
+    # `minio:9000` doesn't resolve from outside the network, so backend
+    # services build URLs against `https://${DOMAIN}/s3/...` (see
+    # S3_PUBLIC_URL in docker-compose.box.yml) and Caddy proxies them
+    # here. `handle_path` strips the `/s3/` prefix, so MinIO sees a
+    # native path-style request `/<bucket>/<key>`. Bucket policies on
+    # `hub-assets` and `chat-media` are public-read for simple GET; if
+    # we ever need signed URLs the backend can switch — Caddy doesn't
+    # care about the body, just routing.
+    handle_path /s3/* {
+        reverse_proxy minio:9000
+    }
+
     # ── SPA + everything else → hub (ServeDir fallback) ────────────
     handle {
         reverse_proxy hub:3002

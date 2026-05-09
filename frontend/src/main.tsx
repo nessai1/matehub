@@ -10,6 +10,11 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/lib/auth";
 import { LocaleProvider, detectInitialLocale, loadLocale } from "@/i18n";
+// Side-effect: registers `window.enableVideoTrace()` etc. so support can
+// flip the in-call debug panel from the browser console without being
+// inside an active call. Must be imported at app start, not lazily on
+// the video route.
+import "@/lib/video-trace";
 import { router } from "./router";
 import { loadConfig } from "./config";
 

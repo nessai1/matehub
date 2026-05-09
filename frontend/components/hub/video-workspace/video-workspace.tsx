@@ -7,6 +7,7 @@ import { useChannels } from "@/hooks/use-channels";
 import { useMembers } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
+import { isVideoTraceEnabled } from "@/lib/video-trace";
 import { ScreenShareProfileDialog } from "@/components/hub/screen-share-profile-dialog";
 import { cn } from "@/lib/utils";
 import { VideoGrid, PAGE_SIZE } from "./video-grid";
@@ -402,7 +403,11 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
         onConfirm={(profile) => void publishScreen(profile)}
       />
 
-      {import.meta.env.DEV && <CallDebugPanel client={client} />}
+      {/* Always on in dev. In production the operator opts in via the
+          browser console (`enableVideoTrace()`), see frontend/lib/video-trace.ts. */}
+      {(import.meta.env.DEV || isVideoTraceEnabled()) && (
+        <CallDebugPanel client={client} />
+      )}
     </div>
   );
 }

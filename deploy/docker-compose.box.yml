@@ -141,6 +141,13 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       DEV_MODE: "false"
       S3_ENDPOINT: http://minio:9000
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
@@ -174,6 +181,13 @@ services:
       HUB_DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
       JWT_SECRET: ${JWT_SECRET}
       S3_ENDPOINT: http://minio:9000
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
@@ -211,6 +225,13 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       NATS_URL: nats://nats:4222
       S3_ENDPOINT: http://minio:9000
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
       S3_REGION: us-east-1
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
