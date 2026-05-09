@@ -30,17 +30,24 @@ CREATE TABLE IF NOT EXISTS invite_links (
     -- ON DELETE SET NULL: removing the group later doesn't break already-
     -- issued links — the affected accounts are still in the everyone group.
     group_id    BIGINT REFERENCES groups(id) ON DELETE SET NULL,
-    created_by  BIGINT NOT NULL REFERENCES users(id),
+    -- ON DELETE RESTRICT: an active link must keep pointing at a real
+    -- creator for the audit trail. Dropping the user is blocked until the
+    -- link is revoked (or the table row is deleted explicitly). Default
+    -- NO ACTION behaves the same, but the explicit form documents intent
+    -- and matches the explicit clauses on hub_id/group_id.
+    created_by  BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at  TIMESTAMPTZ,
     CONSTRAINT max_uses_positive CHECK (max_uses IS NULL OR max_uses > 0),
     CONSTRAINT uses_within_max   CHECK (max_uses IS NULL OR uses_count <= max_uses)
 );
 
+-- The `token TEXT NOT NULL UNIQUE` above already creates the lookup index
+-- Postgres needs for the redeem path's `WHERE token = $1` predicate. A
+-- separate `idx_invite_links_token` would just double the write cost on
+-- every INSERT/UPDATE without speeding up reads.
 CREATE INDEX IF NOT EXISTS idx_invite_links_hub
     ON invite_links(hub_id) WHERE revoked_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_invite_links_token
-    ON invite_links(token);
 
 ALTER TABLE invite_links ENABLE ROW LEVEL SECURITY;
 CREATE POLICY invite_links_hub_isolation ON invite_links

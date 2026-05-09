@@ -86,15 +86,22 @@ export function AddTeammatesDialog({ open, onOpenChange }: Props) {
     () => assignableGroups(groups, myTopPosition),
     [groups, myTopPosition],
   );
-  const defaultGroupId = useMemo(
-    // Pick the in-hub default if it's still assignable; otherwise the
-    // highest-position (most-junior) group the caller can target.
-    () =>
-      pickable.find((g) => g.is_default)?.id ??
-      pickable[pickable.length - 1]?.id ??
+  const defaultGroupId = useMemo(() => {
+    // Prefer the in-hub default ("everyone" by convention) if the caller
+    // is allowed to invite into it; otherwise fall back to the
+    // most-junior group they can target. We pick the fallback by an
+    // explicit max-`position` reduce instead of `pickable[length-1]` —
+    // the latter silently relies on the backend returning groups sorted
+    // by `position`, and a future API change to ordering would break
+    // the fallback without any test catching it.
+    const def = pickable.find((g) => g.is_default);
+    if (def) return def.id;
+    const lowest = pickable.reduce<Group | null>(
+      (acc, g) => (acc == null || g.position > acc.position ? g : acc),
       null,
-    [pickable],
-  );
+    );
+    return lowest?.id ?? null;
+  }, [pickable]);
 
   // Load groups once we have a session — needed for both the temp-user form
   // (default group only) and the invite-link form (full picker).

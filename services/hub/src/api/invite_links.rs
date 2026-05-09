@@ -241,7 +241,7 @@ async fn redeem_invite_link(
     if body.password.len() < 6 {
         return Err(err("password_too_short", StatusCode::BAD_REQUEST));
     }
-    if display_name.is_empty() || display_name.chars().count() > 64 {
+    if !is_safe_display_name(display_name) {
         return Err(err("display_name_invalid", StatusCode::BAD_REQUEST));
     }
     if !is_valid_email(email) {
@@ -281,7 +281,14 @@ async fn redeem_invite_link(
     // default-group lookup. Owners bypass RLS in our setup, but be
     // explicit so a future tightening (FORCE ROW LEVEL SECURITY) doesn't
     // silently break this path.
-    sqlx::query(&format!("SET LOCAL app.current_hub_id = '{hub_id}'"))
+    //
+    // `set_config(name, value, is_local=true)` is the parameterized
+    // equivalent of `SET LOCAL <name> = '<value>'`. We use the bind form
+    // so the surrounding pattern doesn't tempt anyone to interpolate a
+    // value that comes from request body (hub_id today is `i64` — safe —
+    // but the format-bang shape is a foot-gun waiting for a copy-paste).
+    sqlx::query("SELECT set_config('app.current_hub_id', $1, true)")
+        .bind(hub_id.to_string())
         .execute(&mut *tx)
         .await
         .map_err(|_| internal())?;
@@ -311,8 +318,17 @@ async fn redeem_invite_link(
         return Err(err("email_taken", StatusCode::CONFLICT));
     }
 
+    // bcrypt at DEFAULT_COST burns ~250ms of CPU per hash. Doing that on
+    // a tokio worker thread starves every other task scheduled on it. We
+    // hand it off to the blocking pool so the tx still owns its
+    // connection but the runtime stays responsive under concurrent
+    // redeems.
+    let password = body.password.clone();
     let password_hash =
-        bcrypt::hash(&body.password, bcrypt::DEFAULT_COST).map_err(|_| internal())?;
+        tokio::task::spawn_blocking(move || bcrypt::hash(&password, bcrypt::DEFAULT_COST))
+            .await
+            .map_err(|_| internal())?
+            .map_err(|_| internal())?;
     let user_id = snowflake::next_id();
 
     let user_insert = sqlx::query(
@@ -328,12 +344,20 @@ async fn redeem_invite_link(
     .await;
     if let Err(e) = user_insert {
         // Race-loser: someone else snagged the username/email between the
-        // pre-flight check and this INSERT. Map to the same field-scoped
-        // codes; we don't know which constraint fired without parsing,
-        // so 409 with `username_taken` covers the common case (email is
-        // optional in the existing accept flow but mandatory here).
-        return Err(match e.as_database_error().and_then(|d| d.code()) {
-            Some(code) if code == "23505" => err("username_taken", StatusCode::CONFLICT),
+        // pre-flight check and this INSERT. Postgres surfaces 23505 with
+        // `constraint` set to either the auto-named `users_username_key`
+        // (from `username TEXT NOT NULL UNIQUE`) or the partial unique
+        // index `idx_users_email` (from `CREATE UNIQUE INDEX … WHERE
+        // email IS NOT NULL`). Map each to its field-scoped code so the
+        // FE can highlight the right input — under stress these two
+        // races behave very differently (a popular shared-email bingo
+        // would silently mis-flag the username field otherwise).
+        return Err(match e.as_database_error() {
+            Some(d) if d.code().as_deref() == Some("23505") => match d.constraint() {
+                Some("users_username_key") => err("username_taken", StatusCode::CONFLICT),
+                Some("idx_users_email") => err("email_taken", StatusCode::CONFLICT),
+                _ => internal(),
+            },
             _ => internal(),
         });
     }
@@ -420,17 +444,68 @@ async fn redeem_invite_link(
 // platform treats as "looks like a login".
 
 fn is_valid_username(s: &str) -> bool {
-    let len = s.len();
-    if !(3..=32).contains(&len) {
+    // ASCII-only first, *then* length. `s.len()` is bytes, not chars; if
+    // length came first, a 12-byte 4-char Cyrillic input would slip past
+    // the bound and only get rejected by the per-byte check below — which
+    // worked, but only by accident. Reordering kills the silent-bug shape
+    // for anyone who later copies this fn with the per-byte check pruned.
+    if !s.is_ascii() {
+        return false;
+    }
+    if !(3..=32).contains(&s.len()) {
         return false;
     }
     s.bytes()
         .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+// ── display_name validation ─────────────────────────────────────
+//
+// Username is hard-locked to a printable ASCII subset; display_name is
+// human-presented and has to allow real names in any script ("José",
+// "李华", "محمد"). But: the same RTL / zero-width / control-char
+// attack surface that motivated the username clamp applies here too —
+// without a filter, an attacker registers as
+//   display_name = "alice\u{202E}"
+// and the renderer shows what looks like "alice", impersonating an
+// existing admin. We allow any printable Unicode but reject:
+//   * C0 controls (incl. NUL, newlines smuggled into a single-line field)
+//   * C1 controls (less common but same shape)
+//   * Bidi formatting marks: U+200E/F, U+202A-E, U+2066-9
+//   * Zero-width chars: U+200B-D, U+FEFF
+//   * Word-joiner / invisible operators: U+2060-2064
+//
+// Length cap stays at 64 *characters* (not bytes — see is_valid_username
+// for why that distinction matters).
+
+fn is_safe_display_name(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let mut chars = 0usize;
+    for c in s.chars() {
+        chars += 1;
+        if chars > 64 {
+            return false;
+        }
+        if c.is_control() {
+            return false;
+        }
+        if matches!(c,
+            '\u{200B}'..='\u{200F}'   // ZWSP/ZWNJ/ZWJ + LRM/RLM
+            | '\u{202A}'..='\u{202E}' // LRE/RLE/PDF/LRO/RLO
+            | '\u{2060}'..='\u{206F}' // word-joiner, invisible operators, bidi isolates (2066-2069)
+            | '\u{FEFF}'              // BOM / ZWNBSP
+        ) {
+            return false;
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod tests {
-    use super::is_valid_username;
+    use super::{is_safe_display_name, is_valid_username};
 
     #[test]
     fn accepts_typical() {
@@ -456,5 +531,50 @@ mod tests {
         assert!(!is_valid_username("alice@home"));
         assert!(!is_valid_username("привет"));
         assert!(!is_valid_username("user/path"));
+    }
+
+    #[test]
+    fn ascii_check_runs_before_length() {
+        // 12-byte, 4-char string would pass a length-only check that used
+        // s.len(). The ASCII gate stops it first.
+        assert!(!is_valid_username("аб12")); // 4 chars / 6 bytes — Cyrillic
+    }
+
+    #[test]
+    fn display_name_accepts_real_names() {
+        assert!(is_safe_display_name("Alice"));
+        assert!(is_safe_display_name("José Martínez"));
+        assert!(is_safe_display_name("李华"));
+        assert!(is_safe_display_name("محمد"));
+        assert!(is_safe_display_name("O'Brien"));
+    }
+
+    #[test]
+    fn display_name_rejects_empty_and_too_long() {
+        assert!(!is_safe_display_name(""));
+        assert!(!is_safe_display_name(&"a".repeat(65)));
+        assert!(is_safe_display_name(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn display_name_rejects_impersonation_chars() {
+        // RLO — used to flip rendering to look like another user.
+        assert!(!is_safe_display_name("alice\u{202E}"));
+        // ZWSP — invisible character; "alice​alice" renders as "alicealice".
+        assert!(!is_safe_display_name("alice\u{200B}bob"));
+        // BOM smuggled into the middle.
+        assert!(!is_safe_display_name("ali\u{FEFF}ce"));
+        // Bidi isolate.
+        assert!(!is_safe_display_name("alice\u{2068}"));
+    }
+
+    #[test]
+    fn display_name_rejects_control_chars() {
+        // Newline smuggled into a single-line field.
+        assert!(!is_safe_display_name("alice\nbob"));
+        // NUL.
+        assert!(!is_safe_display_name("alice\0"));
+        // Tab.
+        assert!(!is_safe_display_name("alice\tbob"));
     }
 }

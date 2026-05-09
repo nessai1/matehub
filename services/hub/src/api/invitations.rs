@@ -280,8 +280,17 @@ async fn accept_invitation(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let password_hash = bcrypt::hash(&body.password, bcrypt::DEFAULT_COST)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // bcrypt at DEFAULT_COST burns ~250ms of CPU per hash. Done on the
+    // tokio worker thread it would block every other task scheduled on
+    // it; under concurrent invite accepts that turns the runtime into a
+    // half-second-per-CPU bottleneck. spawn_blocking moves the hash to
+    // the dedicated blocking pool while the tx keeps its connection.
+    let password = body.password.clone();
+    let password_hash =
+        tokio::task::spawn_blocking(move || bcrypt::hash(&password, bcrypt::DEFAULT_COST))
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let user_id = snowflake::next_id();
 
     // Username UNIQUE → 409 if someone else snagged it between create/accept.
