@@ -732,3 +732,54 @@ msgstr "Desconectado de la llamada"
 
 msgid "You joined this call from another window. Only one tab can be active at a time."
 msgstr "Te uniste a esta llamada desde otra ventana. Solo una pestaña puede estar activa a la vez."
+
+msgid "Invite link"
+msgstr "Enlace de invitación"
+
+msgid "Limit number of registrations"
+msgstr "Limitar número de registros"
+
+msgid "Max registrations"
+msgstr "Máximo de registros"
+
+msgid "Add to group"
+msgstr "Añadir al grupo"
+
+msgid "Select group"
+msgstr "Seleccionar grupo"
+
+msgid "default"
+msgstr "predeterminado"
+
+msgid "Enter a positive whole number"
+msgstr "Introduce un número entero positivo"
+
+msgid "Pick a future date"
+msgstr "Elige una fecha futura"
+
+msgid "Selected group is no longer available"
+msgstr "El grupo seleccionado ya no está disponible"
+
+msgid "%d used"
+msgstr "%d usados"
+
+msgid "Invite link — share to register"
+msgstr "Enlace de invitación — compártelo para registrarse"
+
+msgid "This link is no longer valid"
+msgstr "Este enlace ya no es válido"
+
+msgid "Group"
+msgstr "Grupo"
+
+msgid "%d of %d spots left"
+msgstr "%d de %d plazas disponibles"
+
+msgid "Login must be 3–32 chars: letters, digits, . _ -"
+msgstr "Usuario: 3–32 caracteres, letras, dígitos, . _ -"
+
+msgid "Sign up"
+msgstr "Registrarse"
+
+msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
+msgstr "Comparte un enlace, envía un pase de invitado temporal o reserva un usuario."

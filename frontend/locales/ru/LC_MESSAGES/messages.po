@@ -732,3 +732,54 @@ msgstr "Отключён от звонка"
 
 msgid "You joined this call from another window. Only one tab can be active at a time."
 msgstr "Вы зашли в этот звонок из другого окна. Активной может быть только одна вкладка."
+
+msgid "Invite link"
+msgstr "Ссылка-приглашение"
+
+msgid "Limit number of registrations"
+msgstr "Ограничить число регистраций"
+
+msgid "Max registrations"
+msgstr "Максимум регистраций"
+
+msgid "Add to group"
+msgstr "Добавить в группу"
+
+msgid "Select group"
+msgstr "Выбрать группу"
+
+msgid "default"
+msgstr "по умолчанию"
+
+msgid "Enter a positive whole number"
+msgstr "Введите положительное целое число"
+
+msgid "Pick a future date"
+msgstr "Выберите дату в будущем"
+
+msgid "Selected group is no longer available"
+msgstr "Выбранная группа больше недоступна"
+
+msgid "%d used"
+msgstr "использовано %d"
+
+msgid "Invite link — share to register"
+msgstr "Ссылка-приглашение — поделитесь для регистрации"
+
+msgid "This link is no longer valid"
+msgstr "Эта ссылка больше не действительна"
+
+msgid "Group"
+msgstr "Группа"
+
+msgid "%d of %d spots left"
+msgstr "осталось %d из %d мест"
+
+msgid "Login must be 3–32 chars: letters, digits, . _ -"
+msgstr "Логин: 3–32 символа, буквы, цифры, . _ -"
+
+msgid "Sign up"
+msgstr "Зарегистрироваться"
+
+msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
+msgstr "Поделитесь ссылкой, отправьте временный гостевой пропуск или заранее закрепите логин."

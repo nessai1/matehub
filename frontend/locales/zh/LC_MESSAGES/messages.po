@@ -732,3 +732,54 @@ msgstr "已从通话中断开"
 
 msgid "You joined this call from another window. Only one tab can be active at a time."
 msgstr "您已从另一个窗口加入此通话。同一时间只能激活一个标签页。"
+
+msgid "Invite link"
+msgstr "邀请链接"
+
+msgid "Limit number of registrations"
+msgstr "限制注册人数"
+
+msgid "Max registrations"
+msgstr "最大注册数"
+
+msgid "Add to group"
+msgstr "添加到群组"
+
+msgid "Select group"
+msgstr "选择群组"
+
+msgid "default"
+msgstr "默认"
+
+msgid "Enter a positive whole number"
+msgstr "请输入正整数"
+
+msgid "Pick a future date"
+msgstr "请选择未来的日期"
+
+msgid "Selected group is no longer available"
+msgstr "所选群组已不可用"
+
+msgid "%d used"
+msgstr "已使用 %d"
+
+msgid "Invite link — share to register"
+msgstr "邀请链接 — 分享以注册"
+
+msgid "This link is no longer valid"
+msgstr "此链接已失效"
+
+msgid "Group"
+msgstr "群组"
+
+msgid "%d of %d spots left"
+msgstr "剩余 %d / %d 名额"
+
+msgid "Login must be 3–32 chars: letters, digits, . _ -"
+msgstr "登录名：3–32 个字符，字母、数字、. _ -"
+
+msgid "Sign up"
+msgstr "注册"
+
+msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
+msgstr "分享链接、发送临时访客通行证或预分配登录名。"

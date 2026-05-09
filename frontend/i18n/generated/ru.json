@@ -732,6 +732,57 @@
       ],
       "You joined this call from another window. Only one tab can be active at a time.": [
         "Вы зашли в этот звонок из другого окна. Активной может быть только одна вкладка."
+      ],
+      "Invite link": [
+        "Ссылка-приглашение"
+      ],
+      "Limit number of registrations": [
+        "Ограничить число регистраций"
+      ],
+      "Max registrations": [
+        "Максимум регистраций"
+      ],
+      "Add to group": [
+        "Добавить в группу"
+      ],
+      "Select group": [
+        "Выбрать группу"
+      ],
+      "default": [
+        "по умолчанию"
+      ],
+      "Enter a positive whole number": [
+        "Введите положительное целое число"
+      ],
+      "Pick a future date": [
+        "Выберите дату в будущем"
+      ],
+      "Selected group is no longer available": [
+        "Выбранная группа больше недоступна"
+      ],
+      "%d used": [
+        "использовано %d"
+      ],
+      "Invite link — share to register": [
+        "Ссылка-приглашение — поделитесь для регистрации"
+      ],
+      "This link is no longer valid": [
+        "Эта ссылка больше не действительна"
+      ],
+      "Group": [
+        "Группа"
+      ],
+      "%d of %d spots left": [
+        "осталось %d из %d мест"
+      ],
+      "Login must be 3–32 chars: letters, digits, . _ -": [
+        "Логин: 3–32 символа, буквы, цифры, . _ -"
+      ],
+      "Sign up": [
+        "Зарегистрироваться"
+      ],
+      "Share a link, send a temporary guest pass, or pre-allocate a login.": [
+        "Поделитесь ссылкой, отправьте временный гостевой пропуск или заранее закрепите логин."
       ]
     }
   }
