@@ -47,8 +47,8 @@ For shipping a release to a customer:
    Wait for `Release` workflow to push images to `cr.yandex/<reg>/matehub-*:<ver>`.
 2. Tag the archive itself:
    ```
-   git tag box/v0.0.1
-   git push origin box/v0.0.1
+   git tag box/0.0.1
+   git push origin box/0.0.1
    ```
    That triggers `build-box-archives` in `.github/workflows/release.yml`,
    which runs `scripts/pack-box-archive.sh` for each of `debian / ubuntu / rhel`

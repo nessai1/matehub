@@ -19,10 +19,12 @@ on:
       - 'video/*'
       - 'transcoder/*'
       - 'general/*'
-      # `box/vX.Y.Z` triggers the box archive build instead of an image
+      # `box/X.Y.Z` triggers the box archive build instead of an image
       # push -- see the second job below. Kept in the same workflow so a
       # single tag of the right shape produces a publishable artifact.
-      - 'box/v*'
+      # No `v` prefix on box/* tags; we mirror the per-service tag scheme
+      # (`hub/0.0.1`, `chat/0.0.1`) for consistency.
+      - 'box/*'
 
 env:
   REGISTRY: cr.yandex
@@ -113,7 +115,7 @@ jobs:
           echo "- Image: \`${{ steps.parse.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ─────────────────────────────────────────────────────────────────────
-  # Box archive build (`box/vX.Y.Z` tags)
+  # Box archive build (`box/X.Y.Z` tags)
   #
   # Resolves the latest `<service>/X.Y.Z` tag for each service, packs
   # three Linux-family-flavoured tarballs (debian/ubuntu/rhel — content
@@ -153,12 +155,18 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#box/}" >> "$GITHUB_OUTPUT"
 
       - name: Materialise puller.json from secret
+        env:
+          # `${{ secrets.* }}` inline-interpolation happens BEFORE bash
+          # parses the script, so a multi-line JSON value that contains
+          # `"` (every key/value in a YC SA key) ends up as malformed
+          # shell -- the inner quotes close the outer string and printf
+          # writes garbage. Funneling the secret through an env var lets
+          # bash read `"$YC_PULLER_KEY"` as a plain string regardless of
+          # what's inside; the parser never sees it.
+          YC_PULLER_KEY: ${{ secrets.YC_PULLER_KEY }}
         run: |
           mkdir -p /tmp/secrets
-          # The secret is the raw JSON SA key file as exported by `yc iam
-          # key create`. Don't try to be clever with base64 encoding --
-          # GitHub's secret store handles multi-line values fine.
-          printf '%s' "${{ secrets.YC_PULLER_KEY }}" > /tmp/secrets/puller.json
+          printf '%s' "$YC_PULLER_KEY" > /tmp/secrets/puller.json
           chmod 0600 /tmp/secrets/puller.json
           # Quick shape check so a missing/empty secret fails fast with a
           # clear message instead of crashing pack-box-archive.sh.
@@ -173,7 +181,7 @@ jobs:
             --puller /tmp/secrets/puller.json \
             --out dist
 
-      # Tag is `box/vX.Y.Z`. softprops creates the release on the tag
+      # Tag is `box/X.Y.Z`. softprops creates the release on the tag
       # (or updates it) and uploads files from the matching glob. Each
       # matrix variant uploads its own tarball to the same release in
       # parallel.
