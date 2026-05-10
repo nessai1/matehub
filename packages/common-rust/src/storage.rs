@@ -48,6 +48,14 @@ impl S3Storage {
     /// Create from explicit parameters (bucket name passed in, not from env).
     /// `public_url_base` is what client-facing URLs are built from; pass the
     /// same value as `endpoint` when there's no separate public origin.
+    ///
+    /// Production code paths go through [`Self::from_env`]; `new` exists
+    /// for tests and for the rare callers that have all values in hand
+    /// (one-off scripts, future SDK use). If you find yourself reaching
+    /// for `new` from inside a service, check whether `from_env` plus a
+    /// new env var is the better fit — that's the path that already
+    /// handles the trailing-slash normalisation, S3_PUBLIC_URL fallback,
+    /// and bucket-name override conventions.
     pub async fn new(
         endpoint: &str,
         region: &str,
@@ -93,10 +101,19 @@ impl S3Storage {
     /// public-YC the two are identical; on box deploys the public URL
     /// points at the Caddy-proxied path and the endpoint stays inside the
     /// compose network.
+    ///
+    /// Trailing slash on the public base is normalised away. Operators
+    /// often write `S3_PUBLIC_URL=https://demo/s3/` by habit; without
+    /// the trim, `public_url(key)` produces `https://demo/s3//bucket/key`
+    /// (works in browsers, but `key_from_url` round-trip fails because
+    /// the prefix it builds doesn't include the doubled slash).
     pub async fn from_env(bucket_env: &str) -> Self {
         let endpoint =
             std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into());
-        let public_url_base = std::env::var("S3_PUBLIC_URL").unwrap_or_else(|_| endpoint.clone());
+        let public_url_base = std::env::var("S3_PUBLIC_URL")
+            .unwrap_or_else(|_| endpoint.clone())
+            .trim_end_matches('/')
+            .to_string();
         let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
         let access_key = std::env::var("S3_ACCESS_KEY_ID").expect("S3_ACCESS_KEY_ID required");
         let secret_key =
@@ -120,6 +137,30 @@ impl S3Storage {
     }
 
     /// Extract S3 key from a URL previously produced by `upload`.
+    ///
+    /// **Persistence caveat.** This strip works *only* if the URL was
+    /// produced against the same `public_url_base` the storage now uses.
+    /// If callers persist `public_url(...)` results long-term — DB
+    /// columns like `users.avatar_url` or chat-attachment URLs — and
+    /// then the deployment moves (DOMAIN change, MinIO → external S3
+    /// migration, anything that flips `S3_PUBLIC_URL`), every old URL
+    /// becomes unstrippable through this function. The asset URL still
+    /// fetches in the browser (the GET path is independent), but
+    /// anything that needs to recover the S3 key — e.g. server-side
+    /// stream proxies — won't.
+    ///
+    /// Today this matters in:
+    ///   * `services/hub` — avatar URLs in `users.avatar_url` and
+    ///     `hubs.avatar_url`. Persisted; affected.
+    ///   * `services/chat` — attachment URLs in `messages.attachments`.
+    ///     Persisted; affected.
+    ///   * `services/transcoder` — reads source by URL via
+    ///     `key_from_url`. Affected the same way.
+    ///
+    /// If you need migration-safety, switch the call site to a regex
+    /// strip on `/<bucket>/(.+)$` instead of a base-prefix strip — the
+    /// bucket name is stable across `S3_PUBLIC_URL` changes, the URL
+    /// prefix isn't.
     pub fn key_from_url(&self, url: &str) -> Option<String> {
         let prefix = format!("{}/{}/", self.public_url_base, self.bucket);
         url.strip_prefix(&prefix).map(|s| s.to_string())
@@ -403,6 +444,23 @@ mod tests {
             s.public_url("123/file.JPG"),
             "https://storage.yandexcloud.net/matehub-prod/123/file.JPG"
         );
+    }
+
+    #[test]
+    fn public_url_normalises_trailing_slash() {
+        // Operator writes the URL with a trailing slash by habit. Without
+        // normalisation `public_url` produces a doubled `//`, and
+        // `key_from_url` can't strip the prefix it never built. The
+        // `from_env` trim happens before the value reaches `S3Storage`,
+        // so this test simulates that path.
+        let trimmed = "https://demo.matehub.io/s3"; // trim_end_matches('/') applied
+        let s = S3Storage::for_url_tests("http://minio:9000", "chat-media", trimmed);
+        let url = s.public_url("foo/bar.bin");
+        assert_eq!(
+            url, "https://demo.matehub.io/s3/chat-media/foo/bar.bin",
+            "no doubled slash"
+        );
+        assert_eq!(s.key_from_url(&url).as_deref(), Some("foo/bar.bin"));
     }
 
     #[test]

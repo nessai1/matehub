@@ -153,7 +153,10 @@ services:
       NATS_URL: nats://nats:4222
       JWT_SECRET: ${JWT_SECRET}
       DEV_MODE: "false"
-      S3_ENDPOINT: http://minio:9000
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       # Client-facing base for URLs returned by the API. Caddy proxies
       # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
       # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
@@ -161,10 +164,14 @@ services:
       # set this to the same value as S3_ENDPOINT (or to the bucket's
       # public origin) in `.env`.
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_HUB_ASSETS: hub-assets
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_HUB_ASSETS in .env to
+      # point at their bucket name (e.g. `acme-matehub-hub-assets`).
+      # For the bundled MinIO this defaults to `hub-assets`, the bucket
+      # `minio-init` creates.
+      S3_BUCKET_HUB_ASSETS: ${S3_BUCKET_HUB_ASSETS:-hub-assets}
       # Surfaced to the SPA via GET /config.json so a single hub image
       # works against any TURN deployment without a rebuild.
       TURN_URL: ${TURN_URL}
@@ -196,7 +203,10 @@ services:
       NATS_URL: nats://nats:4222
       HUB_DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
       JWT_SECRET: ${JWT_SECRET}
-      S3_ENDPOINT: http://minio:9000
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       # Client-facing base for URLs returned by the API. Caddy proxies
       # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
       # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
@@ -204,10 +214,12 @@ services:
       # set this to the same value as S3_ENDPOINT (or to the bucket's
       # public origin) in `.env`.
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_CHAT_MEDIA: chat-media
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_CHAT_MEDIA in .env.
+      # Default `chat-media` is what `minio-init` creates locally.
+      S3_BUCKET_CHAT_MEDIA: ${S3_BUCKET_CHAT_MEDIA:-chat-media}
     depends_on:
       scylla:   { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -246,7 +258,10 @@ services:
       RUST_LOG: ${RUST_LOG:-info}
       LOG_FORMAT: json
       NATS_URL: nats://nats:4222
-      S3_ENDPOINT: http://minio:9000
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       # Client-facing base for URLs returned by the API. Caddy proxies
       # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
       # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
@@ -254,10 +269,12 @@ services:
       # set this to the same value as S3_ENDPOINT (or to the bucket's
       # public origin) in `.env`.
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_CHAT_MEDIA: chat-media
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_CHAT_MEDIA in .env.
+      # Default `chat-media` is what `minio-init` creates locally.
+      S3_BUCKET_CHAT_MEDIA: ${S3_BUCKET_CHAT_MEDIA:-chat-media}
     depends_on:
       nats: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
@@ -293,11 +310,16 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
-      # Observability basicauth -- when the observability profile is off
-      # these are still read by Caddy at startup but the /grafana and
+      # Observability basicauth. When the observability profile is off
+      # these are still read by Caddy at startup, but the /grafana and
       # /kibana routes 502 anyway because the upstreams don't exist.
-      # Default hash is bcrypt of an unguessable string so a misconfigured
-      # box can't be silently auth-bypassed.
+      #
+      # Default for OBSERVABILITY_PASSWORD_HASH is a deny-all hash: it
+      # was generated as bcrypt of /dev/urandom output that was
+      # immediately discarded, so no plaintext exists that satisfies
+      # it — basicauth fails for any input. Operators MUST set
+      # OBSERVABILITY_PASSWORD_HASH in .env (setup.sh writes one) before
+      # /grafana and /kibana are reachable.
       OBSERVABILITY_USER: ${OBSERVABILITY_USER:-admin}
       OBSERVABILITY_PASSWORD_HASH: ${OBSERVABILITY_PASSWORD_HASH:-$$2a$$14$$Gp9NLZA9Z2EtyRhk2aZD9OPdkuiimQtZh.fn2MKITjJiYSqFPnAcK}
     volumes:

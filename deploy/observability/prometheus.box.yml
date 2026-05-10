@@ -35,6 +35,9 @@ scrape_configs:
           service: chat
 
   - job_name: matehub-video
+    # Verified: services/video/src/main.rs:87-100 wires the same
+    # `metrics_layer_and_handle` chain as hub/chat. /metrics is on the
+    # HTTP_PORT (4000), not a separate exporter port.
     static_configs:
       - targets: ["video:4000"]
         labels:

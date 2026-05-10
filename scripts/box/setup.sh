@@ -211,13 +211,25 @@ choose_observability() {
 # ── 7. .env materialisation ──────────────────────────────────────────
 gen_secret() { openssl rand -hex 32; }
 
+# Atomic write helper. `sed -i.bak && rm` left a `.env.bak` with old
+# secrets at default (0644) permissions on any crash between the two
+# steps. mktemp + mv is atomic within one filesystem; on crash either
+# the original or the new file exists, never both.
+_atomic_replace() {
+    local file="$1" sed_expr="$2"
+    local tmp
+    tmp="$(mktemp "${file}.XXXXXX")"
+    chmod 0600 "$tmp"
+    sed "$sed_expr" "$file" > "$tmp"
+    mv "$tmp" "$file"
+}
+
 set_env_blank() {
     # Set KEY=value in $ENV_FILE only if the existing value is empty.
     # Preserves comments and ordering.
     local key="$1" value="$2"
     if grep -qE "^${key}=$" "$ENV_FILE"; then
-        sed -i.bak "s|^${key}=$|${key}=${value}|" "$ENV_FILE"
-        rm -f "$ENV_FILE.bak"
+        _atomic_replace "$ENV_FILE" "s|^${key}=$|${key}=${value}|"
         log "generated $key"
     fi
 }
@@ -226,8 +238,7 @@ set_env_value() {
     # Set KEY=value unconditionally (creates the line if missing).
     local key="$1" value="$2"
     if grep -qE "^${key}=" "$ENV_FILE"; then
-        sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
-        rm -f "$ENV_FILE.bak"
+        _atomic_replace "$ENV_FILE" "s|^${key}=.*|${key}=${value}|"
     else
         echo "${key}=${value}" >> "$ENV_FILE"
     fi
@@ -306,6 +317,18 @@ main() {
         ensure_external_s3_placeholders
     fi
 
+    # Plaintext credentials policy:
+    #   * `OBSERVABILITY_PASSWORD` is NEVER written to .env. Caddy reads
+    #     only the bcrypt hash; the plaintext exists for one purpose —
+    #     telling the operator what the password is. We surface it here,
+    #     once, with a loud "write this down" banner. If they miss it,
+    #     they re-run setup.sh and a new pair gets generated.
+    #   * `GRAFANA_ADMIN_PASSWORD` IS written, because Grafana itself
+    #     re-reads it on every container restart and resets its own
+    #     admin password to match. Removing it would silently rotate
+    #     credentials on the next restart. Mitigated by chmod 0600 on
+    #     .env at the end of this script.
+    local obs_pwd_to_print="" gf_pwd_to_print=""
     if [[ "$observability" == "yes" ]]; then
         local obs_pwd obs_hash gf_pwd
         obs_pwd="$(gen_secret)"
@@ -313,15 +336,21 @@ main() {
         obs_hash="$(bcrypt_hash "$obs_pwd")"
         gf_pwd="$(gen_secret)"
         set_env_value OBSERVABILITY_USER          "admin"
-        set_env_value OBSERVABILITY_PASSWORD      "$obs_pwd"
         set_env_value OBSERVABILITY_PASSWORD_HASH "$obs_hash"
         set_env_value GRAFANA_ADMIN_USER          "admin"
         set_env_value GRAFANA_ADMIN_PASSWORD      "$gf_pwd"
         # Persist the choice so up.sh knows whether to add --profile observability.
         set_env_value MATEHUB_OBSERVABILITY       "1"
+        obs_pwd_to_print="$obs_pwd"
+        gf_pwd_to_print="$gf_pwd"
     else
         set_env_value MATEHUB_OBSERVABILITY       "0"
     fi
+
+    # Lock the file down regardless. The default umask on most distros
+    # leaves it 0644, which means any other user on the host can read
+    # JWT_SECRET, POSTGRES_PASSWORD, GRAFANA_ADMIN_PASSWORD, etc.
+    chmod 0600 "$ENV_FILE"
 
     ok "setup complete"
     echo
@@ -340,6 +369,26 @@ BEFORE RUNNING ./up.sh:
      49152-65535/udp on the host firewall and any cloud security group.
 WARN
 )"
+
+    # Surface the observability plaintext NOW. It exists nowhere else.
+    if [[ -n "$obs_pwd_to_print" ]]; then
+        red_block "$(cat <<EOF
+WRITE THESE DOWN NOW. They cannot be recovered.
+
+  /grafana and /kibana basicauth (Caddy edge):
+      user:     admin
+      password: ${obs_pwd_to_print}
+
+  Grafana built-in admin (after the basicauth gate):
+      user:     admin
+      password: ${gf_pwd_to_print}
+
+The Caddy basicauth password is NOT stored in .env in plaintext --
+re-running setup.sh generates a new pair. The Grafana password IS in
+.env (chmod 0600) because Grafana re-reads it on restart.
+EOF
+)"
+    fi
 
     if [[ "$s3_mode" == "external" ]]; then
         red_block "EXTERNAL S3 SELECTED. Edit deploy/.env and fill in:

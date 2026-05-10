@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { ChannelIcon, type Channel } from "@/components/nav-channels";
 import { useVideoCall } from "@/contexts/video-call-context";
@@ -7,7 +7,8 @@ import { useChannels } from "@/hooks/use-channels";
 import { useMembers } from "@/hooks/use-members";
 import { useAuth } from "@/lib/auth";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
-import { isVideoTraceEnabled } from "@/lib/video-trace";
+import { isVideoTraceEnabled, onVideoTraceChange } from "@/lib/video-trace";
+import { usePermissions } from "@/hooks/use-permissions";
 import { ScreenShareProfileDialog } from "@/components/hub/screen-share-profile-dialog";
 import { cn } from "@/lib/utils";
 import { VideoGrid, PAGE_SIZE } from "./video-grid";
@@ -403,11 +404,33 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
         onConfirm={(profile) => void publishScreen(profile)}
       />
 
-      {/* Always on in dev. In production the operator opts in via the
-          browser console (`enableVideoTrace()`), see frontend/lib/video-trace.ts. */}
-      {(import.meta.env.DEV || isVideoTraceEnabled()) && (
-        <CallDebugPanel client={client} />
-      )}
+      <DebugPanelGate client={client} />
     </div>
   );
 }
+
+// Render-time gate for the in-call debug panel.
+//
+// Dev: panel is always mounted. Production: it appears only when the
+// operator (admin / hub creator) explicitly flipped the localStorage
+// flag via `enableVideoTrace()` in the browser console. The privilege
+// check is intentionally on the render side, not inside the toggle
+// function — that way an XSS payload running in a regular user's
+// session can set the flag all day and the panel still won't mount,
+// because their JWT doesn't carry the admin/creator bit.
+function DebugPanelGate({ client }: { client: Parameters<typeof CallDebugPanel>[0]["client"] }) {
+  const { perms } = usePermissions();
+  const [flagOn, setFlagOn] = useState(() => isVideoTraceEnabled());
+
+  // Subscribe to flag changes from the same tab (custom event) and from
+  // other tabs (storage event). Mounts/unmounts CallDebugPanel without
+  // tearing down the live RTCPeerConnection.
+  useEffect(() => onVideoTraceChange(() => setFlagOn(isVideoTraceEnabled())), []);
+
+  const isPrivileged = perms?.is_admin ?? perms?.is_creator ?? false;
+  const shouldRender = import.meta.env.DEV || (flagOn && isPrivileged);
+
+  if (!shouldRender) return null;
+  return <CallDebugPanel client={client} />;
+}
+
