@@ -16,7 +16,20 @@ const PART_SIZE: usize = 8 * 1024 * 1024;
 pub struct S3Storage {
     pub client: Client,
     pub bucket: String,
+    /// Internal-network endpoint the SDK speaks to (`http://minio:9000` on
+    /// box, `https://storage.yandexcloud.net` on YC, etc.). Used only for
+    /// API calls.
     pub endpoint: String,
+    /// Base URL used to construct **client-facing** object URLs. Defaults
+    /// to `endpoint`, which is correct for any deployment where the bucket
+    /// is reachable from the browser at the same hostname the backend
+    /// uses (AWS S3, public YC storage). On a box deploy that's not
+    /// true: the SDK talks to `http://minio:9000` over the compose
+    /// network, but the browser can only reach the bucket through Caddy
+    /// at `https://<domain>/s3`. Setting `S3_PUBLIC_URL` env to that
+    /// public path makes `public_url()` and `key_from_url()` round-trip
+    /// the right thing to clients.
+    pub public_url_base: String,
 }
 
 #[derive(Debug, Error)]
@@ -33,12 +46,23 @@ pub enum UploadError {
 
 impl S3Storage {
     /// Create from explicit parameters (bucket name passed in, not from env).
+    /// `public_url_base` is what client-facing URLs are built from; pass the
+    /// same value as `endpoint` when there's no separate public origin.
+    ///
+    /// Production code paths go through [`Self::from_env`]; `new` exists
+    /// for tests and for the rare callers that have all values in hand
+    /// (one-off scripts, future SDK use). If you find yourself reaching
+    /// for `new` from inside a service, check whether `from_env` plus a
+    /// new env var is the better fit — that's the path that already
+    /// handles the trailing-slash normalisation, S3_PUBLIC_URL fallback,
+    /// and bucket-name override conventions.
     pub async fn new(
         endpoint: &str,
         region: &str,
         access_key: &str,
         secret_key: &str,
         bucket: &str,
+        public_url_base: &str,
     ) -> Self {
         let creds = Credentials::new(access_key, secret_key, None, None, "env");
 
@@ -67,30 +91,78 @@ impl S3Storage {
             client,
             bucket: bucket.to_string(),
             endpoint: endpoint.to_string(),
+            public_url_base: public_url_base.to_string(),
         }
     }
 
     /// Create from env vars with a specific bucket env var name.
+    ///
+    /// `S3_PUBLIC_URL` is read with a fallback to `S3_ENDPOINT`. On AWS /
+    /// public-YC the two are identical; on box deploys the public URL
+    /// points at the Caddy-proxied path and the endpoint stays inside the
+    /// compose network.
+    ///
+    /// Trailing slash on the public base is normalised away. Operators
+    /// often write `S3_PUBLIC_URL=https://demo/s3/` by habit; without
+    /// the trim, `public_url(key)` produces `https://demo/s3//bucket/key`
+    /// (works in browsers, but `key_from_url` round-trip fails because
+    /// the prefix it builds doesn't include the doubled slash).
     pub async fn from_env(bucket_env: &str) -> Self {
         let endpoint =
             std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".into());
+        let public_url_base = std::env::var("S3_PUBLIC_URL")
+            .unwrap_or_else(|_| endpoint.clone())
+            .trim_end_matches('/')
+            .to_string();
         let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into());
         let access_key = std::env::var("S3_ACCESS_KEY_ID").expect("S3_ACCESS_KEY_ID required");
         let secret_key =
             std::env::var("S3_SECRET_ACCESS_KEY").expect("S3_SECRET_ACCESS_KEY required");
         let bucket = std::env::var(bucket_env).unwrap_or_else(|_| bucket_env.to_string());
 
-        Self::new(&endpoint, &region, &access_key, &secret_key, &bucket).await
+        Self::new(
+            &endpoint,
+            &region,
+            &access_key,
+            &secret_key,
+            &bucket,
+            &public_url_base,
+        )
+        .await
     }
 
     /// Get the public URL for a given S3 key.
     pub fn public_url(&self, key: &str) -> String {
-        format!("{}/{}/{}", self.endpoint, self.bucket, key)
+        format!("{}/{}/{}", self.public_url_base, self.bucket, key)
     }
 
     /// Extract S3 key from a URL previously produced by `upload`.
+    ///
+    /// **Persistence caveat.** This strip works *only* if the URL was
+    /// produced against the same `public_url_base` the storage now uses.
+    /// If callers persist `public_url(...)` results long-term — DB
+    /// columns like `users.avatar_url` or chat-attachment URLs — and
+    /// then the deployment moves (DOMAIN change, MinIO → external S3
+    /// migration, anything that flips `S3_PUBLIC_URL`), every old URL
+    /// becomes unstrippable through this function. The asset URL still
+    /// fetches in the browser (the GET path is independent), but
+    /// anything that needs to recover the S3 key — e.g. server-side
+    /// stream proxies — won't.
+    ///
+    /// Today this matters in:
+    ///   * `services/hub` — avatar URLs in `users.avatar_url` and
+    ///     `hubs.avatar_url`. Persisted; affected.
+    ///   * `services/chat` — attachment URLs in `messages.attachments`.
+    ///     Persisted; affected.
+    ///   * `services/transcoder` — reads source by URL via
+    ///     `key_from_url`. Affected the same way.
+    ///
+    /// If you need migration-safety, switch the call site to a regex
+    /// strip on `/<bucket>/(.+)$` instead of a base-prefix strip — the
+    /// bucket name is stable across `S3_PUBLIC_URL` changes, the URL
+    /// prefix isn't.
     pub fn key_from_url(&self, url: &str) -> Option<String> {
-        let prefix = format!("{}/{}/", self.endpoint, self.bucket);
+        let prefix = format!("{}/{}/", self.public_url_base, self.bucket);
         url.strip_prefix(&prefix).map(|s| s.to_string())
     }
 
@@ -289,6 +361,29 @@ impl S3Storage {
         Ok((self.public_url(key), total))
     }
 
+    /// Construct an `S3Storage` shape (no SDK calls) for unit-test
+    /// assertions on URL helpers. Avoids `new()` because that hits the
+    /// SDK config builder.
+    #[cfg(test)]
+    fn for_url_tests(endpoint: &str, bucket: &str, public_url_base: &str) -> Self {
+        // The client value is never touched in URL helpers. We construct
+        // a config-only client to satisfy the field type.
+        let creds = Credentials::new("test", "test", None, None, "test");
+        let conf = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .endpoint_url(endpoint)
+            .credentials_provider(creds)
+            .force_path_style(true)
+            .build();
+        Self {
+            client: Client::from_conf(conf),
+            bucket: bucket.to_string(),
+            endpoint: endpoint.to_string(),
+            public_url_base: public_url_base.to_string(),
+        }
+    }
+
     async fn put_part(
         &self,
         key: &str,
@@ -311,5 +406,77 @@ impl S3Storage {
         resp.e_tag()
             .map(|s| s.to_string())
             .ok_or_else(|| UploadError::S3(format!("upload_part #{part_number}: no etag")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn public_url_uses_public_base_when_separate_from_endpoint() {
+        // Box deploy shape: SDK talks to compose-internal `minio:9000`,
+        // but client-facing URLs go through `https://demo/s3` reverse-
+        // proxied by Caddy. `public_url` MUST surface the public form,
+        // otherwise browsers get an unresolvable hostname.
+        let s = S3Storage::for_url_tests(
+            "http://minio:9000",
+            "chat-media",
+            "https://demo.matehub.io/s3",
+        );
+        assert_eq!(
+            s.public_url("123/file.JPG"),
+            "https://demo.matehub.io/s3/chat-media/123/file.JPG"
+        );
+    }
+
+    #[test]
+    fn public_url_falls_back_to_endpoint_when_base_equals_endpoint() {
+        // AWS / public-YC shape: endpoint is already public. From `from_env`
+        // we fall back to endpoint when `S3_PUBLIC_URL` is unset, so the
+        // resulting URL must match what the legacy code produced.
+        let s = S3Storage::for_url_tests(
+            "https://storage.yandexcloud.net",
+            "matehub-prod",
+            "https://storage.yandexcloud.net",
+        );
+        assert_eq!(
+            s.public_url("123/file.JPG"),
+            "https://storage.yandexcloud.net/matehub-prod/123/file.JPG"
+        );
+    }
+
+    #[test]
+    fn public_url_normalises_trailing_slash() {
+        // Operator writes the URL with a trailing slash by habit. Without
+        // normalisation `public_url` produces a doubled `//`, and
+        // `key_from_url` can't strip the prefix it never built. The
+        // `from_env` trim happens before the value reaches `S3Storage`,
+        // so this test simulates that path.
+        let trimmed = "https://demo.matehub.io/s3"; // trim_end_matches('/') applied
+        let s = S3Storage::for_url_tests("http://minio:9000", "chat-media", trimmed);
+        let url = s.public_url("foo/bar.bin");
+        assert_eq!(
+            url, "https://demo.matehub.io/s3/chat-media/foo/bar.bin",
+            "no doubled slash"
+        );
+        assert_eq!(s.key_from_url(&url).as_deref(), Some("foo/bar.bin"));
+    }
+
+    #[test]
+    fn key_from_url_strips_public_base_not_endpoint() {
+        // Round-trip property: a URL produced by `public_url` must be
+        // strippable by `key_from_url` to recover the original key,
+        // *regardless of whether the public base differs from the
+        // endpoint*. The previous implementation used `endpoint`, which
+        // would silently drop every key once the box flips to a public
+        // base.
+        let s = S3Storage::for_url_tests(
+            "http://minio:9000",
+            "chat-media",
+            "https://demo.matehub.io/s3",
+        );
+        let url = s.public_url("foo/bar.bin");
+        assert_eq!(s.key_from_url(&url).as_deref(), Some("foo/bar.bin"));
     }
 }

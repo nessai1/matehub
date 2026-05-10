@@ -7,24 +7,70 @@ TURN, the Vite SPA, four Rust services, Caddy) runs in one
 
 For production multi-tenant deploys see `deploy/helm/`.
 
+> **End users / customers receiving a delivered archive** should use the
+> bundled `setup.sh` / `up.sh` / `down.sh` scripts and the bilingual
+> README inside the archive (see [Archive flow](#archive-flow) below
+> for what's in there and how to produce one). This page is for
+> contributors deploying from a git checkout.
+
 ---
 
 ## Requirements
 
-| | |
-|---|---|
-| **VPS** | 4 GB RAM, 2 vCPU, ~30 GB SSD |
-| **OS** | any with Docker 24+ and the Compose plugin |
-| **DNS** | one A-record pointing at the VPS public IP |
-| **Open ports** | `80/tcp`, `443/tcp`, `4001/udp`, `3478/udp+tcp`, `49152-65535/udp` |
+| Resource | Without observability | With observability (Grafana + ELK) |
+|---|---|---|
+| **OS** | Linux: Debian 12+ / Ubuntu 22.04+ / RHEL 9 / AlmaLinux 9 / Rocky 9 | same |
+| **CPU** | 2 vCPU | 4 vCPU |
+| **RAM** | 4 GB | 8 GB |
+| **Disk** | 30 GB SSD | 50 GB SSD |
+| **Network** | 1 public IPv4, ports below | same |
+| **DNS** | one A-record on the chosen domain pointing at the VPS public IP | same |
+| **Open ports** | `80/tcp`, `443/tcp`, `4001/udp`, `3478/udp+tcp`, `49152-65535/udp` | same |
+| **Tools** | Docker 24+ with the Compose plugin (the bundled scripts install it if missing) | same |
 
-The 4 GB target is *tight* — ScyllaDB alone wants 768 MB heap and the
-Rust build chain peaks above 2 GB. Don't run the build with services
-already up; `box-deploy.sh` schedules it so it doesn't matter.
+The 4 GB row is *tight* without observability — ScyllaDB alone wants
+768 MB heap and the Rust build chain peaks above 2 GB on the contributor
+flow. With the metrics stack on, Elasticsearch wants another 1 GB heap
+plus headroom for the ingest path, hence the 8 GB number.
 
 ---
 
-## First run
+## Archive flow
+
+For shipping a release to a customer:
+
+1. Tag the latest per-service release for each component:
+   ```
+   git tag hub/0.0.1 chat/0.0.1 video/0.0.1 transcoder/0.0.1
+   git push --tags
+   ```
+   Wait for `Release` workflow to push images to `cr.yandex/<reg>/matehub-*:<ver>`.
+2. Tag the archive itself:
+   ```
+   git tag box/v0.0.1
+   git push origin box/v0.0.1
+   ```
+   That triggers `build-box-archives` in `.github/workflows/release.yml`,
+   which runs `scripts/pack-box-archive.sh` for each of `debian / ubuntu / rhel`
+   and attaches the three tarballs to the matching GitHub Release.
+3. Deliver the GitHub Release link to the customer (or download a
+   tarball and forward it manually).
+
+The customer side: `tar -xzf …`, `./setup.sh`, `./up.sh`. See the
+README.{en,ru}.md inside the archive for the operator-facing flow.
+
+To generate an archive locally (for testing) without the CI:
+```sh
+./scripts/pack-box-archive.sh \
+    --variant ubuntu \
+    --version v0.0.1-dev \
+    --puller ./puller.json \
+    --out dist
+```
+
+---
+
+## First run (contributor flow, building from git)
 
 ```sh
 # 1. DNS — point dima.matehub.io at the VPS A-record beforehand.

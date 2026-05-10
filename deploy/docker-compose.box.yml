@@ -31,6 +31,12 @@ volumes:
   minio-data:
   caddy-data:
   caddy-config:
+  # Optional observability stack -- only created when --profile observability
+  # is passed. Compose ignores unused volume declarations on plain `up`, so
+  # listing them here is free.
+  es-data:
+  prometheus-data:
+  grafana-data:
 
 services:
   # ── Infrastructure ────────────────────────────────────────────────
@@ -131,8 +137,15 @@ services:
   hub:
     image: ${REGISTRY_URL}/matehub-hub:${HUB_VERSION}
     restart: unless-stopped
+    # Filebeat (when the observability profile is up) tails only containers
+    # carrying the `matehub.service` label and decodes JSON. Both the label
+    # and `LOG_FORMAT=json` need to be present on every matehub-* service
+    # for that pipeline to work.
+    labels:
+      matehub.service: hub
     environment:
       RUST_LOG: ${RUST_LOG:-info}
+      LOG_FORMAT: json
       PORT: "3002"
       STATIC_DIR: /srv/dist
       DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
@@ -140,11 +153,25 @@ services:
       NATS_URL: nats://nats:4222
       JWT_SECRET: ${JWT_SECRET}
       DEV_MODE: "false"
-      S3_ENDPOINT: http://minio:9000
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_HUB_ASSETS: hub-assets
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_HUB_ASSETS in .env to
+      # point at their bucket name (e.g. `acme-matehub-hub-assets`).
+      # For the bundled MinIO this defaults to `hub-assets`, the bucket
+      # `minio-init` creates.
+      S3_BUCKET_HUB_ASSETS: ${S3_BUCKET_HUB_ASSETS:-hub-assets}
       # Surfaced to the SPA via GET /config.json so a single hub image
       # works against any TURN deployment without a rebuild.
       TURN_URL: ${TURN_URL}
@@ -165,19 +192,34 @@ services:
   chat:
     image: ${REGISTRY_URL}/matehub-chat:${CHAT_VERSION}
     restart: unless-stopped
+    labels:
+      matehub.service: chat
     environment:
       RUST_LOG: ${RUST_LOG:-info}
+      LOG_FORMAT: json
       CHAT_PORT: "3003"
       SCYLLA_URL: scylla:9042
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       HUB_DATABASE_URL: postgresql://matehub:${POSTGRES_PASSWORD}@postgres:5432/matehub
       JWT_SECRET: ${JWT_SECRET}
-      S3_ENDPOINT: http://minio:9000
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_CHAT_MEDIA: chat-media
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_CHAT_MEDIA in .env.
+      # Default `chat-media` is what `minio-init` creates locally.
+      S3_BUCKET_CHAT_MEDIA: ${S3_BUCKET_CHAT_MEDIA:-chat-media}
     depends_on:
       scylla:   { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -189,8 +231,11 @@ services:
   video:
     image: ${REGISTRY_URL}/matehub-video:${VIDEO_VERSION}
     restart: unless-stopped
+    labels:
+      matehub.service: video
     environment:
       RUST_LOG: ${RUST_LOG:-info}
+      LOG_FORMAT: json
       HTTP_PORT: "4000"
       UDP_PORT: "4001"
       NATS_URL: nats://nats:4222
@@ -207,14 +252,29 @@ services:
   transcoder:
     image: ${REGISTRY_URL}/matehub-transcoder:${TRANSCODER_VERSION}
     restart: unless-stopped
+    labels:
+      matehub.service: transcoder
     environment:
       RUST_LOG: ${RUST_LOG:-info}
+      LOG_FORMAT: json
       NATS_URL: nats://nats:4222
-      S3_ENDPOINT: http://minio:9000
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
-      S3_BUCKET_CHAT_MEDIA: chat-media
+      # External-S3 operators set S3_ENDPOINT in .env (e.g.
+      # `https://storage.yandexcloud.net`). For the bundled MinIO it
+      # defaults to the internal compose hostname.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      # Client-facing base for URLs returned by the API. Caddy proxies
+      # `/s3/*` to `minio:9000` (see Caddyfile), so the browser sees a
+      # https://<domain>/s3/<bucket>/<key> URL instead of the unreachable
+      # internal `http://minio:9000/...`. For an external S3 deployment
+      # set this to the same value as S3_ENDPOINT (or to the bucket's
+      # public origin) in `.env`.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-https://${DOMAIN}/s3}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-${S3_ACCESS_KEY}}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${S3_SECRET_KEY}}
+      # External-S3 operators override S3_BUCKET_CHAT_MEDIA in .env.
+      # Default `chat-media` is what `minio-init` creates locally.
+      S3_BUCKET_CHAT_MEDIA: ${S3_BUCKET_CHAT_MEDIA:-chat-media}
     depends_on:
       nats: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
@@ -250,6 +310,18 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
+      # Observability basicauth. When the observability profile is off
+      # these are still read by Caddy at startup, but the /grafana and
+      # /kibana routes 502 anyway because the upstreams don't exist.
+      #
+      # Default for OBSERVABILITY_PASSWORD_HASH is a deny-all hash: it
+      # was generated as bcrypt of /dev/urandom output that was
+      # immediately discarded, so no plaintext exists that satisfies
+      # it — basicauth fails for any input. Operators MUST set
+      # OBSERVABILITY_PASSWORD_HASH in .env (setup.sh writes one) before
+      # /grafana and /kibana are reachable.
+      OBSERVABILITY_USER: ${OBSERVABILITY_USER:-admin}
+      OBSERVABILITY_PASSWORD_HASH: ${OBSERVABILITY_PASSWORD_HASH:-$$2a$$14$$Gp9NLZA9Z2EtyRhk2aZD9OPdkuiimQtZh.fn2MKITjJiYSqFPnAcK}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -258,4 +330,105 @@ services:
       hub:   { condition: service_started }
       chat:  { condition: service_started }
       video: { condition: service_started }
+    networks: [matehub]
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Observability stack (opt-in)
+  #
+  # Activate with `docker compose --profile observability up -d`. Mirrors
+  # the structure of `deploy/observability/docker-compose.yaml` but with
+  # box-specific tweaks:
+  #   * No host port maps -- Grafana/Kibana go through Caddy under
+  #     `/grafana/*` and `/kibana/*` with basicauth, Prometheus and ES
+  #     stay internal to the compose network.
+  #   * Prometheus targets use compose service names (hub:3002, ...)
+  #     instead of host.docker.internal -- on box the matehub services
+  #     run as siblings, not on the host.
+  #   * Filebeat config is reused as-is from
+  #     `./observability/filebeat/filebeat.yml`; the docker autodiscover
+  #     picks up containers labelled `matehub.service: <name>`.
+  # ─────────────────────────────────────────────────────────────────────
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -E 'yellow|green'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [matehub]
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_REPORTING_ROLES_ENABLED=false
+      # Serve from `/kibana` so a single Caddy reverse_proxy line works
+      # without rewriting Kibana's own asset URLs.
+      - SERVER_BASEPATH=/kibana
+      - SERVER_REWRITEBASEPATH=true
+      - SERVER_PUBLICBASEURL=https://${DOMAIN}/kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks: [matehub]
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    profiles: ["observability"]
+    restart: unless-stopped
+    user: root
+    command: ["filebeat", "-e", "--strict.perms=false"]
+    volumes:
+      - ./observability/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks: [matehub]
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus.box.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [matehub]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+      # Sub-path serve so `/grafana/*` works behind Caddy without rewrite.
+      - GF_SERVER_ROOT_URL=https://${DOMAIN}/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - elasticsearch
     networks: [matehub]

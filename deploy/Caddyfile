@@ -32,6 +32,45 @@
         reverse_proxy video:4000
     }
 
+    # ── object storage proxy ───────────────────────────────────────
+    # Browser-facing path for MinIO. The internal compose hostname
+    # `minio:9000` doesn't resolve from outside the network, so backend
+    # services build URLs against `https://${DOMAIN}/s3/...` (see
+    # S3_PUBLIC_URL in docker-compose.box.yml) and Caddy proxies them
+    # here. `handle_path` strips the `/s3/` prefix, so MinIO sees a
+    # native path-style request `/<bucket>/<key>`. Bucket policies on
+    # `hub-assets` and `chat-media` are public-read for simple GET; if
+    # we ever need signed URLs the backend can switch — Caddy doesn't
+    # care about the body, just routing.
+    handle_path /s3/* {
+        reverse_proxy minio:9000
+    }
+
+    # ── observability (only useful when --profile observability is up) ─
+    # Both Grafana and Kibana serve themselves at /grafana and /kibana
+    # subpaths (see GF_SERVER_SERVE_FROM_SUB_PATH and SERVER_BASEPATH in
+    # docker-compose.box.yml), so we keep the prefix on forward — `handle`
+    # not `handle_path`. Basicauth is the single auth gate; Grafana's own
+    # admin login is a second layer behind it.
+    #
+    # When the observability profile is off the upstreams don't exist and
+    # Caddy returns 502 — that's the intended "feature disabled" UX, no
+    # special-casing needed.
+    @observability path /grafana/* /kibana/*
+    handle @observability {
+        basicauth {
+            {$OBSERVABILITY_USER} {$OBSERVABILITY_PASSWORD_HASH}
+        }
+        @grafana path /grafana/*
+        handle @grafana {
+            reverse_proxy grafana:3000
+        }
+        @kibana path /kibana/*
+        handle @kibana {
+            reverse_proxy kibana:5601
+        }
+    }
+
     # ── SPA + everything else → hub (ServeDir fallback) ────────────
     handle {
         reverse_proxy hub:3002

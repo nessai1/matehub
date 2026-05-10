@@ -27,3 +27,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Box-deploy credential. Lives at scripts/box/puller.json for local
+# pack-archive runs; the file itself is a YC SA pull-only key file and
+# must NEVER be committed. CI builds materialise it from the
+# `YC_PULLER_KEY` repo secret instead.
+scripts/box/puller.json

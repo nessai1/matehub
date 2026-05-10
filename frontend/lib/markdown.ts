@@ -58,10 +58,31 @@ export function applyMarkdown(
 
 // ── Render: parse markdown to React-safe HTML ────
 
+import DOMPurify from "dompurify";
+
 /**
  * Parse a subset of markdown to HTML for chat messages.
  * Supports: **bold**, *italic*, __underline__, `code`,
  * ```code blocks```, [links](url), - lists, 1. lists
+ *
+ * Output is sanitized with DOMPurify before return. Two specific holes
+ * the sanitizer is closing — both reachable from a hand-crafted chat
+ * message before this PR:
+ *
+ *   1. `[x](javascript:alert(...))` — markdown link with a script-y
+ *      scheme. Without sanitization the regex below produces
+ *      `<a href="javascript:...">x</a>`; clicking it executes in our
+ *      origin → token theft. DOMPurify's `ALLOWED_URI_REGEXP` strips
+ *      every URL whose scheme isn't in the allowlist below.
+ *
+ *   2. Unescaped `"` inside URLs — the hand-rolled HTML escape on the
+ *      first three lines covers `<`, `>`, `&` but not `"` / `'`, so a
+ *      URL like `https://a.com/" onload="alert(1)` breaks out of the
+ *      `href="..."` attribute and injects an event handler. DOMPurify
+ *      strips disallowed attributes regardless of how they got there.
+ *
+ * The hand-rolled regex stage stays for readability — DOMPurify is the
+ * single trust boundary at the end.
  */
 export function renderMarkdown(text: string): string {
   // Escape HTML
@@ -85,13 +106,23 @@ export function renderMarkdown(text: string): string {
   // Underline __text__
   html = html.replace(/__(.+?)__/g, '<span class="underline">$1</span>');
 
-  // Links [text](url) -- no target="_blank", intercepted by click handler
+  // Links [text](url) -- no target="_blank", intercepted by click handler.
+  // The two suppressions below silence IDE-only false positives:
+  //   * RegExpRedundantEscape — `\]` inside a character class works
+  //     identically with or without escape, and we keep it for clarity
+  //     across regex flavors.
+  //   * HtmlUnknownTarget — `$2`/`$1` are JS regex backreferences in
+  //     the replacement string, not file paths the IDE keeps trying
+  //     to resolve.
+  // noinspection RegExpRedundantEscape
+  // noinspection HtmlUnknownTarget
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     '<a href="$2" data-external-link class="text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer">$1</a>',
   );
 
-  // Auto-link bare URLs (not already inside an <a> tag)
+  // Auto-link bare URLs (not already inside an <a> tag).
+  // noinspection HtmlUnknownTarget
   html = html.replace(
     /(?<!href="|">)(https?:\/\/[^\s<]+)/g,
     '<a href="$1" data-external-link class="text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer">$1</a>',
@@ -127,5 +158,28 @@ export function renderMarkdown(text: string): string {
   // Convert remaining newlines to <br>
   html = html.replace(/\n/g, "<br>");
 
-  return html;
+  // Final trust boundary. The allowlists below mirror exactly the tags
+  // and attributes the regex stage above can produce — anything else
+  // (script, iframe, on* handlers, javascript:/data: URLs, style=) gets
+  // stripped. Adding new markdown features means extending this list,
+  // not bypassing it.
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [
+      "strong",
+      "em",
+      "span",
+      "code",
+      "pre",
+      "a",
+      "ul",
+      "ol",
+      "li",
+      "br",
+    ],
+    ALLOWED_ATTR: ["class", "href", "data-external-link"],
+    // Block javascript:, data:, vbscript:, and any other surprising
+    // scheme. Keeping http/https/mailto covers every URL we expect a
+    // chat message to legitimately contain.
+    ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
+  });
 }
