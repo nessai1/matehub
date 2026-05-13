@@ -44,6 +44,29 @@ const PROFILE_CONFIG: Record<ScreenShareProfile, ScreenProfileConfig> = {
   },
 };
 
+// Camera capture constraints. The old defaults (640×480 hardcoded) made
+// every camera tile a 480p upscale on a 720p/1080p layout — visibly
+// blocky once the call grid stretched the source. 720p baseline plus an
+// `ideal=1280/720` hint lets Chrome pick the camera's native sensor
+// resolution if it can offer 1080p (Logitech BRIO, MacBook FaceTime
+// 1080p, etc.); the `max` cap keeps a 4K webcam from blowing the
+// upstream budget on a free-tier hub.
+const CAMERA_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1280, max: 1920 },
+  height: { ideal: 720, max: 1080 },
+  frameRate: { ideal: 30 },
+};
+
+// Encoder budget for a 720p talking head with motion. Chrome's default
+// for a single-layer camera sender hovers around 1 Mbps — fine for static
+// frames, blocky on hand gestures and lip motion. 2.5 Mbps clears the
+// "Discord-quality" bar without overshooting what an ADSL uplink can
+// swallow on the partner side. Use `maintain-framerate` so a CPU spike
+// drops resolution before fps; a janky 720p call is worse UX than a
+// brief 480p smoothness dip.
+const CAMERA_TARGET_BITRATE = 2_500_000;
+const CAMERA_TARGET_FPS = 30;
+
 /**
  * MateHub Video SDK client.
  *
@@ -196,7 +219,7 @@ export class VideoClient {
       this.emit({ type: "disconnected", reason: "websocket closed" });
     };
 
-    this.ws.onerror = (e) => {
+    this.ws.onerror = () => {
       this.emit({ type: "error", message: "WebSocket error" });
     };
   }
@@ -672,11 +695,20 @@ export class VideoClient {
 
     if (existingTrack && existingTrack.readyState === "live") {
       existingTrack.enabled = true;
+      // Re-apply CAMERA_CONSTRAINTS on the existing track in case it was
+      // acquired before the resolution bump (or by a setCameraDevice call
+      // that pre-dated this fix). applyConstraints is best-effort: the
+      // browser can refuse and keep the current resolution, which is fine.
+      try {
+        await existingTrack.applyConstraints(CAMERA_CONSTRAINTS);
+      } catch (e) {
+        this.debug("warn", "enableCamera applyConstraints failed", { error: String(e) });
+      }
       await this.videoSender?.replaceTrack(existingTrack);
       this.log("enableCamera re-enabled existing track via replaceTrack");
     } else {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
+        video: CAMERA_CONSTRAINTS,
       });
       const track = stream.getVideoTracks()[0];
       this.log("enableCamera acquired new track", { trackId: track?.id });
@@ -695,10 +727,38 @@ export class VideoClient {
         this.log("enableCamera track on PC, senders:", this.pc.getSenders().length);
       }
     }
+
+    // Apply encoder caps on whatever sender is now live. Done after the
+    // sender exists for both the renegotiation path (just added) and the
+    // replaceTrack path (already existed). setParameters is idempotent —
+    // repeated calls just re-affirm the same encoding shape.
+    if (this.videoSender) {
+      await this.applyCameraEncoderParams(this.videoSender);
+    }
+
     this.camEnabled = true;
     this.send({ type: "mute_changed", kind: "video", muted: false });
     if (needsRenegotiation) {
       await this.renegotiate("enableCamera");
+    }
+  }
+
+  /** Pin the camera sender's encoder to the project's target bitrate /
+   *  framerate / degradation policy. See CAMERA_TARGET_BITRATE doc. */
+  private async applyCameraEncoderParams(sender: RTCRtpSender) {
+    try {
+      const params = sender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}];
+      }
+      for (const enc of params.encodings) {
+        enc.maxBitrate = CAMERA_TARGET_BITRATE;
+        enc.maxFramerate = CAMERA_TARGET_FPS;
+      }
+      params.degradationPreference = "maintain-framerate";
+      await sender.setParameters(params);
+    } catch (e) {
+      this.debug("warn", "applyCameraEncoderParams failed", { error: String(e) });
     }
   }
 
@@ -804,7 +864,13 @@ export class VideoClient {
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: deviceId }, width: 640, height: 480 },
+      // `deviceId: exact` pins the source; the rest mirror CAMERA_CONSTRAINTS
+      // so a mid-call switch doesn't quietly downgrade the partner from
+      // 720p back to 480p.
+      video: {
+        deviceId: { exact: deviceId },
+        ...CAMERA_CONSTRAINTS,
+      },
     });
     const newTrack = stream.getVideoTracks()[0];
     if (!newTrack) {
@@ -828,6 +894,12 @@ export class VideoClient {
     } else {
       this.videoSender = this.pc.addTrack(newTrack, this.localStream);
       if (!this.camEnabled) await this.videoSender.replaceTrack(null);
+    }
+    // Re-apply encoder caps. A device swap re-creates the underlying
+    // codec context in Chrome and any previous `setParameters` is lost —
+    // without this the new device starts at Chrome's default 1 Mbps.
+    if (this.videoSender) {
+      await this.applyCameraEncoderParams(this.videoSender);
     }
     this.currentCameraDeviceId = newTrack.getSettings().deviceId ?? deviceId;
     this.log("setCameraDevice done", {
@@ -955,6 +1027,23 @@ export class VideoClient {
       ],
     });
     this.screenVideoSender = videoTransceiver.sender;
+
+    // Tell Chrome how to react when the encoder runs out of CPU or the
+    // BWE shrinks: motion profiles (gaming, standard) prefer to drop
+    // resolution over framerate — a 720p 30fps gameplay demo beats a
+    // sharp 1080p 8fps slideshow. Detail flips that — a doc reviewer
+    // wants legible text more than smooth animation. Default is
+    // "balanced" which drops fps first and hurts the gameplay case.
+    try {
+      const params = this.screenVideoSender.getParameters();
+      params.degradationPreference =
+        profileConfig.contentHint === "detail"
+          ? "maintain-resolution"
+          : "maintain-framerate";
+      await this.screenVideoSender.setParameters(params);
+    } catch (e) {
+      this.debug("warn", "publishScreen setParameters failed", { error: String(e) });
+    }
 
     if (audioTrack) {
       const audioTransceiver = this.pc.addTransceiver(audioTrack, {

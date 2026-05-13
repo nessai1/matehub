@@ -39,8 +39,10 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     isMicEnabled,
     isCamEnabled,
     isScreenSharing,
+    isDeafened,
     toggleMic,
     toggleCamera,
+    toggleDeafen,
     publishScreen,
     unpublishScreen,
     leaveVoice,
@@ -388,10 +390,12 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
               isMicEnabled={isMicEnabled}
               isCamEnabled={isCamEnabled}
               isScreenSharing={isScreenSharing}
+              isDeafened={isDeafened}
               onToggleMic={() => void toggleMic()}
               onToggleCamera={() => void toggleCamera()}
               onStartShare={() => setShareDialogOpen(true)}
               onStopShare={() => void unpublishScreen()}
+              onToggleDeafen={toggleDeafen}
               onLeave={leaveVoice}
             />
           </div>

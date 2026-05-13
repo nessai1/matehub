@@ -808,3 +808,16 @@ msgstr "Sign up"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "Share a link, send a temporary guest pass, or pre-allocate a login."
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "Undeafen"
+
+msgid "Deafen (mute all)"
+msgstr "Deafen (mute all)"
+
+msgid "Volume"
+msgstr "Volume"
+
+msgid "Audio options for %s"
+msgstr "Audio options for %s"

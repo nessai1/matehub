@@ -206,31 +206,79 @@ ensure_registry_login() {
 }
 
 # ── 5/6. Mode prompts ────────────────────────────────────────────────
+#
+# Interactive prompts here intentionally:
+#   * Write the explanatory text to stderr, not stdout.
+#     `choose_s3_mode` is called as `s3_mode="$(choose_s3_mode)"` — if the
+#     header lines went to stdout they'd be captured into the variable and
+#     the [[ "$mode" == "local" ]] check below would always fail.
+#   * Validate in a loop, not via `die`. A typoed digit on a sleepy 3am
+#     deploy should NOT abort the whole setup and force the operator to
+#     re-enter DOMAIN/PUBLIC_IP/ACME_EMAIL again.
+
 choose_s3_mode() {
     local mode="$S3_MODE_ARG"
-    if [[ -z "$mode" ]]; then
-        if [[ "$UNATTENDED" -eq 1 ]]; then
-            mode="local"
-        else
-            echo
-            echo "  S3 backend:"
-            echo "    [1] local     -- bundled MinIO (everything self-contained)"
-            echo "    [2] external  -- AWS / Yandex Cloud / your own S3-compatible store"
-            local choice
-            read -r -p "  Choose [1]: " choice
-            case "${choice:-1}" in
-                1) mode="local";;
-                2) mode="external";;
-                *) die "invalid choice: $choice";;
-            esac
-        fi
+    if [[ -n "$mode" ]]; then
+        [[ "$mode" == "local" || "$mode" == "external" ]] \
+            || die "invalid --s3-mode: $mode (expected: local|external)"
+        echo "$mode"
+        return
     fi
-    [[ "$mode" == "local" || "$mode" == "external" ]] || die "invalid --s3-mode: $mode"
-    echo "$mode"
+    if [[ "$UNATTENDED" -eq 1 ]]; then
+        echo "local"
+        return
+    fi
+
+    {
+        printf '\n%s================================================================%s\n' "$ANSI_CYAN" "$ANSI_RESET"
+        printf '%s  S3 object storage backend%s\n'                                          "$ANSI_CYAN" "$ANSI_RESET"
+        printf '%s================================================================%s\n'    "$ANSI_CYAN" "$ANSI_RESET"
+        printf '\n'
+        printf '    [1] local      bundled MinIO container (no external deps)\n'
+        printf '                   single-VPS deploys, dev/demo stands.\n'
+        printf '\n'
+        printf '    [2] external   AWS / Yandex / Selectel / any S3-compatible\n'
+        printf '                   service. You will need to fill several\n'
+        printf '                   S3_* fields in deploy/.env after setup.\n'
+        printf '\n'
+    } >&2
+
+    local choice
+    while true; do
+        read -r -p "  Choice [1]: " choice
+        case "${choice:-1}" in
+            1|local)    echo "local";    return;;
+            2|external) echo "external"; return;;
+            *) printf '%s  invalid choice "%s" -- enter 1, 2, local, or external%s\n' \
+                      "$ANSI_RED" "$choice" "$ANSI_RESET" >&2;;
+        esac
+    done
 }
 
 choose_observability() {
-    prompt_yes_no "  Enable observability stack (Grafana + Kibana + Prometheus + Elasticsearch)?" "$OBSERVABILITY_ARG"
+    # Same stderr discipline as choose_s3_mode -- the header decoration is
+    # for the operator's eyes, the function output is the answer string.
+    if [[ -n "$OBSERVABILITY_ARG" ]]; then
+        prompt_yes_no "" "$OBSERVABILITY_ARG"
+        return
+    fi
+    if [[ "$UNATTENDED" -eq 1 ]]; then
+        die "observability choice must be set explicitly in --unattended (--enable-observability / --no-observability)"
+    fi
+
+    {
+        printf '\n%s================================================================%s\n' "$ANSI_CYAN" "$ANSI_RESET"
+        printf '%s  Observability stack (optional)%s\n'                                     "$ANSI_CYAN" "$ANSI_RESET"
+        printf '%s================================================================%s\n'    "$ANSI_CYAN" "$ANSI_RESET"
+        printf '\n'
+        printf '    Adds Grafana + Kibana + Prometheus + Elasticsearch +\n'
+        printf '    Filebeat containers. ~1.5 GB extra RAM, ~5 GB disk.\n'
+        printf '    Reachable through Caddy at /grafana and /kibana with\n'
+        printf '    HTTP basicauth (credentials shown at end of setup).\n'
+        printf '\n'
+    } >&2
+
+    prompt_yes_no "  Enable observability stack?" ""
 }
 
 # ── 7. .env materialisation ──────────────────────────────────────────

@@ -783,3 +783,16 @@ msgstr "Registrarse"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "Comparte un enlace, envía un pase de invitado temporal o reserva un usuario."
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "Activar audio"
+
+msgid "Deafen (mute all)"
+msgstr "Silenciar todo"
+
+msgid "Volume"
+msgstr "Volumen"
+
+msgid "Audio options for %s"
+msgstr "Opciones de audio para %s"

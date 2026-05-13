@@ -53,6 +53,16 @@
     # not `handle_path`. Basicauth is the single auth gate; Grafana's own
     # admin login is a second layer behind it.
     #
+    # `request_header -Authorization` strips the basicauth credentials
+    # before forwarding upstream. Without it Grafana sees the Caddy
+    # basicauth tuple (admin:<observability_password>) as an attempted
+    # Grafana HTTP-basic login, rejects it because the password doesn't
+    # match GF_SECURITY_ADMIN_PASSWORD, and returns 401 — the operator
+    # passes the Caddy popup, fills the Grafana login form, and still
+    # bounces off "Invalid username or password". Same trap fires on
+    # Kibana when XPACK security is enabled. Strip on this hop only;
+    # /api/* upstreams need the Authorization (JWT) header intact.
+    #
     # When the observability profile is off the upstreams don't exist and
     # Caddy returns 502 — that's the intended "feature disabled" UX, no
     # special-casing needed.
@@ -63,10 +73,12 @@
         }
         @grafana path /grafana/*
         handle @grafana {
+            request_header -Authorization
             reverse_proxy grafana:3000
         }
         @kibana path /kibana/*
         handle @kibana {
+            request_header -Authorization
             reverse_proxy kibana:5601
         }
     }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   CheckIcon,
+  Headphones,
   Mic,
   MicOff,
   MoreVertical,
@@ -9,6 +10,7 @@ import {
   PhoneOff,
   Video,
   VideoOff,
+  VolumeX,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,10 +27,12 @@ interface VideoCallControlsProps {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
   isScreenSharing: boolean;
+  isDeafened: boolean;
   onToggleMic: () => void;
   onToggleCamera: () => void;
   onStartShare: () => void;
   onStopShare: () => void;
+  onToggleDeafen: () => void;
   onLeave: () => void;
 }
 
@@ -41,10 +45,12 @@ export function VideoCallControls({
   isMicEnabled,
   isCamEnabled,
   isScreenSharing,
+  isDeafened,
   onToggleMic,
   onToggleCamera,
   onStartShare,
   onStopShare,
+  onToggleDeafen,
   onLeave,
 }: VideoCallControlsProps) {
   // No-camera/no-mic machines and revoked permissions surface as empty
@@ -103,6 +109,22 @@ export function VideoCallControls({
           <MonitorOff className="h-4 w-4" />
         ) : (
           <Monitor className="h-4 w-4" />
+        )}
+      </ControlBtn>
+
+      <ControlBtn
+        // Treat deafened as the negative-state (red-ish) styling, same as
+        // mic-muted: a glance at the bar should tell the user "I'm cut off
+        // from the call". `active` here means "I can hear" — the visual
+        // pattern matches mic/cam.
+        active={!isDeafened}
+        onClick={onToggleDeafen}
+        title={isDeafened ? t("Undeafen") : t("Deafen (mute all)")}
+      >
+        {isDeafened ? (
+          <VolumeX className="h-4 w-4" />
+        ) : (
+          <Headphones className="h-4 w-4" />
         )}
       </ControlBtn>
 

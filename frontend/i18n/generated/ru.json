@@ -783,6 +783,18 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Поделитесь ссылкой, отправьте временный гостевой пропуск или заранее закрепите логин."
+      ],
+      "Undeafen": [
+        "Включить звук"
+      ],
+      "Deafen (mute all)": [
+        "Отключить весь звук"
+      ],
+      "Volume": [
+        "Громкость"
+      ],
+      "Audio options for %s": [
+        "Параметры звука для %s"
       ]
     }
   }

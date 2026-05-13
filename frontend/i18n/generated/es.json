@@ -783,6 +783,18 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Comparte un enlace, envía un pase de invitado temporal o reserva un usuario."
+      ],
+      "Undeafen": [
+        "Activar audio"
+      ],
+      "Deafen (mute all)": [
+        "Silenciar todo"
+      ],
+      "Volume": [
+        "Volumen"
+      ],
+      "Audio options for %s": [
+        "Opciones de audio para %s"
       ]
     }
   }

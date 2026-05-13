@@ -48,6 +48,19 @@ interface VideoCallContextValue {
   setCameraDevice: (deviceId: string) => Promise<void>;
   refreshDevices: () => Promise<void>;
 
+  /** Discord-style "deafen": mute every incoming audio AND mute own mic.
+   *  Re-undeafening doesn't auto-unmute the mic — the user can stay
+   *  muted independently. State is local to this tab. */
+  isDeafened: boolean;
+  toggleDeafen: () => void;
+
+  /** Per-participant audio volume control (MAT-14). Range 0.0–1.0,
+   *  applied locally to the receiver's HTMLAudioElement.volume. Lookup
+   *  by participant id; missing key means default (1.0). The map only
+   *  contains explicit overrides; setting back to 1.0 deletes the entry. */
+  participantVolumes: Map<string, number>;
+  setParticipantVolume: (participantId: string, volume: number) => void;
+
   /** Join a voice channel by its ID. Leaves the current call first if any. */
   joinVoice: (channelId: string) => Promise<void>;
   /** Leave the current call (noop if not in one). */
@@ -78,6 +91,17 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // dependencies sane (videoOpts otherwise would have to depend on the
   // current leaveVoice, recreating on every state change).
   const [forceKickReason, setForceKickReason] = useState<string | null>(null);
+  // Deafen (MAT-15) — local to this tab. Not persisted across reloads
+  // intentionally: a user who reloads expects to *hear* the call. If we
+  // want to honour "stay deafened across reloads" later, plumb through
+  // localStorage same way device persistence does.
+  const [isDeafened, setIsDeafened] = useState(false);
+  // Per-participant volume overrides (MAT-14). Map<participantId, 0..1>.
+  // Default for any missing key is 1.0; setting back to 1.0 removes the
+  // entry so the map only carries actual deviations.
+  const [participantVolumes, setParticipantVolumes] = useState<
+    Map<string, number>
+  >(() => new Map());
 
   const videoOpts = useMemo(() => {
     if (!sessionId || !session) return null;
@@ -149,7 +173,49 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     vc.disconnect();
     setSessionId(null);
     setActiveVoiceChannelId(null);
+    // Reset per-call deafen + volume state. Carrying them between calls
+    // would surprise the user — "why is X quiet in this completely
+    // different channel where I never adjusted them?".
+    setIsDeafened(false);
+    setParticipantVolumes(new Map());
   }, [activeVoiceChannelId, vc]);
+
+  const toggleDeafen = useCallback(() => {
+    setIsDeafened((prev) => {
+      const next = !prev;
+      // Discord-style coupling: deafening also mutes your own mic. The
+      // intuition is "stop participating in the call" — leaking your
+      // side comments while you can't hear anyone is the failure mode
+      // we're closing. Undeafening leaves the mic where the user last
+      // set it (likely still muted, which is correct).
+      if (next && vc.isMicEnabled) {
+        void vc.toggleMic();
+      }
+      return next;
+    });
+  }, [vc]);
+
+  const setParticipantVolume = useCallback(
+    (participantId: string, volume: number) => {
+      // Clamp into HTMLMediaElement.volume's valid range; otherwise the
+      // setter throws and the slider hangs.
+      const clamped = Math.max(0, Math.min(1, volume));
+      setParticipantVolumes((prev) => {
+        // 1.0 = "no override". Removing the entry keeps the map small
+        // and lets <audio> elements fall back to the default cleanly.
+        if (Math.abs(clamped - 1) < 0.001) {
+          if (!prev.has(participantId)) return prev;
+          const next = new Map(prev);
+          next.delete(participantId);
+          return next;
+        }
+        const next = new Map(prev);
+        next.set(participantId, clamped);
+        return next;
+      });
+    },
+    [],
+  );
 
   // React to force-disconnect (multi-tab collision): leave the call view
   // cleanly and tell the user why. The reason currently has one value
@@ -199,10 +265,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       setMicDevice: vc.setMicDevice,
       setCameraDevice: vc.setCameraDevice,
       refreshDevices: vc.refreshDevices,
+      isDeafened,
+      toggleDeafen,
+      participantVolumes,
+      setParticipantVolume,
       joinVoice,
       leaveVoice,
     }),
-    [activeVoiceChannelId, vc, joinVoice, leaveVoice],
+    [
+      activeVoiceChannelId,
+      vc,
+      isDeafened,
+      toggleDeafen,
+      participantVolumes,
+      setParticipantVolume,
+      joinVoice,
+      leaveVoice,
+    ],
   );
 
   return (

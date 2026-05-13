@@ -783,6 +783,18 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "リンクを共有、一時ゲストパスを送信、またはログインを予約します。"
+      ],
+      "Undeafen": [
+        "音声を有効にする"
+      ],
+      "Deafen (mute all)": [
+        "全員ミュート"
+      ],
+      "Volume": [
+        "音量"
+      ],
+      "Audio options for %s": [
+        "%s の音声オプション"
       ]
     }
   }

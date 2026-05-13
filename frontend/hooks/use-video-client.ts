@@ -4,9 +4,38 @@ import {
   type Participant,
   type ScreenShareProfile,
   type VideoClientEvent,
-} from "../../packages/sdk-video/src";
+} from "@matehub/sdk-video";
 import { playCallSound } from "@/lib/call-sounds";
 import { getTurnConfig } from "@/src/config";
+
+// localStorage keys for cross-call device persistence (MAT-17). Browser-
+// scoped, not user-scoped — running two users on one browser ties them to
+// the same default, which is the right tradeoff: device choice belongs to
+// the human at the keyboard, not the credentials they're logged in with.
+const MIC_DEVICE_STORAGE_KEY = "matehub.videoCall.micDeviceId";
+const CAMERA_DEVICE_STORAGE_KEY = "matehub.videoCall.cameraDeviceId";
+
+function readPersistedDevice(key: string): string | null {
+  // SSR-safe: Next.js may render this hook on the server during hydration
+  // (the hook itself doesn't gate on `typeof window`, the call sites do).
+  // localStorage access during SSR throws ReferenceError, hence the guard.
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedDevice(key: string, deviceId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, deviceId);
+  } catch {
+    // Quota / private-mode / cookies-disabled paths. Persistence is a nicety,
+    // not a correctness requirement — swallow.
+  }
+}
 
 interface UseVideoClientOptions {
   serverUrl: string;
@@ -119,9 +148,14 @@ export function useVideoClient(
           setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
           break;
         case "participant_joined":
+          // Audio cue (MAT-18): reuse the existing join chime so a
+          // teammate slipping into the call mid-stream isn't invisible.
+          // The 15% volume keeps it from clipping into ongoing speech.
+          playCallSound("join_call");
           updateParticipants((prev) => [...prev, event.participant]);
           break;
         case "participant_left":
+          playCallSound("leave_call");
           cameraOnRef.current.delete(event.participantId);
           videoTrackRef.current.delete(event.participantId);
           updateParticipants((prev) =>
@@ -129,6 +163,13 @@ export function useVideoClient(
           );
           break;
         case "track_added":
+          // MAT-18: remote screen-share starting deserves the same cue
+          // we play for the local side — different listener, same event
+          // semantically. Camera tracks are quiet because they fire on
+          // every renegotiation, not just join.
+          if (event.source === "screen" && event.kind === "video") {
+            playCallSound("show_desktop");
+          }
           // Camera video ref — screen tracks don't need the mute-race workaround
           // since they're not gated on a mute signal, they exist or they don't.
           if (event.source === "camera" && event.kind === "video") {
@@ -155,6 +196,12 @@ export function useVideoClient(
           );
           break;
         case "track_removed":
+          // MAT-18: complement to the start cue — remote stopped sharing
+          // their screen, surface it with the same disable_desktop chime
+          // we already use for the local side.
+          if (event.source === "screen" && event.kind === "video") {
+            playCallSound("disable_desktop");
+          }
           updateParticipants((prev) =>
             prev.map((p) => {
               if (p.participantId !== event.participantId) return p;
@@ -243,20 +290,77 @@ export function useVideoClient(
     videoTrackRef.current.clear();
   }, []);
 
-  const toggleMic = useCallback(async () => {
-    const client = clientRef.current;
-    if (!client) return;
-    const enabled = await client.toggleMic();
-    setIsMicEnabled(enabled);
+  // Apply the persisted device choice (MAT-17) when a freshly-enabled
+  // track lands on the default device. The SDK's `enableMic` /
+  // `enableCamera` always reach for the platform default — they have no
+  // hook to honour a previous selection. Wrapping the toggle here is the
+  // cheap place to splice that in: after the toggle returns enabled=true
+  // we check whether the saved deviceId differs from the live one, and
+  // if so swap via `setMicDevice` / `setCameraDevice` (which does
+  // replaceTrack on the existing sender — no SDP churn).
+  //
+  // The saved id may be stale: a previously-used USB headset that's no
+  // longer plugged in. `listDevices()` enumerates what's available right
+  // now; we silently skip the switch if the saved id isn't in the list.
+  const applyPersistedMic = useCallback(async (client: VideoClient) => {
+    const saved = readPersistedDevice(MIC_DEVICE_STORAGE_KEY);
+    if (!saved) return;
+    const current = client.getCurrentMicDeviceId();
+    if (current === saved) return;
+    try {
+      const devices = await client.listDevices();
+      if (!devices.audioInputs.some((d) => d.deviceId === saved)) return;
+      await client.setMicDevice(saved);
+      setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+    } catch (e) {
+      // Device may have been pulled between enumerate and switch.
+      console.warn("applyPersistedMic failed", e);
+    }
   }, []);
 
-  const toggleCamera = useCallback(async () => {
-    const client = clientRef.current;
-    if (!client) return;
-    const enabled = await client.toggleCamera();
-    setIsCamEnabled(enabled);
-    setLocalStream(client.getLocalStream());
+  const applyPersistedCamera = useCallback(async (client: VideoClient) => {
+    const saved = readPersistedDevice(CAMERA_DEVICE_STORAGE_KEY);
+    if (!saved) return;
+    const current = client.getCurrentCameraDeviceId();
+    if (current === saved) return;
+    try {
+      const devices = await client.listDevices();
+      if (!devices.videoInputs.some((d) => d.deviceId === saved)) return;
+      await client.setCameraDevice(saved);
+      setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+    } catch (e) {
+      console.warn("applyPersistedCamera failed", e);
+    }
   }, []);
+
+  const toggleMic = useCallback(
+    async () => {
+      const client = clientRef.current;
+      if (!client) return;
+      const enabled = await client.toggleMic();
+      setIsMicEnabled(enabled);
+      // Only swap on enable: a mute toggle shouldn't churn devices.
+      if (enabled) {
+        await applyPersistedMic(client);
+      }
+    },
+    [applyPersistedMic],
+  );
+
+  const toggleCamera = useCallback(
+    async () => {
+      const client = clientRef.current;
+      if (!client) return;
+      const enabled = await client.toggleCamera();
+      setIsCamEnabled(enabled);
+      setLocalStream(client.getLocalStream());
+      if (enabled) {
+        await applyPersistedCamera(client);
+        setLocalStream(client.getLocalStream());
+      }
+    },
+    [applyPersistedCamera],
+  );
 
   const publishScreen = useCallback(async (profile: ScreenShareProfile) => {
     const client = clientRef.current;
@@ -329,7 +433,16 @@ export function useVideoClient(
     const client = clientRef.current;
     if (!client) return;
     await client.setMicDevice(deviceId);
-    setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+    const settled = client.getCurrentMicDeviceId();
+    setCurrentMicDeviceId(settled);
+    // Persist the *settled* id, not the requested one. They line up in the
+    // happy path, but `setMicDevice` may reach for a fallback if the
+    // requested device disappears mid-call (USB unplug during the
+    // switch). Saving what the SDK actually picked keeps the next call's
+    // restore consistent with reality.
+    if (settled) {
+      writePersistedDevice(MIC_DEVICE_STORAGE_KEY, settled);
+    }
     // Force a new MediaStream reference so consumers' useMemo rebuilds —
     // mutating the existing one in-place doesn't trip referential equality.
     const s = client.getLocalStream();
@@ -340,7 +453,11 @@ export function useVideoClient(
     const client = clientRef.current;
     if (!client) return;
     await client.setCameraDevice(deviceId);
-    setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+    const settled = client.getCurrentCameraDeviceId();
+    setCurrentCameraDeviceId(settled);
+    if (settled) {
+      writePersistedDevice(CAMERA_DEVICE_STORAGE_KEY, settled);
+    }
     const s = client.getLocalStream();
     setLocalStream(s ? new MediaStream(s.getTracks()) : null);
   }, []);

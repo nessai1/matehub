@@ -703,3 +703,125 @@ Recorded here so future contributors see why each knob sits where it does.
    60fps gaming content and only helped a narrow "middle viewer" band that
    we don't expect to populate in the booster audience. Two layers cover
    "on a good desktop" vs. "on mobile LTE" cleanly.
+
+---
+
+## 13. Native client roadmap: dedicated screen-share pipeline
+
+> **Status:** planned, not started. Pre-condition: a native client (Tauri /
+> Electron-with-native-modules) exists. Until then this section is a
+> commitment to *not* keep stacking workarounds onto the browser
+> `getDisplayMedia` path past the point of usefulness.
+
+### 13.1. Why a separate pipeline at all
+
+The browser `getDisplayMedia` + WebRTC simulcast path documented in §1–§12
+is the right call for a browser-only product. It stops being the right
+call the moment we ship a native app, for three concrete reasons that
+surfaced during the box-0.0.1 alpha:
+
+1. **DRM-protected surfaces show as black** (MAT-21 territory). Native
+   games using NVIDIA Shadowplay / Windows Game DVR / macOS exclusive
+   fullscreen / HDCP-marked surfaces hand the browser an all-black
+   framebuffer. `getDisplayMedia` can't see through that — it's
+   browser-level sandboxing, not a tunable. A native client using
+   `ScreenCaptureKit` (macOS) or `DXGI Desktop Duplication` + `NVIDIA
+   Capture SDK` (Windows) can read the raw GPU surface and bypass the
+   block on everything *except* legally-enforced DRM (Netflix, Disney+).
+   For the booster use case — gameplay demos — this is the difference
+   between "works" and "doesn't".
+
+2. **WebRTC's encoder knobs are deliberately blunt.** `setParameters`
+   exposes `maxBitrate`, `maxFramerate`, `scaleResolutionDownBy`,
+   `degradationPreference`. It does NOT expose: keyframe interval, B-frame
+   policy, rate-control mode, VBV buffer size, codec profile/level,
+   hardware encoder selection. For a 1080p60 gameplay stream those knobs
+   are the difference between "smooth" and "blocky on motion". libwebrtc
+   itself supports all of them — Chrome just doesn't surface them.
+   Linking libwebrtc as a C++ dependency in a native app (Discord's
+   approach) unlocks the same API surface our browser SDK is locked out
+   of, without rewriting the protocol stack.
+
+3. **Transport is locked to RTP-over-DTLS-over-UDP with browser-imposed
+   pacing.** Discord's "Go Live" runs a separate streaming protocol over
+   plain UDP (custom relay, not WebRTC SFU), trading WebRTC's ~50–100ms
+   latency for ~250–500ms in exchange for stable high-bitrate
+   transmission and far better recovery from spikes. The booster
+   audience tolerates the latency tradeoff (commentary doesn't need to
+   be lip-synced to the game), but does NOT tolerate the artifact
+   tradeoff (MAT-11). The browser path can't make this trade.
+
+### 13.2. What's in scope
+
+When this lands:
+
+- Native screen capture via OS-level APIs:
+  - **macOS**: `ScreenCaptureKit` (replacement for the deprecated
+    `CGDisplayStream`). Yields raw `CMSampleBuffer` IOSurfaces, can
+    target a specific window or app, honours Screen Recording
+    permission.
+  - **Windows**: `DXGI Desktop Duplication` for the desktop surface, +
+    `NVENC` / `Quick Sync` / `AMF` for hardware encoding on the path
+    *before* it hits libwebrtc. Optional `NVIDIA Capture SDK` for
+    explicit game-window capture.
+  - **Linux**: PipeWire portal (xdg-desktop-portal). Limited compared to
+    the other two — defer until there's user demand.
+- Hardware H.264/HEVC/AV1 encoder pipeline with full control of GOP
+  size, B-frames, rate control mode. Encodes on the publisher, ships
+  encoded NAL units (not raw frames) to our relay.
+- A separate "stream relay" cluster, not the existing SFU. Different
+  scaling profile: high-bitrate (10–25 Mbps per publisher), low-fanout
+  (1–10 viewers per stream, not all-to-all), latency-tolerant
+  (~300ms target). Keeps the SFU's voice/camera tuning intact.
+- New signalling channel: the existing WS protocol picks up a
+  `publish_native_stream` opcode parallel to `publish_track`, carrying
+  codec parameters that don't fit in SDP.
+
+### 13.3. What stays on the browser WebRTC path
+
+Everything that's not bulk screen content. Specifically:
+
+- **Camera + microphone** stay over the existing SFU. WebRTC's strengths
+  (sub-100ms latency, browser-native A/V sync, simulcast adaptation)
+  are exactly what voice/face-cam need. No reason to fragment two
+  stacks for a feature WebRTC already does well.
+- **Browser users** keep `getDisplayMedia` and the existing simulcast
+  profiles. They lose the DRM-bypass and the high-bitrate-stability
+  benefits, but the feature still works for the document-share and
+  non-protected-app cases. Native and browser users in the same call:
+  native publisher's stream is transcoded *down* to WebRTC at the
+  relay edge so browser viewers see it (extra hop, but viewers were
+  going to be the laggy side anyway).
+
+### 13.4. What this is NOT
+
+- **Not an excuse to defer MAT-11/16/21 indefinitely.** Browser users
+  remain the majority through at least the first year of native rollout.
+  TURN-relay tuning (MAT-11), permission pre-flight in the SDK
+  (MAT-16), and an OS-detection UX warning for known-DRM games
+  (MAT-21) all still need to ship on the WebRTC path — this section
+  documents the *eventual* second pipeline, not a justification to skip
+  the first one.
+- **Not Electron-as-wrapper.** Plain Electron embeds Chromium and gets
+  Chromium's `getDisplayMedia` — same black-screen on protected games,
+  same encoder-knob ceiling, same problems as the browser. The native
+  case is meaningful only when we drop into platform APIs (Tauri with
+  Rust bindings, Electron with native C++ addons, or a pure native
+  Swift/Win32 app).
+- **Not a small project.** Discord spent multi-year effort on their
+  Go Live pipeline with a team in double digits. Plan accordingly:
+  this is a strategic bet, not a sprint.
+
+### 13.5. Pre-conditions before opening this
+
+Don't start until all four are true:
+
+1. Browser MVP is stable: MAT-11/16/21 closed or visibly bounded.
+2. Concrete user requirement we can't meet on the browser path
+   (specific titles, specific latency SLA, specific OEM integration).
+3. Native client exists for at least one of macOS/Windows with auto-
+   update and crash reporting in place — the screen-share pipeline
+   piggy-backs on that infra, doesn't build it.
+4. We have someone willing to own libwebrtc upgrades long-term.
+   Vendoring libwebrtc means tracking upstream security fixes
+   forever; doing it badly is a CVE-of-the-month subscription.

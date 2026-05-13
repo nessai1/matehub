@@ -783,6 +783,18 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "分享链接、发送临时访客通行证或预分配登录名。"
+      ],
+      "Undeafen": [
+        "取消禁声"
+      ],
+      "Deafen (mute all)": [
+        "静音所有人"
+      ],
+      "Volume": [
+        "音量"
+      ],
+      "Audio options for %s": [
+        "%s 的音频选项"
       ]
     }
   }

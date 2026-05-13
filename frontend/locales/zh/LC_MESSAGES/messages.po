@@ -783,3 +783,16 @@ msgstr "注册"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "分享链接、发送临时访客通行证或预分配登录名。"
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "取消禁声"
+
+msgid "Deafen (mute all)"
+msgstr "静音所有人"
+
+msgid "Volume"
+msgstr "音量"
+
+msgid "Audio options for %s"
+msgstr "%s 的音频选项"

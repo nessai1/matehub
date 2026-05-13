@@ -783,3 +783,16 @@ msgstr "登録"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "リンクを共有、一時ゲストパスを送信、またはログインを予約します。"
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "音声を有効にする"
+
+msgid "Deafen (mute all)"
+msgstr "全員ミュート"
+
+msgid "Volume"
+msgstr "音量"
+
+msgid "Audio options for %s"
+msgstr "%s の音声オプション"

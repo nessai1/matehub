@@ -7,9 +7,9 @@ import { useAuth } from "@/lib/auth";
 import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
-// TODO: get hub_id from subdomain or config. Wire-format is always a string
-// because Snowflake IDs blow past JS MAX_SAFE_INTEGER.
-const DEV_HUB_ID = "1";
+// Fallback used only until /v1/setup/status answers. The real hub_id ships
+// as a string because Snowflake IDs blow past JS MAX_SAFE_INTEGER.
+const FALLBACK_HUB_ID = "1";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -19,17 +19,23 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hubId, setHubId] = useState<string | null>(null);
   const [hubName, setHubName] = useState<string | null>(null);
 
-  // GET /v1/hubs/{id} is public (no AuthUser extractor on the handler), so
-  // we can show the hub's display name on the sign-in screen without a
-  // token. Falls back silently — the form still works if this errors.
+  // Box deploys have exactly one hub and don't ship the hub_id baked into
+  // the SPA bundle. /v1/setup/status is the unauthenticated source of
+  // truth for "which hub does this deployment represent": it returns
+  // `{needs_setup, hub_id?, hub_slug?, hub_name?}` and the hub identity
+  // is populated once the first-run wizard has finished. Falling back to
+  // FALLBACK_HUB_ID only covers dev where the seed pins hub_id=1.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${HUB_API}/v1/hubs/${DEV_HUB_ID}`)
+    fetch(`${HUB_API}/v1/setup/status`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: { name?: string } | null) => {
-        if (!cancelled && data?.name) setHubName(data.name);
+      .then((data: { hub_id?: string; hub_name?: string } | null) => {
+        if (cancelled || !data) return;
+        if (data.hub_id) setHubId(data.hub_id);
+        if (data.hub_name) setHubName(data.hub_name);
       })
       .catch(() => {});
     return () => {
@@ -46,7 +52,12 @@ export default function LoginPage() {
       const res = await fetch(`${HUB_API}/v1/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ login: loginField, password, hub_id: DEV_HUB_ID, remember_me: rememberMe }),
+        body: JSON.stringify({
+          login: loginField,
+          password,
+          hub_id: hubId ?? FALLBACK_HUB_ID,
+          remember_me: rememberMe,
+        }),
       });
 
       if (!res.ok) {

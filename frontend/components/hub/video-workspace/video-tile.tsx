@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MicOffIcon, MonitorIcon, Maximize2Icon, XIcon } from "lucide-react";
+import {
+  MicOffIcon,
+  MonitorIcon,
+  Maximize2Icon,
+  MoreVerticalIcon,
+  Volume2Icon,
+  XIcon,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { useVideoCall } from "@/contexts/video-call-context";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export type TileSize = "xs" | "sm" | "md" | "lg";
 
@@ -114,6 +129,13 @@ export function CameraVideoTile({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  // Audio side-effects (deafen + per-participant volume, MAT-14/MAT-15)
+  // flow in through context rather than props: the tile is composed in
+  // half a dozen places (grid, spotlight, page reorders) and prop-
+  // drilling two cross-cutting concerns through all of them is more
+  // noise than the coupling is worth.
+  const { isDeafened, participantVolumes } = useVideoCall();
+  const perTileVolume = participantVolumes.get(tile.userId) ?? 1;
 
   useEffect(() => {
     const el = videoRef.current;
@@ -131,11 +153,29 @@ export function CameraVideoTile({
     if (!el) return;
     if (tile.audioTrack && !tile.isLocal) {
       el.srcObject = new MediaStream([tile.audioTrack]);
+      // Apply current deafen + volume immediately so newly-joined tracks
+      // honour the existing state (otherwise they'd play at default
+      // 1.0 for a frame). The deps further down keep these in sync.
+      el.muted = isDeafened;
+      el.volume = perTileVolume;
       el.play().catch(() => {});
     } else {
       el.srcObject = null;
     }
+    // Intentionally omit isDeafened / perTileVolume from deps here —
+    // changing them shouldn't re-bind srcObject (which is a Chrome
+    // performance hazard); the dedicated effect below handles those.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tile.audioTrack, tile.isLocal]);
+
+  // Apply deafen + volume changes without recreating the MediaStream.
+  // Cheap path: just twiddle muted/volume on the already-mounted element.
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    el.muted = isDeafened;
+    el.volume = perTileVolume;
+  }, [isDeafened, perTileVolume]);
 
   const initials = tile.displayName
     .split(" ")
@@ -206,6 +246,17 @@ export function CameraVideoTile({
       )}
 
       {!tile.isLocal && <audio ref={audioRef} autoPlay playsInline hidden />}
+
+      {/* Per-participant volume menu (MAT-14). Local tile doesn't get one —
+          there's nothing meaningful to attenuate on yourself (the local
+          <video> is muted, mic level is a different control). */}
+      {!tile.isLocal && size !== "xs" && (
+        <TileVolumeMenu
+          userId={tile.userId}
+          displayName={tile.displayName}
+          volume={perTileVolume}
+        />
+      )}
 
       {/* Pinned badge (top-left, glass pill) */}
       {tile.pinned && size !== "xs" && (
@@ -306,16 +357,32 @@ export function ScreenShareVideoTile({
     return () => window.removeEventListener("keydown", onKey);
   }, [expanded]);
 
+  // Same deafen / volume coupling as CameraVideoTile, keyed by the
+  // screen owner's user id so a single slider drives both their camera
+  // and screen-share audio (typically just game audio).
+  const { isDeafened, participantVolumes } = useVideoCall();
+  const perTileVolume = participantVolumes.get(tile.ownerUserId) ?? 1;
+
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
     if (tile.audioTrack && !tile.isLocal) {
       el.srcObject = new MediaStream([tile.audioTrack]);
+      el.muted = isDeafened;
+      el.volume = perTileVolume;
       el.play().catch(() => {});
     } else {
       el.srcObject = null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tile.audioTrack, tile.isLocal]);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    el.muted = isDeafened;
+    el.volume = perTileVolume;
+  }, [isDeafened, perTileVolume]);
 
   const radius = size === "xs" ? "rounded-[10px]" : "rounded-[14px]";
 
@@ -426,6 +493,82 @@ export function ScreenShareVideoTile({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Per-tile volume menu (MAT-14) ─────────────────────────────────────────
+//
+// The 3-dots affordance lives in the top-right corner of remote camera
+// tiles. Right now it only carries a volume slider — future actions
+// (kick from voice, global mute, etc.) drop into this same menu so the
+// admin doesn't have to learn a second affordance.
+//
+// Why not a context-menu (right-click)? Phone/tablet users have no
+// right-click equivalent. Click-to-open dropdown works everywhere.
+
+function TileVolumeMenu({
+  userId,
+  displayName,
+  volume,
+}: {
+  userId: string;
+  displayName: string;
+  volume: number;
+}) {
+  const { setParticipantVolume } = useVideoCall();
+  const [open, setOpen] = useState(false);
+
+  // Slider works in 0–100 to give the user discrete-feeling clicks. Store
+  // 0–1 in context (matches HTMLMediaElement.volume) and divide on the
+  // boundary.
+  const sliderValue = Math.round(volume * 100);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        {/* stopPropagation: the whole tile is a click-to-spotlight target;
+            opening the menu shouldn't also flip the spotlight. */}
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          aria-label={t("Audio options for %s", displayName)}
+          className={cn(
+            "absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full text-white opacity-0 transition-opacity hover:bg-black/80 group-hover/tile:opacity-100",
+            "data-[state=open]:opacity-100",
+          )}
+          style={{ background: "rgba(20,22,30,0.55)" }}
+          data-state={open ? "open" : "closed"}
+        >
+          <MoreVerticalIcon className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="end"
+        sideOffset={6}
+        className="w-56 p-3"
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <Volume2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">{t("Volume")}</span>
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            {sliderValue}%
+          </span>
+        </div>
+        <Slider
+          className="mt-2"
+          min={0}
+          max={100}
+          step={1}
+          value={[sliderValue]}
+          onValueChange={(v: number[]) => {
+            const next = v[0] ?? 100;
+            setParticipantVolume(userId, next / 100);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
