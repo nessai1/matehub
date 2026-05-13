@@ -339,6 +339,12 @@ export function useVideoClient(
       if (!client) return;
       const enabled = await client.toggleMic();
       setIsMicEnabled(enabled);
+      // MAT-18 second pass: audio confirmation on every mic/cam toggle.
+      // Played AFTER the SDK call resolves so the cue confirms the
+      // state actually changed (otherwise a fast-clicker hears the
+      // "click" before getUserMedia finishes — confusing if permission
+      // is still being prompted).
+      playCallSound(enabled ? "enable" : "disable");
       // Only swap on enable: a mute toggle shouldn't churn devices.
       if (enabled) {
         await applyPersistedMic(client);
@@ -354,6 +360,7 @@ export function useVideoClient(
       const enabled = await client.toggleCamera();
       setIsCamEnabled(enabled);
       setLocalStream(client.getLocalStream());
+      playCallSound(enabled ? "enable" : "disable");
       if (enabled) {
         await applyPersistedCamera(client);
         setLocalStream(client.getLocalStream());

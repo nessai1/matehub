@@ -15,7 +15,12 @@ export type CallSound =
   | "leave_call"
   | "show_desktop"
   | "disable_desktop"
-  | "incoming_call";
+  | "incoming_call"
+  // Generic on/off blips for mic / camera / mute toggles. One pair of
+  // samples for both controls because a more specific cue per control
+  // would just add cognitive load — the user already sees the icon flip.
+  | "enable"
+  | "disable";
 
 // Reuse one HTMLAudioElement per cue so rapid repeats don't leak DOM nodes.
 const cache: Partial<Record<CallSound, HTMLAudioElement>> = {};
@@ -24,12 +29,16 @@ const cache: Partial<Record<CallSound, HTMLAudioElement>> = {};
 // mic is about to pick up ambient audio — a loud cue clips into the start of
 // the conversation, so those get dialed way down. The incoming-call ringtone
 // loops while the user decides — louder than the chimes, but still polite.
+// enable/disable fire on every mic/cam toggle — kept on the quieter end so
+// rapid back-to-back clicks don't drown out conversation.
 const VOLUME: Record<CallSound, number> = {
   join_call: 0.15,
   leave_call: 0.2,
   show_desktop: 0.4,
   disable_desktop: 0.4,
   incoming_call: 0.45,
+  enable: 0.25,
+  disable: 0.25,
 };
 
 function load(name: CallSound): HTMLAudioElement | null {

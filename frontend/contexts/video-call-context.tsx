@@ -183,6 +183,11 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const toggleDeafen = useCallback(() => {
     setIsDeafened((prev) => {
       const next = !prev;
+      // Same blip the mic/cam toggles use — deafen is semantically a
+      // "mute everything" so the on/off pair fits. Played BEFORE the
+      // mic-toggle below to avoid a double-disable cue (toggleMic
+      // would fire its own disable on the same click).
+      playCallSound(next ? "disable" : "enable");
       // Discord-style coupling: deafening also mutes your own mic. The
       // intuition is "stop participating in the call" — leaking your
       // side comments while you can't hear anyone is the failure mode
