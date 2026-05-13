@@ -90,7 +90,11 @@ services:
   nats:
     image: nats:2-alpine
     restart: unless-stopped
-    command: ["--jetstream", "--store_dir=/data"]
+    # `-m 8222` enables the HTTP monitoring endpoint that the healthcheck
+    # below probes for `/healthz`. Without it NATS only listens on the
+    # client port (4222) and the wget probe gets connection refused —
+    # compose marks the service unhealthy even though it's running fine.
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
     volumes:
       - nats-data:/data
     healthcheck:

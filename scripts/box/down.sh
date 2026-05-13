@@ -46,15 +46,14 @@ done
 
 [[ -f "$COMPOSE_FILE" ]] || die "$COMPOSE_FILE missing -- archive is incomplete"
 
-# Source .env (if present) so we can pick up MATEHUB_OBSERVABILITY and
-# include the right profile in `down`. Otherwise compose may leave
-# orphan observability containers running.
+# Read MATEHUB_OBSERVABILITY directly from .env without sourcing the
+# file. .env is compose's key=value format, not bash; bcrypt hashes
+# (`$2a$...`) contain literal `$` runs that abort `source` under
+# `set -u`. See up.sh's `read_env` for the same workaround.
 COMPOSE_ARGS=(-f "$COMPOSE_FILE")
 if [[ -f "$ENV_FILE" ]]; then
-    set -a; # shellcheck disable=SC1090
-    source "$ENV_FILE"
-    set +a
-    if [[ "${MATEHUB_OBSERVABILITY:-0}" == "1" ]]; then
+    obs="$(grep -E '^MATEHUB_OBSERVABILITY=' "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '\r')"
+    if [[ "${obs:-0}" == "1" ]]; then
         COMPOSE_ARGS+=(--profile observability)
     fi
 fi

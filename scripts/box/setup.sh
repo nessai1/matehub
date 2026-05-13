@@ -156,14 +156,39 @@ ensure_docker() {
 # ── 3. Docker group membership ───────────────────────────────────────
 ensure_docker_group() {
     local user="${USER:-$(id -un)}"
-    if id -nG "$user" | tr ' ' '\n' | grep -qx docker; then
-        ok "user '$user' already in 'docker' group"
+
+    # Authoritative check: can the CURRENT process actually talk to the
+    # docker daemon socket? `id -nG` reads /etc/group, which `usermod`
+    # updates immediately, but a running shell session keeps the gid set
+    # it had at login -- so a re-run of setup.sh inside the same SSH
+    # session would falsely pass a `/etc/group` check and then crash
+    # later when `docker run` opens the socket.
+    if docker info >/dev/null 2>&1; then
+        ok "current shell can talk to the docker daemon"
         return
     fi
+
+    # docker info failed. Two cases:
+    #   (a) user isn't in `docker` group at all -- add them, prompt
+    #       to re-login.
+    #   (b) user IS in /etc/group's docker entry, but this shell session
+    #       predates that change -- tell them to re-login (or
+    #       `exec sg docker -c "$SHELL"` to switch gid in-place).
+    if id -nG "$user" | tr ' ' '\n' | grep -qx docker; then
+        warn "user '$user' is in the 'docker' group already, but this shell"
+        warn "session predates the change -- effective gids are frozen at"
+        warn "login time. Re-run setup.sh after either:"
+        warn "    * SSH out and back in, OR"
+        warn "    * exec sg docker -c \"\$SHELL\""
+        exit 0
+    fi
+
     log "adding user '$user' to 'docker' group"
     sudo usermod -aG docker "$user"
-    warn "user '$user' added to docker group -- log out and log back in for the change to take effect, then re-run setup.sh"
-    warn "(this is required by Docker, not by us; the new gid only attaches on a fresh login session)"
+    warn "user '$user' added to docker group -- log out and log back in"
+    warn "for the new gid to attach, then re-run setup.sh."
+    warn "(this is required by Docker, not by us; the gid only attaches on"
+    warn " a fresh login session.)"
     exit 0
 }
 
