@@ -5,25 +5,25 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# Direct deps. AWS SDK, jsonwebtoken, thiserror, tracing-subscriber are
+# consumed transitively through matehub-common (storage / auth /
+# observability modules) — listing them here as direct deps just
+# duplicated the workspace dependency without anything in this crate's
+# source actually importing them. Stripped to what the hub crate
+# itself uses (verified with `grep -r ...` on src/).
 tokio.workspace = true
 axum.workspace = true
 sqlx.workspace = true
 redis.workspace = true
 async-nats.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-jsonwebtoken.workspace = true
 uuid.workspace = true
 chrono.workspace = true
-thiserror.workspace = true
 anyhow.workspace = true
 tower-http = { workspace = true, features = ["fs"] }
 rand.workspace = true
-aws-sdk-s3.workspace = true
-aws-config.workspace = true
-aws-credential-types.workspace = true
 axum-extra = { version = "0.10", features = ["multipart"] }
 dotenvy.workspace = true
 futures-util.workspace = true
@@ -37,3 +37,10 @@ sha2 = "0.10"
 reqwest.workspace = true
 pretty_assertions.workspace = true
 tokio-tungstenite.workspace = true
+# Integration tests share the `matehub_test` Postgres database and
+# TRUNCATE it on every spawn_app/spawn_unseeded_app. Without explicit
+# serialization, `cargo test -p matehub-hub` (without --test-threads=1)
+# would let test binaries race the truncate against each other's reads.
+# Tagging every DB-touching test with #[serial(setup_db)] makes the
+# requirement live in the code, not in a README sentence.
+serial_test = "3"

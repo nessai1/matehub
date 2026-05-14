@@ -744,17 +744,37 @@ export class VideoClient {
   }
 
   /** Pin the camera sender's encoder to the project's target bitrate /
-   *  framerate / degradation policy. See CAMERA_TARGET_BITRATE doc. */
+   *  framerate / degradation policy. See CAMERA_TARGET_BITRATE doc.
+   *
+   *  Single-layer only — bails with a debug-warn if it finds ≥2
+   *  encodings. The naive "for-each encoding apply same cap" loop here
+   *  before the guard would have starved the lowest simulcast layer
+   *  (intended ~300–500 kbps) by giving it the 2.5 Mbps cap of the
+   *  highest, which then fights the highest layer for upstream during
+   *  BWE adaptation. When camera-simulcast lands it needs to carry its
+   *  own per-rid bitrate table; that's a feature change, not a one-line
+   *  loop. Until then this method only handles the single-encoding case
+   *  and refuses to silently mis-tune anything else. */
   private async applyCameraEncoderParams(sender: RTCRtpSender) {
     try {
       const params = sender.getParameters();
       if (!params.encodings || params.encodings.length === 0) {
         params.encodings = [{}];
       }
-      for (const enc of params.encodings) {
-        enc.maxBitrate = CAMERA_TARGET_BITRATE;
-        enc.maxFramerate = CAMERA_TARGET_FPS;
+      if (params.encodings.length !== 1) {
+        this.debug("warn", "applyCameraEncoderParams: skipping for simulcast sender", {
+          encodings: params.encodings.length,
+          hint: "camera-simulcast must provide its own per-rid bitrate plan",
+        });
+        // Still set degradationPreference — it's a sender-wide knob,
+        // not per-encoding, so applying it is safe regardless of layer
+        // count and keeps the "maintain-framerate" intent intact.
+        params.degradationPreference = "maintain-framerate";
+        await sender.setParameters(params);
+        return;
       }
+      params.encodings[0].maxBitrate = CAMERA_TARGET_BITRATE;
+      params.encodings[0].maxFramerate = CAMERA_TARGET_FPS;
       params.degradationPreference = "maintain-framerate";
       await sender.setParameters(params);
     } catch (e) {
@@ -1125,19 +1145,6 @@ export class VideoClient {
     return this.screenAudioTrack;
   }
 
-  private async acquireLocalStream(constraints: MediaStreamConstraints): Promise<MediaStream> {
-    if (!this.localStream) {
-      this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
-    } else {
-      // Add new tracks to existing stream
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      for (const track of newStream.getTracks()) {
-        this.localStream.addTrack(track);
-      }
-    }
-    return this.localStream;
-  }
-
   /**
    * Client-initiated SDP renegotiation. Used after addTrack() creates a new
    * sender (first enableMic / enableCamera) — until offer/answer completes,
@@ -1237,11 +1244,6 @@ export class VideoClient {
         });
       }
     }
-  }
-
-  private findParticipantByStreamId(streamId: string): Participant | undefined {
-    // SFU sets stream ID to origin participant ID
-    return this.participants.get(streamId);
   }
 
   // ── Getters ────────────────────────────────────

@@ -63,6 +63,14 @@
     # Kibana when XPACK security is enabled. Strip on this hop only;
     # /api/* upstreams need the Authorization (JWT) header intact.
     #
+    # Caddy v2 directive semantics, easy to misread if you come from
+    # Apache or nginx: `request_header -Name` removes the header from
+    # the REQUEST going TO the upstream. Apache's `Header unset` and
+    # nginx's `proxy_set_header X "";` look superficially similar but
+    # act on the response. Mixing those mental models has cost teams
+    # 30 minutes of "why is Authorization still showing up at Grafana"
+    # debugging — this comment is the cheap inoculation.
+    #
     # When the observability profile is off the upstreams don't exist and
     # Caddy returns 502 — that's the intended "feature disabled" UX, no
     # special-casing needed.

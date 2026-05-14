@@ -7,6 +7,7 @@ use tokio_tungstenite::connect_async;
 const HUB_ID: &str = "1";
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn presence_ws_connects_with_jwt() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "alice").await;
@@ -20,6 +21,7 @@ async fn presence_ws_connects_with_jwt() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn presence_ws_rejects_bad_token() {
     let base = common::spawn_app().await;
 
@@ -31,6 +33,7 @@ async fn presence_ws_rejects_bad_token() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn presence_makes_user_online() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "alice").await;
@@ -61,6 +64,7 @@ async fn presence_makes_user_online() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn presence_offline_after_disconnect() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "bob").await;

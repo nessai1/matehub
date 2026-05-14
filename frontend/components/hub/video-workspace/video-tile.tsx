@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
 import { useVideoCall } from "@/contexts/video-call-context";
+import { useParticipantVolume } from "@/hooks/use-participant-volume";
 import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 
@@ -134,8 +135,12 @@ export function CameraVideoTile({
   // half a dozen places (grid, spotlight, page reorders) and prop-
   // drilling two cross-cutting concerns through all of them is more
   // noise than the coupling is worth.
-  const { isDeafened, participantVolumes } = useVideoCall();
-  const perTileVolume = participantVolumes.get(tile.userId) ?? 1;
+  //
+  // The volume is read via useParticipantVolume (review #4): the hook
+  // subscribes only to this user's key in the external store, so a
+  // slider drag on another tile doesn't re-render this one.
+  const { isDeafened, participantVolumeStore } = useVideoCall();
+  const perTileVolume = useParticipantVolume(participantVolumeStore, tile.userId);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -360,8 +365,11 @@ export function ScreenShareVideoTile({
   // Same deafen / volume coupling as CameraVideoTile, keyed by the
   // screen owner's user id so a single slider drives both their camera
   // and screen-share audio (typically just game audio).
-  const { isDeafened, participantVolumes } = useVideoCall();
-  const perTileVolume = participantVolumes.get(tile.ownerUserId) ?? 1;
+  const { isDeafened, participantVolumeStore } = useVideoCall();
+  const perTileVolume = useParticipantVolume(
+    participantVolumeStore,
+    tile.ownerUserId,
+  );
 
   useEffect(() => {
     const el = audioRef.current;

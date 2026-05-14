@@ -795,6 +795,12 @@
       ],
       "Audio options for %s": [
         "Audiooptionen für %s"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "Hub-Identifier nicht verfügbar — Serververbindung prüfen"
+      ],
+      "Preparing...": [
+        "Vorbereitung..."
       ]
     }
   }

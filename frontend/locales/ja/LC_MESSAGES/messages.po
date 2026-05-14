@@ -796,3 +796,10 @@ msgstr "音量"
 
 msgid "Audio options for %s"
 msgstr "%s の音声オプション"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "ハブ識別子を取得できません — サーバー接続を確認してください"
+
+msgid "Preparing..."
+msgstr "準備中..."

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useVideoClient } from "@/hooks/use-video-client";
+import { ParticipantVolumeStore } from "@/hooks/use-participant-volume";
 import { useAuth } from "@/lib/auth";
 import { playCallSound } from "@/lib/call-sounds";
 import { t } from "@/i18n";
@@ -56,10 +57,11 @@ interface VideoCallContextValue {
 
   /** Per-participant audio volume control (MAT-14). Range 0.0–1.0,
    *  applied locally to the receiver's HTMLAudioElement.volume. Lookup
-   *  by participant id; missing key means default (1.0). The map only
-   *  contains explicit overrides; setting back to 1.0 deletes the entry. */
-  participantVolumes: Map<string, number>;
-  setParticipantVolume: (participantId: string, volume: number) => void;
+   *  by user_id. Backed by an external store (see
+   *  `useParticipantVolume`) so a slider drag re-renders only the
+   *  affected tile, not every consumer of useVideoCall. */
+  participantVolumeStore: ParticipantVolumeStore;
+  setParticipantVolume: (userId: string, volume: number) => void;
 
   /** Join a voice channel by its ID. Leaves the current call first if any. */
   joinVoice: (channelId: string) => Promise<void>;
@@ -96,12 +98,18 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // want to honour "stay deafened across reloads" later, plumb through
   // localStorage same way device persistence does.
   const [isDeafened, setIsDeafened] = useState(false);
-  // Per-participant volume overrides (MAT-14). Map<participantId, 0..1>.
-  // Default for any missing key is 1.0; setting back to 1.0 removes the
-  // entry so the map only carries actual deviations.
-  const [participantVolumes, setParticipantVolumes] = useState<
-    Map<string, number>
-  >(() => new Map());
+  // Per-participant volume overrides (MAT-14). External store with
+  // keyed subscriptions — see hooks/use-participant-volume.ts for the
+  // rationale (split-context perf rework, review #4).
+  //
+  // `useState(() => new Store())` is the React-idiomatic way to get a
+  // single instance for the provider's lifetime without tripping the
+  // "no ref-read during render" lint. We never call the setter — the
+  // store is the source of truth, React state just owns its
+  // construction.
+  const [participantVolumeStore] = useState(
+    () => new ParticipantVolumeStore(),
+  );
 
   const videoOpts = useMemo(() => {
     if (!sessionId || !session) return null;
@@ -177,8 +185,8 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     // would surprise the user — "why is X quiet in this completely
     // different channel where I never adjusted them?".
     setIsDeafened(false);
-    setParticipantVolumes(new Map());
-  }, [activeVoiceChannelId, vc]);
+    participantVolumeStore.reset();
+  }, [activeVoiceChannelId, vc, participantVolumeStore]);
 
   const toggleDeafen = useCallback(() => {
     setIsDeafened((prev) => {
@@ -201,25 +209,13 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [vc]);
 
   const setParticipantVolume = useCallback(
-    (participantId: string, volume: number) => {
-      // Clamp into HTMLMediaElement.volume's valid range; otherwise the
-      // setter throws and the slider hangs.
-      const clamped = Math.max(0, Math.min(1, volume));
-      setParticipantVolumes((prev) => {
-        // 1.0 = "no override". Removing the entry keeps the map small
-        // and lets <audio> elements fall back to the default cleanly.
-        if (Math.abs(clamped - 1) < 0.001) {
-          if (!prev.has(participantId)) return prev;
-          const next = new Map(prev);
-          next.delete(participantId);
-          return next;
-        }
-        const next = new Map(prev);
-        next.set(participantId, clamped);
-        return next;
-      });
+    (userId: string, volume: number) => {
+      // Clamping + 1.0-as-delete logic lives in the store itself so
+      // any future caller (settings page, admin override, etc.) gets
+      // the same semantics without re-implementing them here.
+      participantVolumeStore.set(userId, volume);
     },
-    [],
+    [participantVolumeStore],
   );
 
   // React to force-disconnect (multi-tab collision): leave the call view
@@ -272,7 +268,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       refreshDevices: vc.refreshDevices,
       isDeafened,
       toggleDeafen,
-      participantVolumes,
+      participantVolumeStore,
       setParticipantVolume,
       joinVoice,
       leaveVoice,
@@ -282,7 +278,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       vc,
       isDeafened,
       toggleDeafen,
-      participantVolumes,
+      participantVolumeStore,
       setParticipantVolume,
       joinVoice,
       leaveVoice,

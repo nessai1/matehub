@@ -107,6 +107,19 @@ export function useVideoClient(
   const cameraOnRef = useRef(new Set<string>());
   const videoTrackRef = useRef(new Map<string, MediaStreamTrack>());
 
+  // Gate for the join/leave audio cues. The SFU replays the existing
+  // roster as a burst of `participant_joined` events the moment the WS
+  // opens — before our own join is acknowledged. Without this gate,
+  // walking into a call with N people already inside fires N chimes in
+  // the span of a few hundred ms (review #1 / MAT-20 log).
+  //
+  // The "connected" event lands AFTER our own offer/answer has settled,
+  // which by then is also after the bootstrap-replay burst the SFU
+  // sends synchronously on session-join. Flipping the ref there gates
+  // the cue to "real, after-the-fact joins" only. Reset on disconnect
+  // so a reconnect repeats the same suppression for its own bootstrap.
+  const joinCueArmedRef = useRef(false);
+
   // Update participant in list (immutable)
   const updateParticipants = useCallback(
     (fn: (prev: Participant[]) => Participant[]) => {
@@ -146,16 +159,30 @@ export function useVideoClient(
           setLocalStream(client.getLocalStream());
           setCurrentMicDeviceId(client.getCurrentMicDeviceId());
           setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+          // Arm the join/leave cue gate AFTER the SFU's bootstrap-replay
+          // burst has flushed (those events arrive between WS-open and
+          // SDP-answer; "connected" fires only after setRemoteDescription).
+          // From here onward, every participant_joined we get is a real
+          // post-bootstrap arrival worth chiming for.
+          joinCueArmedRef.current = true;
           break;
         case "participant_joined":
-          // Audio cue (MAT-18): reuse the existing join chime so a
-          // teammate slipping into the call mid-stream isn't invisible.
-          // The 15% volume keeps it from clipping into ongoing speech.
-          playCallSound("join_call");
+          // Cue only after the bootstrap-burst has passed. The first time
+          // we hit this branch on a fresh connect, joinCueArmedRef is
+          // false — those events are the SFU replaying the existing
+          // roster, not real arrivals.
+          if (joinCueArmedRef.current) {
+            playCallSound("join_call");
+          }
           updateParticipants((prev) => [...prev, event.participant]);
           break;
         case "participant_left":
-          playCallSound("leave_call");
+          // Same arming logic — `participant_left` during a reconnect
+          // could conceivably also burst (if the SFU repaints the roster
+          // diff against the old one). Cue only when armed.
+          if (joinCueArmedRef.current) {
+            playCallSound("leave_call");
+          }
           cameraOnRef.current.delete(event.participantId);
           videoTrackRef.current.delete(event.participantId);
           updateParticipants((prev) =>
@@ -255,12 +282,16 @@ export function useVideoClient(
           break;
         case "disconnected":
           setIsConnected(false);
+          // Disarm the cue so a reconnect's bootstrap-replay is again
+          // silent until its own "connected" lands.
+          joinCueArmedRef.current = false;
           break;
         case "force_disconnected":
           // Server replaced our session (multi-tab collision). Hop back
           // to "not in a call" state and let the caller show a toast +
           // leave the call view.
           setIsConnected(false);
+          joinCueArmedRef.current = false;
           opts?.onForceDisconnected?.(event.reason);
           break;
         case "error":
@@ -288,6 +319,7 @@ export function useVideoClient(
     setError(null);
     cameraOnRef.current.clear();
     videoTrackRef.current.clear();
+    joinCueArmedRef.current = false;
   }, []);
 
   // Apply the persisted device choice (MAT-17) when a freshly-enabled

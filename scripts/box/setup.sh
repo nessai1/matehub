@@ -263,7 +263,17 @@ choose_observability() {
         return
     fi
     if [[ "$UNATTENDED" -eq 1 ]]; then
-        die "observability choice must be set explicitly in --unattended (--enable-observability / --no-observability)"
+        # Default-off in unattended mode. Observability is opt-in: it
+        # adds ~1.5 GB RAM and ~5 GB disk, and an operator running
+        # `--unattended` from CI/Ansible/Terraform without thinking
+        # about it should NOT silently get those costs. An operator who
+        # wants the stack will pass `--enable-observability` explicitly.
+        #
+        # Earlier revisions die'd here, which broke existing pipelines
+        # whose only invocation was `setup.sh --unattended --s3-mode local`.
+        # Quiet default is the safer migration path.
+        echo "no"
+        return
     fi
 
     {

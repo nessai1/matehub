@@ -796,3 +796,10 @@ msgstr "Громкость"
 
 msgid "Audio options for %s"
 msgstr "Параметры звука для %s"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "Идентификатор хаба недоступен — проверьте подключение к серверу"
+
+msgid "Preparing..."
+msgstr "Подготовка..."

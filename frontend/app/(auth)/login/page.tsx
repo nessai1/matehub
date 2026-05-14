@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,9 +7,18 @@ import { useAuth } from "@/lib/auth";
 import { t } from "@/i18n";
 
 const HUB_API = "/api/hub";
-// Fallback used only until /v1/setup/status answers. The real hub_id ships
-// as a string because Snowflake IDs blow past JS MAX_SAFE_INTEGER.
+// Fallback used only as a last-ditch path when /v1/setup/status is
+// completely unreachable AND the user still insists on submitting.
+// The real hub_id ships as a string because Snowflake IDs blow past
+// JS MAX_SAFE_INTEGER.
 const FALLBACK_HUB_ID = "1";
+
+type StatusResponse = {
+  needs_setup?: boolean;
+  hub_id?: string;
+  hub_slug?: string;
+  hub_name?: string;
+};
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -21,32 +30,88 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [hubId, setHubId] = useState<string | null>(null);
   const [hubName, setHubName] = useState<string | null>(null);
+  // statusLoaded flips once the GET /v1/setup/status request has resolved
+  // ONE WAY OR THE OTHER (success, 5xx, or network error). Used to gate
+  // the submit button — see the race-comment on handleSubmit. We keep
+  // the response error in `statusError` so we can surface a banner;
+  // we don't block the form on the error, because dev seeds with hub_id=1
+  // are a perfectly valid fallback path.
+  const [statusLoaded, setStatusLoaded] = useState(false);
+  const [statusError, setStatusError] = useState(false);
 
   // Box deploys have exactly one hub and don't ship the hub_id baked into
   // the SPA bundle. /v1/setup/status is the unauthenticated source of
   // truth for "which hub does this deployment represent": it returns
   // `{needs_setup, hub_id?, hub_slug?, hub_name?}` and the hub identity
-  // is populated once the first-run wizard has finished. Falling back to
-  // FALLBACK_HUB_ID only covers dev where the seed pins hub_id=1.
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${HUB_API}/v1/setup/status`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { hub_id?: string; hub_name?: string } | null) => {
-        if (cancelled || !data) return;
-        if (data.hub_id) setHubId(data.hub_id);
-        if (data.hub_name) setHubName(data.hub_name);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  // is populated once the first-run wizard has finished.
+  //
+  // Returns the freshly-fetched hub_id (or null) so handleSubmit can
+  // await it without waiting for the next React render cycle to flip
+  // the state setters.
+  const fetchStatus = useCallback(async (): Promise<string | null> => {
+    try {
+      const r = await fetch(`${HUB_API}/v1/setup/status`);
+      if (!r.ok) {
+        // 5xx is the case the silent-catch was hiding: bind a banner so
+        // the box operator who is also the only user knows the backend
+        // is dead instead of staring at a 403 minute later.
+        console.error("setup/status failed", r.status);
+        setStatusError(true);
+        return null;
+      }
+      const data = (await r.json()) as StatusResponse;
+      if (data.hub_id) setHubId(data.hub_id);
+      if (data.hub_name) setHubName(data.hub_name);
+      setStatusError(false);
+      return data.hub_id ?? null;
+    } catch (e) {
+      // Network/CORS/DNS failures land here. Same banner path as 5xx —
+      // distinction matters for the dev console (we logged it), not for
+      // the user, who in both cases has a backend they can't reach.
+      console.error("setup/status network error", e);
+      setStatusError(true);
+      return null;
+    } finally {
+      setStatusLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    // Initial-data fetch on mount. The lint rule below would normally
+    // flag a setState-inside-effect chain (because fetchStatus ends up
+    // calling setHubId / setStatusLoaded / setStatusError), but that's
+    // exactly what "load remote data when the page opens" requires —
+    // see React docs "You Might Not Need an Effect / Fetching data".
+    // No alternative (server-component / loader) is available here:
+    // the page is a client-only React Router route, and the data is
+    // also consumed during submit, not just initial render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchStatus();
+  }, [fetchStatus]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
+
+    // Race fix (review #2 / MAT-10 follow-up): button is gated on
+    // `statusLoaded` so a user can't click before /v1/setup/status
+    // resolves; but Enter-in-password sidesteps that gate, and on a
+    // flaky uplink the GET might still be in flight when the user
+    // submits. await fetchStatus() here as a belt + braces — it's
+    // a no-op cache hit if the response already came back.
+    let effectiveHubId = hubId;
+    if (effectiveHubId === null) {
+      const fetched = await fetchStatus();
+      effectiveHubId = fetched ?? hubId;
+    }
+    if (effectiveHubId === null) {
+      // We genuinely couldn't get the hub_id. Use the dev fallback —
+      // this still works for the dev seed (hub_id=1) and gives the
+      // user a real 403 if they're on a snowflake-id deployment with
+      // an unreachable backend (better than infinite spinner).
+      effectiveHubId = FALLBACK_HUB_ID;
+    }
 
     try {
       const res = await fetch(`${HUB_API}/v1/auth/login`, {
@@ -55,7 +120,7 @@ export default function LoginPage() {
         body: JSON.stringify({
           login: loginField,
           password,
-          hub_id: hubId ?? FALLBACK_HUB_ID,
+          hub_id: effectiveHubId,
           remember_me: rememberMe,
         }),
       });
@@ -139,6 +204,18 @@ export default function LoginPage() {
             <span className="font-mono text-xs text-zinc-400">{t("Remember me")}</span>
           </label>
 
+          {statusError && (
+            // Non-blocking: form still submits (with FALLBACK_HUB_ID), but
+            // the operator sees an early signal that the backend isn't
+            // responsive. Amber, not red — login itself isn't broken yet,
+            // it might still go through.
+            <p className="rounded border border-amber-900/30 bg-amber-950/20 px-3 py-2 font-mono text-xs text-amber-300">
+              {t(
+                "Hub identifier unavailable — check your connection to the server",
+              )}
+            </p>
+          )}
+
           {error && (
             <p className="rounded border border-red-900/30 bg-red-950/20 px-3 py-2 font-mono text-xs text-red-400">
               {error}
@@ -147,7 +224,12 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            disabled={loading}
+            // Disable until /v1/setup/status has resolved, so a fast clicker
+            // can't fire off a login with `hubId === null` (which would
+            // send FALLBACK="1" and produce the exact 403 this PR fixes).
+            // Enter-in-password still works because handleSubmit awaits
+            // fetchStatus itself — see comment there.
+            disabled={loading || !statusLoaded}
             className="mt-1 w-full bg-blue-600 font-mono text-sm tracking-wide text-white hover:bg-blue-500 disabled:opacity-40 transition-colors"
             size="lg"
           >
@@ -155,6 +237,11 @@ export default function LoginPage() {
               <span className="flex items-center gap-2">
                 <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
                 {t("Logging in...")}
+              </span>
+            ) : !statusLoaded ? (
+              <span className="flex items-center gap-2">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                {t("Preparing...")}
               </span>
             ) : (
               t("Sign in")

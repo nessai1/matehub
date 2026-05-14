@@ -796,3 +796,10 @@ msgstr "Volume"
 
 msgid "Audio options for %s"
 msgstr "Options audio pour %s"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "Identifiant du hub indisponible — vérifiez la connexion au serveur"
+
+msgid "Preparing..."
+msgstr "Préparation..."

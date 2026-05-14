@@ -795,6 +795,12 @@
       ],
       "Audio options for %s": [
         "%s の音声オプション"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "ハブ識別子を取得できません — サーバー接続を確認してください"
+      ],
+      "Preparing...": [
+        "準備中..."
       ]
     }
   }

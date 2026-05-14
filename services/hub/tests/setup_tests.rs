@@ -103,6 +103,7 @@ async fn run_setup(base: &str) -> Value {
 // ── MAT-13 regression ────────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn setup_grants_everyone_member_bits_on_general_channel() {
     let base = spawn_unseeded_app().await;
     let body = run_setup(&base).await;
@@ -152,6 +153,7 @@ async fn setup_grants_everyone_member_bits_on_general_channel() {
 // ── MAT-10 regression ────────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn status_reports_hub_id_once_setup_is_done() {
     let base = spawn_unseeded_app().await;
     let body = run_setup(&base).await;
@@ -178,6 +180,7 @@ async fn status_reports_hub_id_once_setup_is_done() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn status_omits_hub_id_before_setup() {
     let base = spawn_unseeded_app().await;
 
@@ -208,6 +211,7 @@ async fn status_omits_hub_id_before_setup() {
 // auth/login + hub_members read path, not the FE.
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn invite_link_user_can_login_after_redeem() {
     let base = spawn_unseeded_app().await;
     let setup_body = run_setup(&base).await;

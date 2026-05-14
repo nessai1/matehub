@@ -4,6 +4,7 @@ use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_with_username() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -24,6 +25,7 @@ async fn login_with_username() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_with_email() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -41,6 +43,7 @@ async fn login_with_email() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_wrong_password() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -56,6 +59,7 @@ async fn login_wrong_password() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_nonexistent_user() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -71,6 +75,7 @@ async fn login_nonexistent_user() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_wrong_hub() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -87,6 +92,7 @@ async fn login_wrong_hub() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn login_returns_avatar_url() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();

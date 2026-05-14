@@ -37,6 +37,7 @@ fn find_group<'a>(groups: &'a [Value], name: &str) -> &'a Value {
 // ── Group CRUD ────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn admin_can_create_group() {
     let (base, client, alice, _) = setup().await;
 
@@ -55,6 +56,7 @@ async fn admin_can_create_group() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn non_admin_cannot_create_group() {
     let (base, client, _, bob) = setup().await;
 
@@ -69,6 +71,7 @@ async fn non_admin_cannot_create_group() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn cannot_delete_admin_group() {
     let (base, client, alice, _) = setup().await;
     let groups = get_groups(&base, &client, &alice).await;
@@ -84,6 +87,7 @@ async fn cannot_delete_admin_group() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn cannot_delete_everyone_group() {
     let (base, client, alice, _) = setup().await;
     let groups = get_groups(&base, &client, &alice).await;
@@ -99,6 +103,7 @@ async fn cannot_delete_everyone_group() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn cannot_change_admin_hub_permissions() {
     let (base, client, alice, _) = setup().await;
     let groups = get_groups(&base, &client, &alice).await;
@@ -115,6 +120,7 @@ async fn cannot_change_admin_hub_permissions() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn can_change_admin_name_and_color() {
     let (base, client, alice, _) = setup().await;
     let groups = get_groups(&base, &client, &alice).await;
@@ -133,6 +139,7 @@ async fn can_change_admin_name_and_color() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn admin_can_delete_custom_group() {
     let (base, client, alice, _) = setup().await;
 
@@ -161,6 +168,7 @@ async fn admin_can_delete_custom_group() {
 // ── Creator protection ────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn cannot_remove_creator_from_admin() {
     let (base, client, alice, _) = setup().await;
     let groups = get_groups(&base, &client, &alice).await;
@@ -180,6 +188,7 @@ async fn cannot_remove_creator_from_admin() {
 // ── Channel permissions ───────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn admin_can_create_and_delete_channel() {
     let (base, client, alice, _) = setup().await;
 
@@ -204,6 +213,7 @@ async fn admin_can_create_and_delete_channel() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn non_admin_cannot_create_channel() {
     let (base, client, _, bob) = setup().await;
 
@@ -218,6 +228,7 @@ async fn non_admin_cannot_create_channel() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn non_admin_cannot_delete_channel() {
     let (base, client, alice, bob) = setup().await;
 
@@ -245,6 +256,7 @@ async fn non_admin_cannot_delete_channel() {
 // ── My permissions ────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn alice_is_admin_and_creator() {
     let (base, client, alice, _) = setup().await;
 
@@ -262,6 +274,7 @@ async fn alice_is_admin_and_creator() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn bob_has_no_hub_perms() {
     let (base, client, _, bob) = setup().await;
 
@@ -282,6 +295,7 @@ async fn bob_has_no_hub_perms() {
 // ── Privilege escalation ──────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn cannot_create_group_with_bits_you_dont_have() {
     let (base, client, alice, _) = setup().await;
 
@@ -303,6 +317,7 @@ async fn cannot_create_group_with_bits_you_dont_have() {
 // ── Member kick ───────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn non_admin_cannot_kick() {
     let (base, client, _, bob) = setup().await;
 

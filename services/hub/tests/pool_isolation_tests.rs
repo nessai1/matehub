@@ -15,6 +15,7 @@ mod common;
 use sqlx::PgPool;
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn pool_clears_app_current_hub_id_between_acquires() {
     // Use the production `db::connect` path. If someone ever removes the
     // after_release callback, this test fails — that's the entire point.

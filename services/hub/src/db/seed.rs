@@ -133,14 +133,22 @@ pub async fn run_dev_seed(pool: &PgPool) -> Result<()> {
     }
 
     // ── Channels ────────────────────────────────────
-    super::ensure_default_channel(pool, DEV_HUB_ID).await?;
-
-    let extra_channels: &[(&str, &str, i32)] = &[
+    // #general was previously created via a dedicated helper
+    // `db::ensure_default_channel`, but that helper was only ever called
+    // from this seed path (the runtime hub-create path goes through
+    // `api::setup::setup_admin` and `api::channels::create_channel`,
+    // both of which write `channel_permissions` alongside the channel
+    // row). Keeping a separate function with documentation that claimed
+    // "called on hub creation (API + dev seed)" misled future readers
+    // and let the channel_permissions step drift out of sync. Folded
+    // into the same INSERT loop as the rest of the seed channels.
+    let dev_channels: &[(&str, &str, i32)] = &[
+        ("general", "text", 0),
         ("random", "text", 1),
         ("voice-test", "voice", 2),
         ("stage-test", "stage", 3),
     ];
-    for (name, ch_type, position) in extra_channels {
+    for (name, ch_type, position) in dev_channels {
         let existing: Option<i64> =
             sqlx::query_scalar("SELECT id FROM channels WHERE hub_id = $1 AND name = $2")
                 .bind(DEV_HUB_ID)

@@ -796,3 +796,10 @@ msgstr "音量"
 
 msgid "Audio options for %s"
 msgstr "%s 的音频选项"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "无法获取 Hub 标识 — 请检查服务器连接"
+
+msgid "Preparing..."
+msgstr "正在准备..."
