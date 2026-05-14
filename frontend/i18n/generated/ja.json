@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "準備中..."
+      ],
+      "Microphone muted": [
+        "マイクミュート"
+      ],
+      "Deafened": [
+        "音声オフ"
+      ],
+      "Volume muted for you": [
+        "あなたにはミュート"
       ]
     }
   }

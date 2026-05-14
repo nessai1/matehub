@@ -803,3 +803,19 @@ msgstr "Identifiant du hub indisponible — vérifiez la connexion au serveur"
 
 msgid "Preparing..."
 msgstr "Préparation..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "Microphone coupé"
+
+msgid "Deafened"
+msgstr "N'entend rien"
+
+msgid "Volume muted for you"
+msgstr "Coupé pour vous"
+
+msgid "Unmute"
+msgstr "Réactiver"
+
+msgid "Mute"
+msgstr "Couper"

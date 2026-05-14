@@ -491,7 +491,7 @@
         "Silenciar"
       ],
       "Unmute": [
-        "Activar micrófono"
+        "Activar"
       ],
       "No camera detected": [
         "No se detectó cámara"
@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "Preparando..."
+      ],
+      "Microphone muted": [
+        "Micrófono silenciado"
+      ],
+      "Deafened": [
+        "Sin audio"
+      ],
+      "Volume muted for you": [
+        "Silenciado para ti"
       ]
     }
   }

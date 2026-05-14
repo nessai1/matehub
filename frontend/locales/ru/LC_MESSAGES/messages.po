@@ -803,3 +803,19 @@ msgstr "Идентификатор хаба недоступен — прове�
 
 msgid "Preparing..."
 msgstr "Подготовка..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "Микрофон выключен"
+
+msgid "Deafened"
+msgstr "Звук выключен полностью"
+
+msgid "Volume muted for you"
+msgstr "Звук выключен для вас"
+
+msgid "Unmute"
+msgstr "Включить звук"
+
+msgid "Mute"
+msgstr "Выключить звук"

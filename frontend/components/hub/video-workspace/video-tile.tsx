@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  HeadphoneOffIcon,
   MicOffIcon,
   MonitorIcon,
   Maximize2Icon,
   MoreVerticalIcon,
   Volume2Icon,
+  VolumeXIcon,
   XIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +19,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { useVideoCall } from "@/contexts/video-call-context";
 import { useParticipantVolume } from "@/hooks/use-participant-volume";
+import { useTileAudio } from "@/hooks/use-tile-audio";
 import { cn } from "@/lib/utils";
 import { t } from "@/i18n";
 
@@ -31,6 +34,11 @@ export interface CameraTile {
   audioTrack: MediaStreamTrack | null;
   videoTrack: MediaStreamTrack | null;
   isMicMuted: boolean;
+  /** Distinct from `isMicMuted`: this user has self-deafened, meaning
+   *  they can't hear ANYONE in the call. Rendered as a headphone-off
+   *  badge so other participants know not to expect a verbal response.
+   *  Broadcast through the SFU's `participant_deafened` event. */
+  isDeafened: boolean;
   isSpeaking: boolean;
   isLocal: boolean;
   /** If true, shows a small pinned badge in the corner (used in spotlight). */
@@ -129,7 +137,6 @@ export function CameraVideoTile({
   onClick?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   // Audio side-effects (deafen + per-participant volume, MAT-14/MAT-15)
   // flow in through context rather than props: the tile is composed in
   // half a dozen places (grid, spotlight, page reorders) and prop-
@@ -142,6 +149,16 @@ export function CameraVideoTile({
   const { isDeafened, participantVolumeStore } = useVideoCall();
   const perTileVolume = useParticipantVolume(participantVolumeStore, tile.userId);
 
+  // Web Audio pipeline: source → GainNode → destination. The <audio>
+  // element behind audioRef stays muted and only exists so Safari keeps
+  // the underlying track "playing"; output flows through Web Audio so
+  // the slider can amplify past 100%.
+  const audioRef = useTileAudio({
+    track: tile.isLocal ? null : tile.audioTrack,
+    volume: perTileVolume,
+    muted: isDeafened,
+  });
+
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -152,35 +169,6 @@ export function CameraVideoTile({
       el.srcObject = null;
     }
   }, [tile.videoTrack]);
-
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (tile.audioTrack && !tile.isLocal) {
-      el.srcObject = new MediaStream([tile.audioTrack]);
-      // Apply current deafen + volume immediately so newly-joined tracks
-      // honour the existing state (otherwise they'd play at default
-      // 1.0 for a frame). The deps further down keep these in sync.
-      el.muted = isDeafened;
-      el.volume = perTileVolume;
-      el.play().catch(() => {});
-    } else {
-      el.srcObject = null;
-    }
-    // Intentionally omit isDeafened / perTileVolume from deps here —
-    // changing them shouldn't re-bind srcObject (which is a Chrome
-    // performance hazard); the dedicated effect below handles those.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tile.audioTrack, tile.isLocal]);
-
-  // Apply deafen + volume changes without recreating the MediaStream.
-  // Cheap path: just twiddle muted/volume on the already-mounted element.
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    el.muted = isDeafened;
-    el.volume = perTileVolume;
-  }, [isDeafened, perTileVolume]);
 
   const initials = tile.displayName
     .split(" ")
@@ -309,8 +297,38 @@ export function CameraVideoTile({
                 : tile.displayName}
           </span>
           {!tile.ringing && tile.isSpeaking && <SpeakingBars />}
-          {!tile.ringing && tile.isMicMuted && (
-            <MicOffIcon className="h-3 w-3 text-[oklch(0.72_0.18_25)]" />
+          {/* Mic-off — but suppressed if the user is also deafened.
+              Deafen implies mic-off as a Discord-style coupling (you
+              don't send when you can't hear), so showing both icons
+              would be redundant noise. The headphone-off icon below
+              carries the same "not participating right now" signal
+              more clearly. */}
+          {!tile.ringing && tile.isMicMuted && !tile.isDeafened && (
+            <MicOffIcon
+              className="h-3 w-3 text-[oklch(0.72_0.18_25)]"
+              aria-label={t("Microphone muted")}
+            />
+          )}
+          {/* Deafened — they can't hear ANYONE in the call (their own
+              local mute of all incoming audio, broadcast via the SFU's
+              participant_deafened event). Replaces the mic-off icon
+              when set, since deafen implies mute. */}
+          {!tile.ringing && tile.isDeafened && (
+            <HeadphoneOffIcon
+              className="h-3 w-3 text-[oklch(0.65_0.22_25)]"
+              aria-label={t("Deafened")}
+            />
+          )}
+          {/* Locally-muted-by-me — I dragged the volume slider on this
+              participant to 0. Only meaningful for remote tiles (you
+              can't mute yourself this way) and only when it's actually
+              at 0. Distinct from isMicMuted: that's THEIR state; this
+              is MY action on them. */}
+          {!tile.ringing && !tile.isLocal && perTileVolume === 0 && (
+            <VolumeXIcon
+              className="h-3 w-3 text-zinc-400"
+              aria-label={t("Volume muted for you")}
+            />
           )}
         </div>
       </div>
@@ -330,7 +348,6 @@ export function ScreenShareVideoTile({
   onClick?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
   const expandedVideoRef = useRef<HTMLVideoElement>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -371,26 +388,11 @@ export function ScreenShareVideoTile({
     tile.ownerUserId,
   );
 
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (tile.audioTrack && !tile.isLocal) {
-      el.srcObject = new MediaStream([tile.audioTrack]);
-      el.muted = isDeafened;
-      el.volume = perTileVolume;
-      el.play().catch(() => {});
-    } else {
-      el.srcObject = null;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tile.audioTrack, tile.isLocal]);
-
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    el.muted = isDeafened;
-    el.volume = perTileVolume;
-  }, [isDeafened, perTileVolume]);
+  const audioRef = useTileAudio({
+    track: tile.isLocal ? null : tile.audioTrack,
+    volume: perTileVolume,
+    muted: isDeafened,
+  });
 
   const radius = size === "xs" ? "rounded-[10px]" : "rounded-[14px]";
 
@@ -431,6 +433,20 @@ export function ScreenShareVideoTile({
       >
         <Maximize2Icon className="h-3.5 w-3.5" />
       </button>
+
+      {/* Volume menu for the screen audio — only when we actually have
+          a remote audio track to control. Local screen-share self-
+          preview has no audio (would echo into the call), so the menu
+          would be a dead control. Positioned to the left of the
+          Maximize button at `right-12` so they don't overlap. */}
+      {tile.audioTrack && !tile.isLocal && (
+        <TileVolumeMenu
+          userId={tile.ownerUserId}
+          displayName={tile.ownerDisplayName}
+          volume={perTileVolume}
+          triggerClassName="right-12 top-2"
+        />
+      )}
 
       {expanded &&
         typeof document !== "undefined" &&
@@ -518,18 +534,46 @@ function TileVolumeMenu({
   userId,
   displayName,
   volume,
+  triggerClassName,
 }: {
   userId: string;
   displayName: string;
   volume: number;
+  /** Overrides the trigger button's positioning so the menu fits next
+   *  to whatever other overlay controls a particular tile has (camera
+   *  tile has nothing else; screen tile has a Maximize button at top-
+   *  right, so we offset). Defaults to `right-2 top-2`. */
+  triggerClassName?: string;
 }) {
   const { setParticipantVolume } = useVideoCall();
   const [open, setOpen] = useState(false);
+  // Remember the last non-zero volume so the Mute toggle can restore it
+  // on un-mute. Without this, hitting Mute then Mute again would jump
+  // from 0 → 100 even if the user was sitting at 130% before muting.
+  // Local to the menu — closing the popover doesn't reset.
+  const [lastUnmutedVolume, setLastUnmutedVolume] = useState<number>(
+    volume > 0 ? volume : 1,
+  );
+  // Keep the remembered value in sync whenever the slider lands on a
+  // non-zero level — covers the case where the user adjusts via slider
+  // (not mute) and then hits Mute. setState-inside-effect normally
+  // trips the cascading-renders lint, but here it's exactly the right
+  // shape: an external-derived shadow value we update only when the
+  // source crosses a threshold (>0). Splitting into a useRef + manual
+  // assignment would dodge the lint at the cost of also dodging
+  // React's batching — not worth it for a sub-byte of UI state.
+  useEffect(() => {
+    if (volume > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLastUnmutedVolume(volume);
+    }
+  }, [volume]);
 
-  // Slider works in 0–100 to give the user discrete-feeling clicks. Store
-  // 0–1 in context (matches HTMLMediaElement.volume) and divide on the
-  // boundary.
+  // Slider works in 0–200 to expose the [0, 2.0] range we now support
+  // (HTMLMediaElement.volume caps at 1.0; the Web Audio GainNode handles
+  // anything above — see hooks/use-tile-audio.ts).
   const sliderValue = Math.round(volume * 100);
+  const isMuted = volume === 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -541,8 +585,14 @@ function TileVolumeMenu({
           onClick={(e) => e.stopPropagation()}
           aria-label={t("Audio options for %s", displayName)}
           className={cn(
-            "absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full text-white opacity-0 transition-opacity hover:bg-black/80 group-hover/tile:opacity-100",
+            "absolute grid h-7 w-7 place-items-center rounded-full text-white opacity-0 transition-opacity hover:bg-black/80",
+            // Both group-hover modifiers so the trigger reveals on hover
+            // of either parent — camera tile uses `group/tile`, screen
+            // tile uses `group/screen`. Tailwind compiles both static
+            // classes and the runtime picks whichever group matched.
+            "group-hover/tile:opacity-100 group-hover/screen:opacity-100",
             "data-[state=open]:opacity-100",
+            triggerClassName ?? "right-2 top-2",
           )}
           style={{ background: "rgba(20,22,30,0.55)" }}
           data-state={open ? "open" : "closed"}
@@ -554,20 +604,29 @@ function TileVolumeMenu({
         side="bottom"
         align="end"
         sideOffset={6}
-        className="w-56 p-3"
+        className="w-64 p-3"
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <Volume2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+          {isMuted ? (
+            <VolumeXIcon className="h-3.5 w-3.5 text-red-400" />
+          ) : (
+            <Volume2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
           <span className="text-xs font-medium">{t("Volume")}</span>
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+          <span
+            className={cn(
+              "ml-auto font-mono text-[10px]",
+              isMuted ? "text-red-400" : "text-muted-foreground",
+            )}
+          >
             {sliderValue}%
           </span>
         </div>
         <Slider
           className="mt-2"
           min={0}
-          max={100}
+          max={200}
           step={1}
           value={[sliderValue]}
           onValueChange={(v: number[]) => {
@@ -575,6 +634,37 @@ function TileVolumeMenu({
             setParticipantVolume(userId, next / 100);
           }}
         />
+        <button
+          type="button"
+          onClick={() => {
+            if (isMuted) {
+              // Restore last non-zero level. If somehow we never had
+              // one (initial mute via slider drag-to-zero) the
+              // useState initialiser left it at 1.0 — sensible default.
+              setParticipantVolume(userId, lastUnmutedVolume);
+            } else {
+              setParticipantVolume(userId, 0);
+            }
+          }}
+          className={cn(
+            "mt-3 flex w-full items-center justify-center gap-2 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors",
+            isMuted
+              ? "border-red-900/30 bg-red-950/30 text-red-300 hover:bg-red-900/40"
+              : "border-border hover:bg-accent hover:text-accent-foreground",
+          )}
+        >
+          {isMuted ? (
+            <>
+              <Volume2Icon className="h-3.5 w-3.5" />
+              {t("Unmute")}
+            </>
+          ) : (
+            <>
+              <VolumeXIcon className="h-3.5 w-3.5" />
+              {t("Mute")}
+            </>
+          )}
+        </button>
       </PopoverContent>
     </Popover>
   );

@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "Preparing..."
+      ],
+      "Microphone muted": [
+        "Microphone muted"
+      ],
+      "Deafened": [
+        "Deafened"
+      ],
+      "Volume muted for you": [
+        "Volume muted for you"
       ]
     }
   }

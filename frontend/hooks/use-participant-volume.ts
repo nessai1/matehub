@@ -41,12 +41,17 @@ export class ParticipantVolumeStore {
     return this.volumes.get(userId) ?? 1;
   }
 
-  /** Replace the volume for one participant. Clamps to [0, 1].
+  /** Replace the volume for one participant. Clamps to [0, 2].
+   *  1.0 is the native level, 2.0 doubles it through the Web Audio
+   *  GainNode (HTMLMediaElement.volume can't go above 1, which is why
+   *  the tile pipeline reads this through Web Audio — see
+   *  hooks/use-tile-audio.ts).
+   *
    *  Setting back to 1.0 (or within an epsilon of it) removes the entry —
    *  see why in the class doc. No-ops if the value didn't actually
    *  change, so we don't notify subscribers for nothing. */
   set(userId: string, volume: number): void {
-    const clamped = Math.max(0, Math.min(1, volume));
+    const clamped = Math.max(0, Math.min(2, volume));
     const isDefault = Math.abs(clamped - 1) < 0.001;
     const current = this.volumes.get(userId);
 

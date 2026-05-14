@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "正在准备..."
+      ],
+      "Microphone muted": [
+        "麦克风静音"
+      ],
+      "Deafened": [
+        "完全静音"
+      ],
+      "Volume muted for you": [
+        "对你静音"
       ]
     }
   }

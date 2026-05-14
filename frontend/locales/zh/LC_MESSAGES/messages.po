@@ -803,3 +803,19 @@ msgstr "无法获取 Hub 标识 — 请检查服务器连接"
 
 msgid "Preparing..."
 msgstr "正在准备..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "麦克风静音"
+
+msgid "Deafened"
+msgstr "完全静音"
+
+msgid "Volume muted for you"
+msgstr "对你静音"
+
+msgid "Unmute"
+msgstr "取消静音"
+
+msgid "Mute"
+msgstr "静音"

@@ -488,10 +488,10 @@
         "Aucun micro détecté"
       ],
       "Mute": [
-        "Couper le micro"
+        "Couper"
       ],
       "Unmute": [
-        "Activer le micro"
+        "Réactiver"
       ],
       "No camera detected": [
         "Aucune caméra détectée"
@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "Préparation..."
+      ],
+      "Microphone muted": [
+        "Microphone coupé"
+      ],
+      "Deafened": [
+        "N'entend rien"
+      ],
+      "Volume muted for you": [
+        "Coupé pour vous"
       ]
     }
   }

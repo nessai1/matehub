@@ -828,3 +828,19 @@ msgstr "Hub identifier unavailable — check your connection to the server"
 
 msgid "Preparing..."
 msgstr "Preparing..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "Microphone muted"
+
+msgid "Deafened"
+msgstr "Deafened"
+
+msgid "Volume muted for you"
+msgstr "Volume muted for you"
+
+msgid "Unmute"
+msgstr "Unmute"
+
+msgid "Mute"
+msgstr "Mute"

@@ -803,3 +803,19 @@ msgstr "ハブ識別子を取得できません — サーバー接続を確認�
 
 msgid "Preparing..."
 msgstr "準備中..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "マイクミュート"
+
+msgid "Deafened"
+msgstr "音声オフ"
+
+msgid "Volume muted for you"
+msgstr "あなたにはミュート"
+
+msgid "Unmute"
+msgstr "ミュート解除"
+
+msgid "Mute"
+msgstr "ミュート"

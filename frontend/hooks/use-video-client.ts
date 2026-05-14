@@ -117,6 +117,28 @@ export function useVideoClient(
   const cameraOnRef = useRef(new Set<string>());
   const videoTrackRef = useRef(new Map<string, MediaStreamTrack>());
 
+  // Force consumers to re-read the local stream by handing out a fresh
+  // MediaStream wrapper every time we change anything inside it. The
+  // SDK keeps the same underlying MediaStream object across the entire
+  // call (disable→enable just toggles `.enabled` / replaces the inner
+  // track via `replaceTrack`), so a naive `setLocalStream(getLocalStream())`
+  // gets handed back the SAME reference and React's identity check
+  // skips the re-render — which leaves the workspace tile pointing at
+  // a now-stopped track and showing the avatar fallback (the "grey
+  // tile after camera toggle" bug). Wrapping in `new MediaStream(...)`
+  // guarantees a different identity. Tracks are shared by reference so
+  // there's no extra capture/encoding cost — only the outer envelope
+  // is new.
+  const refreshLocalStream = useCallback(() => {
+    const client = clientRef.current;
+    if (!client) {
+      setLocalStream(null);
+      return;
+    }
+    const s = client.getLocalStream();
+    setLocalStream(s ? new MediaStream(s.getTracks()) : null);
+  }, []);
+
   // Gate for the join/leave audio cues. The SFU replays the existing
   // roster as a burst of `participant_joined` events the moment the WS
   // opens — before our own join is acknowledged. Without this gate,
@@ -281,6 +303,18 @@ export function useVideoClient(
             }),
           );
           break;
+        case "deafen_changed":
+          // Sync onto Participant view so the tile re-renders with the
+          // right overlay icon. No accompanying ref dance like track_muted
+          // because deafen doesn't gate any media; it's pure UI.
+          updateParticipants((prev) =>
+            prev.map((p) =>
+              p.participantId === event.participantId
+                ? { ...p, isDeafened: event.deafened }
+                : p,
+            ),
+          );
+          break;
         case "speaking_changed":
           updateParticipants((prev) =>
             prev.map((p) =>
@@ -360,20 +394,27 @@ export function useVideoClient(
     }
   }, []);
 
-  const applyPersistedCamera = useCallback(async (client: VideoClient) => {
-    const saved = readPersistedDevice(CAMERA_DEVICE_STORAGE_KEY);
-    if (!saved) return;
-    const current = client.getCurrentCameraDeviceId();
-    if (current === saved) return;
-    try {
-      const devices = await client.listDevices();
-      if (!devices.videoInputs.some((d) => d.deviceId === saved)) return;
-      await client.setCameraDevice(saved);
-      setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
-    } catch (e) {
-      console.warn("applyPersistedCamera failed", e);
-    }
-  }, []);
+  const applyPersistedCamera = useCallback(
+    async (client: VideoClient) => {
+      const saved = readPersistedDevice(CAMERA_DEVICE_STORAGE_KEY);
+      if (!saved) return;
+      const current = client.getCurrentCameraDeviceId();
+      if (current === saved) return;
+      try {
+        const devices = await client.listDevices();
+        if (!devices.videoInputs.some((d) => d.deviceId === saved)) return;
+        await client.setCameraDevice(saved);
+        setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+        // setCameraDevice swapped the track inside the shared local
+        // MediaStream object; refresh the wrapper so the workspace
+        // tile picks up the new track via identity change.
+        refreshLocalStream();
+      } catch (e) {
+        console.warn("applyPersistedCamera failed", e);
+      }
+    },
+    [refreshLocalStream],
+  );
 
   const toggleMic = useCallback(
     async (opts?: ToggleMediaOptions) => {
@@ -406,16 +447,25 @@ export function useVideoClient(
       if (!client) return;
       const enabled = await client.toggleCamera();
       setIsCamEnabled(enabled);
-      setLocalStream(client.getLocalStream());
+      // refreshLocalStream (not raw `setLocalStream(getLocalStream())`)
+      // — the SDK keeps one MediaStream for the call lifetime, so a
+      // direct setter gets handed back the SAME reference and React
+      // identity-skips the workspace update. Without this the tile
+      // keeps the previous (now-stopped, post-disable) track wired in
+      // and shows the avatar fallback instead of the live camera.
+      refreshLocalStream();
       if (!opts?.silent) {
         playCallSound(enabled ? "enable" : "disable");
       }
       if (enabled) {
         await applyPersistedCamera(client);
-        setLocalStream(client.getLocalStream());
+        // applyPersistedCamera already refreshes on success, but it
+        // bails silently if no persisted device is set — call again
+        // to cover that path.
+        refreshLocalStream();
       }
     },
-    [applyPersistedCamera],
+    [applyPersistedCamera, refreshLocalStream],
   );
 
   const publishScreen = useCallback(async (profile: ScreenShareProfile) => {

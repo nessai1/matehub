@@ -562,6 +562,10 @@ export class VideoClient {
           screenAudioTrack: null,
           isSpeaking: false,
           isMicMuted: true,
+          // Server replays "ParticipantDeafened" right after this for
+          // late joiners whose deafen state is true; default-false is
+          // correct here.
+          isDeafened: false,
           stream: new MediaStream(),
         };
         this.participants.set(p.participantId, p);
@@ -596,6 +600,24 @@ export class VideoClient {
           participantId: pid,
           trackKind: kind,
           muted,
+        });
+        break;
+      }
+
+      case "participant_deafened": {
+        const pid = msg.participant_id as string;
+        const deafened = msg.deafened as boolean;
+        this.log("participant_deafened (signaling)", { pid, deafened });
+        // Mirror onto the local Participant view, same rationale as the
+        // mute mirror just above (stale flag → stale badge).
+        const participant = this.participants.get(pid);
+        if (participant) {
+          participant.isDeafened = deafened;
+        }
+        this.emit({
+          type: "deafen_changed",
+          participantId: pid,
+          deafened,
         });
         break;
       }
@@ -950,6 +972,21 @@ export class VideoClient {
     }
     this.log("toggleCamera result", { camEnabled: this.camEnabled });
     return this.camEnabled;
+  }
+
+  /** Broadcast "I'm deafened" / "I'm undeafened" through the SFU so
+   *  other participants render a headphone-off icon on this tile.
+   *
+   *  Deafen is purely a UI signal — the actual audio suppression happens
+   *  on the deafened client itself (gain=0 on every remote track). The
+   *  SFU still forwards audio to the deafened client; we just promise
+   *  not to play it. Untreated locally this would burn upstream
+   *  bandwidth on a stream nobody hears, but a smarter "tell SFU to
+   *  stop sending me audio when deafened" optimisation lands in its
+   *  own ticket — for the visual MVP, broadcast-only is enough. */
+  setDeafened(deafened: boolean) {
+    this.log("setDeafened", { deafened });
+    this.send({ type: "deafen_changed", deafened });
   }
 
   get isMicEnabled() {

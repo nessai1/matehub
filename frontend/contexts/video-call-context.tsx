@@ -189,29 +189,35 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   }, [activeVoiceChannelId, vc, participantVolumeStore]);
 
   const toggleDeafen = useCallback(() => {
-    setIsDeafened((prev) => {
-      const next = !prev;
-      // Cue right at the click for snappy feedback (toggleMic below
-      // resolves through a renegotiation that can take 50-250ms; the
-      // user shouldn't have to wait that long to hear the click).
-      playCallSound(next ? "disable" : "enable");
-      // Discord-style coupling: deafening also mutes your own mic. The
-      // intuition is "stop participating in the call" — leaking your
-      // side comments while you can't hear anyone is the failure mode
-      // we're closing. Undeafening leaves the mic where the user last
-      // set it (likely still muted, which is correct).
-      //
-      // `silent: true` suppresses toggleMic's own cue — without it, a
-      // second playCallSound("disable") would rewind the same cached
-      // <audio> element via currentTime=0 and produce a brief stutter.
-      // See toggleMic in use-video-client.ts for the silent-flag
-      // rationale.
-      if (next && vc.isMicEnabled) {
-        void vc.toggleMic({ silent: true });
-      }
-      return next;
-    });
-  }, [vc]);
+    const next = !isDeafened;
+    // Plain setState (not functional) so React Strict-Mode's double-
+    // invocation doesn't cause us to send two DeafenChanged signals
+    // through the SFU.
+    setIsDeafened(next);
+    // Cue right at the click for snappy feedback (toggleMic below
+    // resolves through a renegotiation that can take 50-250ms; the
+    // user shouldn't have to wait that long to hear the click).
+    playCallSound(next ? "disable" : "enable");
+    // Broadcast through the SFU so every other participant sees the
+    // headphone-off overlay on this user's tile. SDK no-ops gracefully
+    // if the WS isn't open yet (this can't happen in the toggle path,
+    // but the guard is cheap and matches the rest of the call sites).
+    vc.client?.setDeafened(next);
+    // Discord-style coupling: deafening also mutes your own mic. The
+    // intuition is "stop participating in the call" — leaking your
+    // side comments while you can't hear anyone is the failure mode
+    // we're closing. Undeafening leaves the mic where the user last
+    // set it (likely still muted, which is correct).
+    //
+    // `silent: true` suppresses toggleMic's own cue — without it, a
+    // second playCallSound("disable") would rewind the same cached
+    // <audio> element via currentTime=0 and produce a brief stutter.
+    // See toggleMic in use-video-client.ts for the silent-flag
+    // rationale.
+    if (next && vc.isMicEnabled) {
+      void vc.toggleMic({ silent: true });
+    }
+  }, [isDeafened, vc]);
 
   const setParticipantVolume = useCallback(
     (userId: string, volume: number) => {

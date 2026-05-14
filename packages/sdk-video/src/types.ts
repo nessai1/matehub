@@ -31,6 +31,12 @@ export interface Participant {
   screenAudioTrack: MediaStreamTrack | null;
   isSpeaking: boolean;
   isMicMuted: boolean;
+  /** Discord-style "I can't hear anyone right now". Broadcast through the
+   *  SFU so the rest of the call shows a headphone-off icon on this
+   *  participant's tile. The audio still flows from the SFU — this is a
+   *  pure UI signal; the deafened client suppresses output locally via a
+   *  GainNode at 0. */
+  isDeafened: boolean;
   stream: MediaStream;
 }
 
@@ -58,6 +64,7 @@ export type VideoClientEvent =
       kind: TrackKind;
     }
   | { type: "track_muted"; participantId: string; trackKind: string; muted: boolean }
+  | { type: "deafen_changed"; participantId: string; deafened: boolean }
   | { type: "speaking_changed"; participantId: string; speaking: boolean }
   | { type: "screen_share_started"; participantId: string }
   | { type: "screen_share_stopped"; participantId: string }

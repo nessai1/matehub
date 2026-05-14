@@ -488,7 +488,7 @@
         "Kein Mikrofon erkannt"
       ],
       "Mute": [
-        "Stumm schalten"
+        "Stummschalten"
       ],
       "Unmute": [
         "Stummschaltung aufheben"
@@ -801,6 +801,15 @@
       ],
       "Preparing...": [
         "Vorbereitung..."
+      ],
+      "Microphone muted": [
+        "Mikrofon stumm"
+      ],
+      "Deafened": [
+        "Hört nichts"
+      ],
+      "Volume muted for you": [
+        "Bei dir stummgeschaltet"
       ]
     }
   }
