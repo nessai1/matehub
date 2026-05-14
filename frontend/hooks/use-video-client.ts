@@ -49,6 +49,16 @@ interface UseVideoClientOptions {
   onForceDisconnected?: (reason: string) => void;
 }
 
+/** Options for the mic/camera toggle. The `silent` flag lets a caller
+ *  that ALREADY played a UX cue suppress the one toggleMic/toggleCamera
+ *  would play itself — used by `toggleDeafen` to avoid two
+ *  `playCallSound("disable")` calls landing on the same cached
+ *  HTMLAudioElement (the second one rewinds via `currentTime = 0` and
+ *  produces an audible stutter). */
+interface ToggleMediaOptions {
+  silent?: boolean;
+}
+
 interface UseVideoClientReturn {
   participants: Participant[];
   localStream: MediaStream | null;
@@ -58,8 +68,8 @@ interface UseVideoClientReturn {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
   isScreenSharing: boolean;
-  toggleMic: () => Promise<void>;
-  toggleCamera: () => Promise<void>;
+  toggleMic: (opts?: ToggleMediaOptions) => Promise<void>;
+  toggleCamera: (opts?: ToggleMediaOptions) => Promise<void>;
   publishScreen: (profile: ScreenShareProfile) => Promise<void>;
   unpublishScreen: () => Promise<void>;
   connect: () => Promise<void>;
@@ -366,7 +376,7 @@ export function useVideoClient(
   }, []);
 
   const toggleMic = useCallback(
-    async () => {
+    async (opts?: ToggleMediaOptions) => {
       const client = clientRef.current;
       if (!client) return;
       const enabled = await client.toggleMic();
@@ -375,8 +385,13 @@ export function useVideoClient(
       // Played AFTER the SDK call resolves so the cue confirms the
       // state actually changed (otherwise a fast-clicker hears the
       // "click" before getUserMedia finishes — confusing if permission
-      // is still being prompted).
-      playCallSound(enabled ? "enable" : "disable");
+      // is still being prompted). `silent: true` is honoured for
+      // callers that already played a cue themselves (toggleDeafen) —
+      // without it, both calls would land on the same cached
+      // HTMLAudioElement and stutter via currentTime=0.
+      if (!opts?.silent) {
+        playCallSound(enabled ? "enable" : "disable");
+      }
       // Only swap on enable: a mute toggle shouldn't churn devices.
       if (enabled) {
         await applyPersistedMic(client);
@@ -386,13 +401,15 @@ export function useVideoClient(
   );
 
   const toggleCamera = useCallback(
-    async () => {
+    async (opts?: ToggleMediaOptions) => {
       const client = clientRef.current;
       if (!client) return;
       const enabled = await client.toggleCamera();
       setIsCamEnabled(enabled);
       setLocalStream(client.getLocalStream());
-      playCallSound(enabled ? "enable" : "disable");
+      if (!opts?.silent) {
+        playCallSound(enabled ? "enable" : "disable");
+      }
       if (enabled) {
         await applyPersistedCamera(client);
         setLocalStream(client.getLocalStream());

@@ -34,8 +34,8 @@ interface VideoCallContextValue {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
   isScreenSharing: boolean;
-  toggleMic: () => Promise<void>;
-  toggleCamera: () => Promise<void>;
+  toggleMic: (opts?: { silent?: boolean }) => Promise<void>;
+  toggleCamera: (opts?: { silent?: boolean }) => Promise<void>;
   publishScreen: (profile: ScreenShareProfile) => Promise<void>;
   unpublishScreen: () => Promise<void>;
   error: string | null;
@@ -191,18 +191,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const toggleDeafen = useCallback(() => {
     setIsDeafened((prev) => {
       const next = !prev;
-      // Same blip the mic/cam toggles use — deafen is semantically a
-      // "mute everything" so the on/off pair fits. Played BEFORE the
-      // mic-toggle below to avoid a double-disable cue (toggleMic
-      // would fire its own disable on the same click).
+      // Cue right at the click for snappy feedback (toggleMic below
+      // resolves through a renegotiation that can take 50-250ms; the
+      // user shouldn't have to wait that long to hear the click).
       playCallSound(next ? "disable" : "enable");
       // Discord-style coupling: deafening also mutes your own mic. The
       // intuition is "stop participating in the call" — leaking your
       // side comments while you can't hear anyone is the failure mode
       // we're closing. Undeafening leaves the mic where the user last
       // set it (likely still muted, which is correct).
+      //
+      // `silent: true` suppresses toggleMic's own cue — without it, a
+      // second playCallSound("disable") would rewind the same cached
+      // <audio> element via currentTime=0 and produce a brief stutter.
+      // See toggleMic in use-video-client.ts for the silent-flag
+      // rationale.
       if (next && vc.isMicEnabled) {
-        void vc.toggleMic();
+        void vc.toggleMic({ silent: true });
       }
       return next;
     });
