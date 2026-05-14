@@ -8,6 +8,7 @@ const HUB_ID: &str = "1";
 // ── Profile ─────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn update_display_name() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "bob").await;
@@ -36,6 +37,7 @@ async fn update_display_name() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn update_profile_empty_name_rejected() {
     let base = common::spawn_app().await;
     let token = common::login(&base, "alice").await;
@@ -53,6 +55,7 @@ async fn update_profile_empty_name_rejected() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn profile_requires_auth() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -70,6 +73,7 @@ async fn profile_requires_auth() {
 // ── Groups ──────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn list_groups() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -97,6 +101,7 @@ async fn list_groups() {
 // CRUD. Needs an Authorization header on each request to ever pass — left
 // ignored until someone wants to update the harness.
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 #[ignore]
 async fn create_and_delete_group() {
     let base = common::spawn_app().await;
@@ -128,6 +133,7 @@ async fn create_and_delete_group() {
 
 // See create_and_delete_group above — same auth-header gap.
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 #[ignore]
 async fn cannot_delete_default_group() {
     let base = common::spawn_app().await;
@@ -158,6 +164,7 @@ async fn cannot_delete_default_group() {
 // ── Members ─────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn members_full_returns_all_users() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -180,6 +187,7 @@ async fn members_full_returns_all_users() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn members_have_groups() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -209,6 +217,7 @@ async fn members_have_groups() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn members_have_online_field() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -232,6 +241,7 @@ async fn members_have_online_field() {
 // ── Permissions ─────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn effective_permissions_for_admin() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();

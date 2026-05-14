@@ -4,9 +4,38 @@ import {
   type Participant,
   type ScreenShareProfile,
   type VideoClientEvent,
-} from "../../packages/sdk-video/src";
+} from "@matehub/sdk-video";
 import { playCallSound } from "@/lib/call-sounds";
 import { getTurnConfig } from "@/src/config";
+
+// localStorage keys for cross-call device persistence (MAT-17). Browser-
+// scoped, not user-scoped — running two users on one browser ties them to
+// the same default, which is the right tradeoff: device choice belongs to
+// the human at the keyboard, not the credentials they're logged in with.
+const MIC_DEVICE_STORAGE_KEY = "matehub.videoCall.micDeviceId";
+const CAMERA_DEVICE_STORAGE_KEY = "matehub.videoCall.cameraDeviceId";
+
+function readPersistedDevice(key: string): string | null {
+  // SSR-safe: Next.js may render this hook on the server during hydration
+  // (the hook itself doesn't gate on `typeof window`, the call sites do).
+  // localStorage access during SSR throws ReferenceError, hence the guard.
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedDevice(key: string, deviceId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, deviceId);
+  } catch {
+    // Quota / private-mode / cookies-disabled paths. Persistence is a nicety,
+    // not a correctness requirement — swallow.
+  }
+}
 
 interface UseVideoClientOptions {
   serverUrl: string;
@@ -20,6 +49,16 @@ interface UseVideoClientOptions {
   onForceDisconnected?: (reason: string) => void;
 }
 
+/** Options for the mic/camera toggle. The `silent` flag lets a caller
+ *  that ALREADY played a UX cue suppress the one toggleMic/toggleCamera
+ *  would play itself — used by `toggleDeafen` to avoid two
+ *  `playCallSound("disable")` calls landing on the same cached
+ *  HTMLAudioElement (the second one rewinds via `currentTime = 0` and
+ *  produces an audible stutter). */
+interface ToggleMediaOptions {
+  silent?: boolean;
+}
+
 interface UseVideoClientReturn {
   participants: Participant[];
   localStream: MediaStream | null;
@@ -29,8 +68,8 @@ interface UseVideoClientReturn {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
   isScreenSharing: boolean;
-  toggleMic: () => Promise<void>;
-  toggleCamera: () => Promise<void>;
+  toggleMic: (opts?: ToggleMediaOptions) => Promise<void>;
+  toggleCamera: (opts?: ToggleMediaOptions) => Promise<void>;
   publishScreen: (profile: ScreenShareProfile) => Promise<void>;
   unpublishScreen: () => Promise<void>;
   connect: () => Promise<void>;
@@ -78,6 +117,41 @@ export function useVideoClient(
   const cameraOnRef = useRef(new Set<string>());
   const videoTrackRef = useRef(new Map<string, MediaStreamTrack>());
 
+  // Force consumers to re-read the local stream by handing out a fresh
+  // MediaStream wrapper every time we change anything inside it. The
+  // SDK keeps the same underlying MediaStream object across the entire
+  // call (disable→enable just toggles `.enabled` / replaces the inner
+  // track via `replaceTrack`), so a naive `setLocalStream(getLocalStream())`
+  // gets handed back the SAME reference and React's identity check
+  // skips the re-render — which leaves the workspace tile pointing at
+  // a now-stopped track and showing the avatar fallback (the "grey
+  // tile after camera toggle" bug). Wrapping in `new MediaStream(...)`
+  // guarantees a different identity. Tracks are shared by reference so
+  // there's no extra capture/encoding cost — only the outer envelope
+  // is new.
+  const refreshLocalStream = useCallback(() => {
+    const client = clientRef.current;
+    if (!client) {
+      setLocalStream(null);
+      return;
+    }
+    const s = client.getLocalStream();
+    setLocalStream(s ? new MediaStream(s.getTracks()) : null);
+  }, []);
+
+  // Gate for the join/leave audio cues. The SFU replays the existing
+  // roster as a burst of `participant_joined` events the moment the WS
+  // opens — before our own join is acknowledged. Without this gate,
+  // walking into a call with N people already inside fires N chimes in
+  // the span of a few hundred ms (review #1 / MAT-20 log).
+  //
+  // The "connected" event lands AFTER our own offer/answer has settled,
+  // which by then is also after the bootstrap-replay burst the SFU
+  // sends synchronously on session-join. Flipping the ref there gates
+  // the cue to "real, after-the-fact joins" only. Reset on disconnect
+  // so a reconnect repeats the same suppression for its own bootstrap.
+  const joinCueArmedRef = useRef(false);
+
   // Update participant in list (immutable)
   const updateParticipants = useCallback(
     (fn: (prev: Participant[]) => Participant[]) => {
@@ -117,11 +191,30 @@ export function useVideoClient(
           setLocalStream(client.getLocalStream());
           setCurrentMicDeviceId(client.getCurrentMicDeviceId());
           setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+          // Arm the join/leave cue gate AFTER the SFU's bootstrap-replay
+          // burst has flushed (those events arrive between WS-open and
+          // SDP-answer; "connected" fires only after setRemoteDescription).
+          // From here onward, every participant_joined we get is a real
+          // post-bootstrap arrival worth chiming for.
+          joinCueArmedRef.current = true;
           break;
         case "participant_joined":
+          // Cue only after the bootstrap-burst has passed. The first time
+          // we hit this branch on a fresh connect, joinCueArmedRef is
+          // false — those events are the SFU replaying the existing
+          // roster, not real arrivals.
+          if (joinCueArmedRef.current) {
+            playCallSound("join_call");
+          }
           updateParticipants((prev) => [...prev, event.participant]);
           break;
         case "participant_left":
+          // Same arming logic — `participant_left` during a reconnect
+          // could conceivably also burst (if the SFU repaints the roster
+          // diff against the old one). Cue only when armed.
+          if (joinCueArmedRef.current) {
+            playCallSound("leave_call");
+          }
           cameraOnRef.current.delete(event.participantId);
           videoTrackRef.current.delete(event.participantId);
           updateParticipants((prev) =>
@@ -129,6 +222,13 @@ export function useVideoClient(
           );
           break;
         case "track_added":
+          // MAT-18: remote screen-share starting deserves the same cue
+          // we play for the local side — different listener, same event
+          // semantically. Camera tracks are quiet because they fire on
+          // every renegotiation, not just join.
+          if (event.source === "screen" && event.kind === "video") {
+            playCallSound("show_desktop");
+          }
           // Camera video ref — screen tracks don't need the mute-race workaround
           // since they're not gated on a mute signal, they exist or they don't.
           if (event.source === "camera" && event.kind === "video") {
@@ -155,6 +255,12 @@ export function useVideoClient(
           );
           break;
         case "track_removed":
+          // MAT-18: complement to the start cue — remote stopped sharing
+          // their screen, surface it with the same disable_desktop chime
+          // we already use for the local side.
+          if (event.source === "screen" && event.kind === "video") {
+            playCallSound("disable_desktop");
+          }
           updateParticipants((prev) =>
             prev.map((p) => {
               if (p.participantId !== event.participantId) return p;
@@ -197,6 +303,18 @@ export function useVideoClient(
             }),
           );
           break;
+        case "deafen_changed":
+          // Sync onto Participant view so the tile re-renders with the
+          // right overlay icon. No accompanying ref dance like track_muted
+          // because deafen doesn't gate any media; it's pure UI.
+          updateParticipants((prev) =>
+            prev.map((p) =>
+              p.participantId === event.participantId
+                ? { ...p, isDeafened: event.deafened }
+                : p,
+            ),
+          );
+          break;
         case "speaking_changed":
           updateParticipants((prev) =>
             prev.map((p) =>
@@ -208,12 +326,16 @@ export function useVideoClient(
           break;
         case "disconnected":
           setIsConnected(false);
+          // Disarm the cue so a reconnect's bootstrap-replay is again
+          // silent until its own "connected" lands.
+          joinCueArmedRef.current = false;
           break;
         case "force_disconnected":
           // Server replaced our session (multi-tab collision). Hop back
           // to "not in a call" state and let the caller show a toast +
           // leave the call view.
           setIsConnected(false);
+          joinCueArmedRef.current = false;
           opts?.onForceDisconnected?.(event.reason);
           break;
         case "error":
@@ -241,22 +363,110 @@ export function useVideoClient(
     setError(null);
     cameraOnRef.current.clear();
     videoTrackRef.current.clear();
+    joinCueArmedRef.current = false;
   }, []);
 
-  const toggleMic = useCallback(async () => {
-    const client = clientRef.current;
-    if (!client) return;
-    const enabled = await client.toggleMic();
-    setIsMicEnabled(enabled);
+  // Apply the persisted device choice (MAT-17) when a freshly-enabled
+  // track lands on the default device. The SDK's `enableMic` /
+  // `enableCamera` always reach for the platform default — they have no
+  // hook to honour a previous selection. Wrapping the toggle here is the
+  // cheap place to splice that in: after the toggle returns enabled=true
+  // we check whether the saved deviceId differs from the live one, and
+  // if so swap via `setMicDevice` / `setCameraDevice` (which does
+  // replaceTrack on the existing sender — no SDP churn).
+  //
+  // The saved id may be stale: a previously-used USB headset that's no
+  // longer plugged in. `listDevices()` enumerates what's available right
+  // now; we silently skip the switch if the saved id isn't in the list.
+  const applyPersistedMic = useCallback(async (client: VideoClient) => {
+    const saved = readPersistedDevice(MIC_DEVICE_STORAGE_KEY);
+    if (!saved) return;
+    const current = client.getCurrentMicDeviceId();
+    if (current === saved) return;
+    try {
+      const devices = await client.listDevices();
+      if (!devices.audioInputs.some((d) => d.deviceId === saved)) return;
+      await client.setMicDevice(saved);
+      setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+    } catch (e) {
+      // Device may have been pulled between enumerate and switch.
+      console.warn("applyPersistedMic failed", e);
+    }
   }, []);
 
-  const toggleCamera = useCallback(async () => {
-    const client = clientRef.current;
-    if (!client) return;
-    const enabled = await client.toggleCamera();
-    setIsCamEnabled(enabled);
-    setLocalStream(client.getLocalStream());
-  }, []);
+  const applyPersistedCamera = useCallback(
+    async (client: VideoClient) => {
+      const saved = readPersistedDevice(CAMERA_DEVICE_STORAGE_KEY);
+      if (!saved) return;
+      const current = client.getCurrentCameraDeviceId();
+      if (current === saved) return;
+      try {
+        const devices = await client.listDevices();
+        if (!devices.videoInputs.some((d) => d.deviceId === saved)) return;
+        await client.setCameraDevice(saved);
+        setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+        // setCameraDevice swapped the track inside the shared local
+        // MediaStream object; refresh the wrapper so the workspace
+        // tile picks up the new track via identity change.
+        refreshLocalStream();
+      } catch (e) {
+        console.warn("applyPersistedCamera failed", e);
+      }
+    },
+    [refreshLocalStream],
+  );
+
+  const toggleMic = useCallback(
+    async (opts?: ToggleMediaOptions) => {
+      const client = clientRef.current;
+      if (!client) return;
+      const enabled = await client.toggleMic();
+      setIsMicEnabled(enabled);
+      // MAT-18 second pass: audio confirmation on every mic/cam toggle.
+      // Played AFTER the SDK call resolves so the cue confirms the
+      // state actually changed (otherwise a fast-clicker hears the
+      // "click" before getUserMedia finishes — confusing if permission
+      // is still being prompted). `silent: true` is honoured for
+      // callers that already played a cue themselves (toggleDeafen) —
+      // without it, both calls would land on the same cached
+      // HTMLAudioElement and stutter via currentTime=0.
+      if (!opts?.silent) {
+        playCallSound(enabled ? "enable" : "disable");
+      }
+      // Only swap on enable: a mute toggle shouldn't churn devices.
+      if (enabled) {
+        await applyPersistedMic(client);
+      }
+    },
+    [applyPersistedMic],
+  );
+
+  const toggleCamera = useCallback(
+    async (opts?: ToggleMediaOptions) => {
+      const client = clientRef.current;
+      if (!client) return;
+      const enabled = await client.toggleCamera();
+      setIsCamEnabled(enabled);
+      // refreshLocalStream (not raw `setLocalStream(getLocalStream())`)
+      // — the SDK keeps one MediaStream for the call lifetime, so a
+      // direct setter gets handed back the SAME reference and React
+      // identity-skips the workspace update. Without this the tile
+      // keeps the previous (now-stopped, post-disable) track wired in
+      // and shows the avatar fallback instead of the live camera.
+      refreshLocalStream();
+      if (!opts?.silent) {
+        playCallSound(enabled ? "enable" : "disable");
+      }
+      if (enabled) {
+        await applyPersistedCamera(client);
+        // applyPersistedCamera already refreshes on success, but it
+        // bails silently if no persisted device is set — call again
+        // to cover that path.
+        refreshLocalStream();
+      }
+    },
+    [applyPersistedCamera, refreshLocalStream],
+  );
 
   const publishScreen = useCallback(async (profile: ScreenShareProfile) => {
     const client = clientRef.current;
@@ -329,7 +539,16 @@ export function useVideoClient(
     const client = clientRef.current;
     if (!client) return;
     await client.setMicDevice(deviceId);
-    setCurrentMicDeviceId(client.getCurrentMicDeviceId());
+    const settled = client.getCurrentMicDeviceId();
+    setCurrentMicDeviceId(settled);
+    // Persist the *settled* id, not the requested one. They line up in the
+    // happy path, but `setMicDevice` may reach for a fallback if the
+    // requested device disappears mid-call (USB unplug during the
+    // switch). Saving what the SDK actually picked keeps the next call's
+    // restore consistent with reality.
+    if (settled) {
+      writePersistedDevice(MIC_DEVICE_STORAGE_KEY, settled);
+    }
     // Force a new MediaStream reference so consumers' useMemo rebuilds —
     // mutating the existing one in-place doesn't trip referential equality.
     const s = client.getLocalStream();
@@ -340,7 +559,11 @@ export function useVideoClient(
     const client = clientRef.current;
     if (!client) return;
     await client.setCameraDevice(deviceId);
-    setCurrentCameraDeviceId(client.getCurrentCameraDeviceId());
+    const settled = client.getCurrentCameraDeviceId();
+    setCurrentCameraDeviceId(settled);
+    if (settled) {
+      writePersistedDevice(CAMERA_DEVICE_STORAGE_KEY, settled);
+    }
     const s = client.getLocalStream();
     setLocalStream(s ? new MediaStream(s.getTracks()) : null);
   }, []);

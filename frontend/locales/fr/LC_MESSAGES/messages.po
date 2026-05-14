@@ -783,3 +783,39 @@ msgstr "S'inscrire"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "Partagez un lien, envoyez un pass invité temporaire ou pré-allouez un identifiant."
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "Réactiver l'audio"
+
+msgid "Deafen (mute all)"
+msgstr "Couper tout l'audio"
+
+msgid "Volume"
+msgstr "Volume"
+
+msgid "Audio options for %s"
+msgstr "Options audio pour %s"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "Identifiant du hub indisponible — vérifiez la connexion au serveur"
+
+msgid "Preparing..."
+msgstr "Préparation..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "Microphone coupé"
+
+msgid "Deafened"
+msgstr "N'entend rien"
+
+msgid "Volume muted for you"
+msgstr "Coupé pour vous"
+
+msgid "Unmute"
+msgstr "Réactiver"
+
+msgid "Mute"
+msgstr "Couper"

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { useVideoClient } from "@/hooks/use-video-client";
+import { ParticipantVolumeStore } from "@/hooks/use-participant-volume";
 import { useAuth } from "@/lib/auth";
 import { playCallSound } from "@/lib/call-sounds";
 import { t } from "@/i18n";
@@ -33,8 +34,8 @@ interface VideoCallContextValue {
   isMicEnabled: boolean;
   isCamEnabled: boolean;
   isScreenSharing: boolean;
-  toggleMic: () => Promise<void>;
-  toggleCamera: () => Promise<void>;
+  toggleMic: (opts?: { silent?: boolean }) => Promise<void>;
+  toggleCamera: (opts?: { silent?: boolean }) => Promise<void>;
   publishScreen: (profile: ScreenShareProfile) => Promise<void>;
   unpublishScreen: () => Promise<void>;
   error: string | null;
@@ -47,6 +48,20 @@ interface VideoCallContextValue {
   setMicDevice: (deviceId: string) => Promise<void>;
   setCameraDevice: (deviceId: string) => Promise<void>;
   refreshDevices: () => Promise<void>;
+
+  /** Discord-style "deafen": mute every incoming audio AND mute own mic.
+   *  Re-undeafening doesn't auto-unmute the mic — the user can stay
+   *  muted independently. State is local to this tab. */
+  isDeafened: boolean;
+  toggleDeafen: () => void;
+
+  /** Per-participant audio volume control (MAT-14). Range 0.0–1.0,
+   *  applied locally to the receiver's HTMLAudioElement.volume. Lookup
+   *  by user_id. Backed by an external store (see
+   *  `useParticipantVolume`) so a slider drag re-renders only the
+   *  affected tile, not every consumer of useVideoCall. */
+  participantVolumeStore: ParticipantVolumeStore;
+  setParticipantVolume: (userId: string, volume: number) => void;
 
   /** Join a voice channel by its ID. Leaves the current call first if any. */
   joinVoice: (channelId: string) => Promise<void>;
@@ -78,6 +93,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   // dependencies sane (videoOpts otherwise would have to depend on the
   // current leaveVoice, recreating on every state change).
   const [forceKickReason, setForceKickReason] = useState<string | null>(null);
+  // Deafen (MAT-15) — local to this tab. Not persisted across reloads
+  // intentionally: a user who reloads expects to *hear* the call. If we
+  // want to honour "stay deafened across reloads" later, plumb through
+  // localStorage same way device persistence does.
+  const [isDeafened, setIsDeafened] = useState(false);
+  // Per-participant volume overrides (MAT-14). External store with
+  // keyed subscriptions — see hooks/use-participant-volume.ts for the
+  // rationale (split-context perf rework, review #4).
+  //
+  // `useState(() => new Store())` is the React-idiomatic way to get a
+  // single instance for the provider's lifetime without tripping the
+  // "no ref-read during render" lint. We never call the setter — the
+  // store is the source of truth, React state just owns its
+  // construction.
+  const [participantVolumeStore] = useState(
+    () => new ParticipantVolumeStore(),
+  );
 
   const videoOpts = useMemo(() => {
     if (!sessionId || !session) return null;
@@ -149,7 +181,53 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     vc.disconnect();
     setSessionId(null);
     setActiveVoiceChannelId(null);
-  }, [activeVoiceChannelId, vc]);
+    // Reset per-call deafen + volume state. Carrying them between calls
+    // would surprise the user — "why is X quiet in this completely
+    // different channel where I never adjusted them?".
+    setIsDeafened(false);
+    participantVolumeStore.reset();
+  }, [activeVoiceChannelId, vc, participantVolumeStore]);
+
+  const toggleDeafen = useCallback(() => {
+    const next = !isDeafened;
+    // Plain setState (not functional) so React Strict-Mode's double-
+    // invocation doesn't cause us to send two DeafenChanged signals
+    // through the SFU.
+    setIsDeafened(next);
+    // Cue right at the click for snappy feedback (toggleMic below
+    // resolves through a renegotiation that can take 50-250ms; the
+    // user shouldn't have to wait that long to hear the click).
+    playCallSound(next ? "disable" : "enable");
+    // Broadcast through the SFU so every other participant sees the
+    // headphone-off overlay on this user's tile. SDK no-ops gracefully
+    // if the WS isn't open yet (this can't happen in the toggle path,
+    // but the guard is cheap and matches the rest of the call sites).
+    vc.client?.setDeafened(next);
+    // Discord-style coupling: deafening also mutes your own mic. The
+    // intuition is "stop participating in the call" — leaking your
+    // side comments while you can't hear anyone is the failure mode
+    // we're closing. Undeafening leaves the mic where the user last
+    // set it (likely still muted, which is correct).
+    //
+    // `silent: true` suppresses toggleMic's own cue — without it, a
+    // second playCallSound("disable") would rewind the same cached
+    // <audio> element via currentTime=0 and produce a brief stutter.
+    // See toggleMic in use-video-client.ts for the silent-flag
+    // rationale.
+    if (next && vc.isMicEnabled) {
+      void vc.toggleMic({ silent: true });
+    }
+  }, [isDeafened, vc]);
+
+  const setParticipantVolume = useCallback(
+    (userId: string, volume: number) => {
+      // Clamping + 1.0-as-delete logic lives in the store itself so
+      // any future caller (settings page, admin override, etc.) gets
+      // the same semantics without re-implementing them here.
+      participantVolumeStore.set(userId, volume);
+    },
+    [participantVolumeStore],
+  );
 
   // React to force-disconnect (multi-tab collision): leave the call view
   // cleanly and tell the user why. The reason currently has one value
@@ -199,10 +277,23 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
       setMicDevice: vc.setMicDevice,
       setCameraDevice: vc.setCameraDevice,
       refreshDevices: vc.refreshDevices,
+      isDeafened,
+      toggleDeafen,
+      participantVolumeStore,
+      setParticipantVolume,
       joinVoice,
       leaveVoice,
     }),
-    [activeVoiceChannelId, vc, joinVoice, leaveVoice],
+    [
+      activeVoiceChannelId,
+      vc,
+      isDeafened,
+      toggleDeafen,
+      participantVolumeStore,
+      setParticipantVolume,
+      joinVoice,
+      leaveVoice,
+    ],
   );
 
   return (

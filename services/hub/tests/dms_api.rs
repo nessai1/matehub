@@ -28,6 +28,7 @@ async fn setup() -> (String, Client, String, String, String) {
 // ── POST /dms ───────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn open_dm_creates_channel_with_two_participants() {
     let (base, client, alice, _, _) = setup().await;
 
@@ -52,6 +53,7 @@ async fn open_dm_creates_channel_with_two_participants() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn open_dm_is_idempotent() {
     let (base, client, alice, _, _) = setup().await;
 
@@ -81,6 +83,7 @@ async fn open_dm_is_idempotent() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn open_dm_is_symmetric_across_callers() {
     // Alice → Bob and Bob → Alice resolve to the same channel.
     let (base, client, alice, bob, _) = setup().await;
@@ -111,6 +114,7 @@ async fn open_dm_is_symmetric_across_callers() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn open_dm_with_self_is_rejected() {
     let (base, client, alice, _, _) = setup().await;
 
@@ -125,6 +129,7 @@ async fn open_dm_with_self_is_rejected() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn open_dm_with_non_member_is_rejected() {
     let (base, client, alice, _, _) = setup().await;
 
@@ -141,6 +146,7 @@ async fn open_dm_with_non_member_is_rejected() {
 // ── GET /dms ────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn list_dms_returns_only_my_channels() {
     let (base, client, alice, bob, charlie) = setup().await;
 
@@ -208,6 +214,7 @@ async fn list_dms_returns_only_my_channels() {
 // ── /channels listing must NOT leak DMs ─────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn list_channels_excludes_dms() {
     let (base, client, alice, _, _) = setup().await;
 
@@ -237,6 +244,7 @@ async fn list_channels_excludes_dms() {
 // ── Generic create rejects type=dm ──────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn create_channel_rejects_dm_type() {
     let (base, client, alice, _, _) = setup().await;
 

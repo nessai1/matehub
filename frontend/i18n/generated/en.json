@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Share a link, send a temporary guest pass, or pre-allocate a login."
+      ],
+      "Undeafen": [
+        "Undeafen"
+      ],
+      "Deafen (mute all)": [
+        "Deafen (mute all)"
+      ],
+      "Volume": [
+        "Volume"
+      ],
+      "Audio options for %s": [
+        "Audio options for %s"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "Hub identifier unavailable — check your connection to the server"
+      ],
+      "Preparing...": [
+        "Preparing..."
+      ],
+      "Microphone muted": [
+        "Microphone muted"
+      ],
+      "Deafened": [
+        "Deafened"
+      ],
+      "Volume muted for you": [
+        "Volume muted for you"
       ]
     }
   }

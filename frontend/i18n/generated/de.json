@@ -488,7 +488,7 @@
         "Kein Mikrofon erkannt"
       ],
       "Mute": [
-        "Stumm schalten"
+        "Stummschalten"
       ],
       "Unmute": [
         "Stummschaltung aufheben"
@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Teilen Sie einen Link, senden Sie einen temporären Gastpass oder reservieren Sie einen Login."
+      ],
+      "Undeafen": [
+        "Stummschaltung aufheben"
+      ],
+      "Deafen (mute all)": [
+        "Alle stummschalten"
+      ],
+      "Volume": [
+        "Lautstärke"
+      ],
+      "Audio options for %s": [
+        "Audiooptionen für %s"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "Hub-Identifier nicht verfügbar — Serververbindung prüfen"
+      ],
+      "Preparing...": [
+        "Vorbereitung..."
+      ],
+      "Microphone muted": [
+        "Mikrofon stumm"
+      ],
+      "Deafened": [
+        "Hört nichts"
+      ],
+      "Volume muted for you": [
+        "Bei dir stummgeschaltet"
       ]
     }
   }

@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "分享链接、发送临时访客通行证或预分配登录名。"
+      ],
+      "Undeafen": [
+        "取消禁声"
+      ],
+      "Deafen (mute all)": [
+        "静音所有人"
+      ],
+      "Volume": [
+        "音量"
+      ],
+      "Audio options for %s": [
+        "%s 的音频选项"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "无法获取 Hub 标识 — 请检查服务器连接"
+      ],
+      "Preparing...": [
+        "正在准备..."
+      ],
+      "Microphone muted": [
+        "麦克风静音"
+      ],
+      "Deafened": [
+        "完全静音"
+      ],
+      "Volume muted for you": [
+        "对你静音"
       ]
     }
   }

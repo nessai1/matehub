@@ -783,3 +783,39 @@ msgstr "Зарегистрироваться"
 
 msgid "Share a link, send a temporary guest pass, or pre-allocate a login."
 msgstr "Поделитесь ссылкой, отправьте временный гостевой пропуск или заранее закрепите логин."
+
+# ── Voice call controls ───────────────────────────────
+msgid "Undeafen"
+msgstr "Включить звук"
+
+msgid "Deafen (mute all)"
+msgstr "Отключить весь звук"
+
+msgid "Volume"
+msgstr "Громкость"
+
+msgid "Audio options for %s"
+msgstr "Параметры звука для %s"
+
+# ── Login status ─────────────────────────────────────
+msgid "Hub identifier unavailable — check your connection to the server"
+msgstr "Идентификатор хаба недоступен — проверьте подключение к серверу"
+
+msgid "Preparing..."
+msgstr "Подготовка..."
+
+# ── Tile status badges + per-user volume menu ──
+msgid "Microphone muted"
+msgstr "Микрофон выключен"
+
+msgid "Deafened"
+msgstr "Звук выключен полностью"
+
+msgid "Volume muted for you"
+msgstr "Звук выключен для вас"
+
+msgid "Unmute"
+msgstr "Включить звук"
+
+msgid "Mute"
+msgstr "Выключить звук"

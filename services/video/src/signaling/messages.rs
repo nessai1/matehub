@@ -33,6 +33,16 @@ pub enum ClientMessage {
         kind: String,
         muted: bool,
     },
+    /// Deafen state changed (Discord-style "I can't hear anyone"). The SFU
+    /// doesn't actually do anything different on its forwarding side —
+    /// audio still flows to the deafened participant's PeerConnection, the
+    /// client just has its GainNode at 0. But broadcasting the flag lets
+    /// every other client render a deafened-headphone icon on this
+    /// participant's tile, which is the cue the rest of the call needs
+    /// ("don't bother asking, they can't hear you right now").
+    DeafenChanged {
+        deafened: bool,
+    },
     /// Source-hint for the next media track(s) in the upcoming Offer.
     /// Must arrive BEFORE the Offer (WS preserves order within one socket).
     /// `source`: "camera" | "screen", `kind`: "audio" | "video".
@@ -84,6 +94,15 @@ pub enum ServerMessage {
         participant_id: Uuid,
         kind: String,
         muted: bool,
+    },
+    /// Broadcast counterpart to `ClientMessage::DeafenChanged`. State
+    /// also lives on the SFU side (see `SfuParticipant::deafened`) so a
+    /// late-joining client gets each existing participant's current
+    /// deafen flag in the bootstrap-replay burst, same shape as
+    /// `ParticipantMuted`.
+    ParticipantDeafened {
+        participant_id: Uuid,
+        deafened: bool,
     },
     Error {
         message: String,

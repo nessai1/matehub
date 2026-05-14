@@ -90,7 +90,11 @@ services:
   nats:
     image: nats:2-alpine
     restart: unless-stopped
-    command: ["--jetstream", "--store_dir=/data"]
+    # `-m 8222` enables the HTTP monitoring endpoint that the healthcheck
+    # below probes for `/healthz`. Without it NATS only listens on the
+    # client port (4222) and the wget probe gets connection refused —
+    # compose marks the service unhealthy even though it's running fine.
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
     volumes:
       - nats-data:/data
     healthcheck:
@@ -373,6 +377,26 @@ services:
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - XPACK_REPORTING_ROLES_ENABLED=false
+      # Mirror the ES side: we run with `xpack.security.enabled=false` on
+      # Elasticsearch, so Kibana must not advertise security/API-key UI
+      # either. Without this Kibana's onboarding pages fire
+      # `/internal/security/api_key/_has_active` and get 404s in the
+      # browser console (the endpoint exists only when security is on);
+      # cosmetic but it spams the dev tools and confuses operators
+      # trying to debug "real" failures.
+      - XPACK_SECURITY_ENABLED=false
+      # Fleet requires ES security to be on. With security off the
+      # `/api/fleet/epm/*` endpoints return 403 every time the
+      # Observability onboarding page tries to enumerate packages —
+      # exactly the symptom in MAT-24. We don't use Fleet anyway
+      # (Filebeat writes directly to ES), so turning the plugin off
+      # removes the failing API surface and the onboarding flow falls
+      # back to "use your own collector" guidance.
+      - XPACK_FLEET_ENABLED=false
+      # Land operators on Discover instead of the onboarding/home screen.
+      # Logs ingested through Filebeat live in `filebeat-*` indices,
+      # which Discover surfaces directly — no Fleet handshake required.
+      - SERVER_DEFAULTROUTE=/app/discover
       # Serve from `/kibana` so a single Caddy reverse_proxy line works
       # without rewriting Kibana's own asset URLs.
       - SERVER_BASEPATH=/kibana

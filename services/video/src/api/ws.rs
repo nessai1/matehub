@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use axum::{
     Router,
     extract::{
@@ -10,7 +12,10 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::{
+    sync::mpsc,
+    time::{Instant as TokioInstant, MissedTickBehavior},
+};
 use tracing::{Instrument, Span, field::Empty};
 use uuid::Uuid;
 
@@ -257,6 +262,19 @@ async fn handle_ws(
                     },
                 );
             }
+            // Replay deafen state too. Only emit when actually deafened —
+            // false is the default and the SDK initialises participants
+            // to "not deafened", so an explicit `deafened: false` here
+            // is noise.
+            if p.deafened {
+                ws_send_or_drop(
+                    &ws_tx,
+                    ServerMessage::ParticipantDeafened {
+                        participant_id: p.id,
+                        deafened: true,
+                    },
+                );
+            }
         }
 
         // Broadcast new participant to existing participants
@@ -277,6 +295,7 @@ async fn handle_ws(
                 ws_tx: ws_tx.clone(),
                 video_muted: true,
                 audio_muted: true,
+                deafened: false,
             },
         );
         metrics::counter!("matehub_video_participant_joins_total").increment(1);
@@ -287,216 +306,317 @@ async fn handle_ws(
         publish_occupancy(nats, hub_id, uid, Some(channel_id), session_id).await;
     }
 
+    let sfu_pool = state.sfu_pool.clone();
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
-    // Task: forward ServerMessages to WebSocket
-    let send_task = tokio::spawn(async move {
-        while let Some(msg) = ws_rx.recv().await {
-            let text = match serde_json::to_string(&msg) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::error!("failed to serialize server message: {e}");
-                    continue;
-                }
-            };
-            if ws_sender.send(Message::Text(text.into())).await.is_err() {
-                break;
-            }
-        }
-    });
+    // Server-driven heartbeat. Without it a half-open TCP — laptop went
+    // to sleep, VPN dropped, browser killed without a clean FIN — would
+    // keep the WS task (and the voice-occupancy presence) alive for the
+    // kernel's tcp_retries2 window (Linux default ~15min) or for
+    // tcp_keepalive_time (default ~2h). Result: ghosts sitting in the
+    // channel sidebar long after their owner closed the page.
+    //
+    // 20s ping cadence gives three rounds inside the 60s idle window, so
+    // we tolerate two lost replies before declaring dead. Any inbound
+    // frame (Text, Pong, Ping — tungstenite auto-replies to Pings, we
+    // still see the notification) resets the watchdog, so a chatty
+    // client never trips it.
+    const HEARTBEAT_PING_INTERVAL: Duration = Duration::from_secs(20);
+    const HEARTBEAT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
-    let sfu_pool = state.sfu_pool.clone();
+    let mut ping_interval = tokio::time::interval(HEARTBEAT_PING_INTERVAL);
+    ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // `interval` fires immediately on the first tick; skip it so we don't
+    // ping a freshly-joined client before it's even sent its first frame.
+    ping_interval.tick().await;
 
-    // Main loop: read client messages
-    while let Some(Ok(msg)) = ws_receiver.next().await {
-        let text = match msg {
-            Message::Text(t) => t,
-            Message::Close(_) => break,
-            _ => continue,
-        };
+    let mut watchdog = Box::pin(tokio::time::sleep(HEARTBEAT_IDLE_TIMEOUT));
 
-        // Hot path: trickle ICE alone fires this dozens of times per join.
-        // Keep it at debug so we don't allocate the truncated-string field
-        // for every packet when RUST_LOG=info.
-        tracing::debug!(%participant_id, bytes = text.len(), "WS raw message");
+    loop {
+        tokio::select! {
+            // Bias inbound first: if the client just spoke, reset the
+            // watchdog before the tick branch can fire on the same wake.
+            biased;
 
-        let client_msg: ClientMessage = match serde_json::from_str(&text) {
-            Ok(m) => m,
-            Err(e) => {
-                // Only on parse failure do we pay for the truncated preview.
-                tracing::warn!(
-                    %participant_id,
-                    %e,
-                    raw = %text.chars().take(200).collect::<String>(),
-                    "failed to parse WS message"
-                );
-                ws_send_or_drop(
-                    &ws_tx,
-                    ServerMessage::Error {
-                        message: format!("invalid message: {e}"),
-                    },
-                );
-                continue;
-            }
-        };
+            // 1. Client → server.
+            msg = ws_receiver.next() => {
+                // Any frame (Pong, Ping, Text) proves the link is alive.
+                // Reset BEFORE matching so an Err shortcut doesn't leave
+                // a stale deadline behind.
+                watchdog
+                    .as_mut()
+                    .reset(TokioInstant::now() + HEARTBEAT_IDLE_TIMEOUT);
 
-        match client_msg {
-            ClientMessage::Join { sdp_offer } => {
-                tracing::info!(%participant_id, "received SDP offer, sending to SFU");
-                sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
-                    SfuCommand::Join {
-                        session_id,
-                        participant_id,
-                        user_id: user_id.clone(),
-                        sdp_offer,
-                        reply_tx: ws_tx.clone(),
-                    },
-                );
-
-                // Update state
-                let mut inner = state.inner.lock();
-                if let Some(session) = inner.sessions.get_mut(&session_id)
-                    && let Some(p) = session.participants.get_mut(&participant_id)
-                {
-                    p.state = ParticipantState::Connected;
-                }
-            }
-
-            ClientMessage::Answer { sdp_answer } => {
-                tracing::info!(%participant_id, "received SDP answer");
-                sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
-                    SfuCommand::Answer {
-                        session_id,
-                        participant_id,
-                        sdp_answer,
-                    },
-                );
-            }
-
-            ClientMessage::IceCandidate {
-                candidate,
-                sdp_mid,
-                sdp_mline_index: _,
-            } => {
-                // Trickle ICE is chatty — keep at debug to not flood logs.
-                tracing::debug!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
-                sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
-                    SfuCommand::IceCandidate {
-                        session_id,
-                        participant_id,
-                        candidate,
-                        sdp_mid,
-                    },
-                );
-            }
-
-            ClientMessage::PublishTrack {
-                source,
-                kind,
-                track_id: _,
-            } => {
-                let parsed_source = match source.as_str() {
-                    "camera" => Some(Source::Camera),
-                    "screen" => Some(Source::Screen),
-                    _ => None,
+                let msg = match msg {
+                    Some(Ok(m)) => m,
+                    Some(Err(e)) => {
+                        tracing::debug!(%participant_id, error = %e, "WS read error");
+                        break;
+                    }
+                    None => break,
                 };
-                let parsed_kind = match kind.as_str() {
-                    "audio" => Some(MediaKind::Audio),
-                    "video" => Some(MediaKind::Video),
-                    _ => None,
+
+                let text = match msg {
+                    Message::Text(t) => t,
+                    Message::Close(_) => break,
+                    // Tungstenite has already queued the Pong reply for
+                    // an inbound Ping; nothing else to do.
+                    Message::Ping(_) | Message::Pong(_) => continue,
+                    _ => continue,
                 };
-                match (parsed_source, parsed_kind) {
-                    (Some(source), Some(kind)) => {
-                        tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
+
+                // Hot path: trickle ICE alone fires this dozens of times per join.
+                // Keep it at debug so we don't allocate the truncated-string field
+                // for every packet when RUST_LOG=info.
+                tracing::debug!(%participant_id, bytes = text.len(), "WS raw message");
+
+                let client_msg: ClientMessage = match serde_json::from_str(&text) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        // Only on parse failure do we pay for the truncated preview.
+                        tracing::warn!(
+                            %participant_id,
+                            %e,
+                            raw = %text.chars().take(200).collect::<String>(),
+                            "failed to parse WS message"
+                        );
+                        ws_send_or_drop(
+                            &ws_tx,
+                            ServerMessage::Error {
+                                message: format!("invalid message: {e}"),
+                            },
+                        );
+                        continue;
+                    }
+                };
+
+                match client_msg {
+                    ClientMessage::Join { sdp_offer } => {
+                        tracing::info!(%participant_id, "received SDP offer, sending to SFU");
                         sfu_send_or_drop(
                             &sfu_pool,
                             session_id,
-                            SfuCommand::PublishTrack {
+                            SfuCommand::Join {
                                 session_id,
                                 participant_id,
-                                source,
-                                kind,
+                                user_id: user_id.clone(),
+                                sdp_offer,
+                                reply_tx: ws_tx.clone(),
+                            },
+                        );
+
+                        // Update state
+                        let mut inner = state.inner.lock();
+                        if let Some(session) = inner.sessions.get_mut(&session_id)
+                            && let Some(p) = session.participants.get_mut(&participant_id)
+                        {
+                            p.state = ParticipantState::Connected;
+                        }
+                    }
+
+                    ClientMessage::Answer { sdp_answer } => {
+                        tracing::info!(%participant_id, "received SDP answer");
+                        sfu_send_or_drop(
+                            &sfu_pool,
+                            session_id,
+                            SfuCommand::Answer {
+                                session_id,
+                                participant_id,
+                                sdp_answer,
                             },
                         );
                     }
-                    _ => {
-                        tracing::warn!(%participant_id, %source, %kind, "unknown publish_track kind/source");
+
+                    ClientMessage::IceCandidate {
+                        candidate,
+                        sdp_mid,
+                        sdp_mline_index: _,
+                    } => {
+                        // Trickle ICE is chatty — keep at debug to not flood logs.
+                        tracing::debug!(%participant_id, %candidate, "WS: forwarding ICE candidate to SFU");
+                        sfu_send_or_drop(
+                            &sfu_pool,
+                            session_id,
+                            SfuCommand::IceCandidate {
+                                session_id,
+                                participant_id,
+                                candidate,
+                                sdp_mid,
+                            },
+                        );
                     }
-                }
-            }
 
-            ClientMessage::Offer { sdp_offer } => {
-                tracing::info!(%participant_id, "received client-initiated SDP offer");
-                sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
-                    SfuCommand::ClientOffer {
-                        session_id,
-                        participant_id,
-                        sdp_offer,
-                    },
-                );
-            }
-
-            ClientMessage::MuteChanged { kind, muted } => {
-                tracing::info!(%participant_id, %kind, %muted, "mute changed");
-                {
-                    let mut inner = state.inner.lock();
-                    if let Some(session) = inner.sessions.get_mut(&session_id) {
-                        // Persist mute state so new joiners get it
-                        if let Some(me) = session.participants.get_mut(&participant_id) {
-                            match kind.as_str() {
-                                "video" => me.video_muted = muted,
-                                "audio" => me.audio_muted = muted,
-                                _ => {}
-                            }
-                        }
-                        // In-session broadcast — peers in this call get
-                        // immediate per-track update via SFU's WS.
-                        let msg = ServerMessage::ParticipantMuted {
-                            participant_id,
-                            kind: kind.clone(),
-                            muted,
+                    ClientMessage::PublishTrack {
+                        source,
+                        kind,
+                        track_id: _,
+                    } => {
+                        let parsed_source = match source.as_str() {
+                            "camera" => Some(Source::Camera),
+                            "screen" => Some(Source::Screen),
+                            _ => None,
                         };
-                        for (pid, p) in &session.participants {
-                            if *pid != participant_id {
-                                ws_send_or_drop(&p.ws_tx, msg.clone());
+                        let parsed_kind = match kind.as_str() {
+                            "audio" => Some(MediaKind::Audio),
+                            "video" => Some(MediaKind::Video),
+                            _ => None,
+                        };
+                        match (parsed_source, parsed_kind) {
+                            (Some(source), Some(kind)) => {
+                                tracing::info!(%participant_id, ?source, ?kind, "publish_track hint");
+                                sfu_send_or_drop(
+                                    &sfu_pool,
+                                    session_id,
+                                    SfuCommand::PublishTrack {
+                                        session_id,
+                                        participant_id,
+                                        source,
+                                        kind,
+                                    },
+                                );
+                            }
+                            _ => {
+                                tracing::warn!(%participant_id, %source, %kind, "unknown publish_track kind/source");
                             }
                         }
                     }
-                }
-                // Hub-wide fanout — peers in OTHER voice channels (or just
-                // viewing the sidebar) get the update via NATS → hub →
-                // presence-WS. Without this the mic indicator next to a
-                // participant's name only updates while you're in their call.
-                if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
-                    publish_mute(nats, hub_id, uid, &kind, muted).await;
+
+                    ClientMessage::Offer { sdp_offer } => {
+                        tracing::info!(%participant_id, "received client-initiated SDP offer");
+                        sfu_send_or_drop(
+                            &sfu_pool,
+                            session_id,
+                            SfuCommand::ClientOffer {
+                                session_id,
+                                participant_id,
+                                sdp_offer,
+                            },
+                        );
+                    }
+
+                    ClientMessage::MuteChanged { kind, muted } => {
+                        tracing::info!(%participant_id, %kind, %muted, "mute changed");
+                        {
+                            let mut inner = state.inner.lock();
+                            if let Some(session) = inner.sessions.get_mut(&session_id) {
+                                // Persist mute state so new joiners get it
+                                if let Some(me) = session.participants.get_mut(&participant_id) {
+                                    match kind.as_str() {
+                                        "video" => me.video_muted = muted,
+                                        "audio" => me.audio_muted = muted,
+                                        _ => {}
+                                    }
+                                }
+                                // In-session broadcast — peers in this call get
+                                // immediate per-track update via SFU's WS.
+                                let msg = ServerMessage::ParticipantMuted {
+                                    participant_id,
+                                    kind: kind.clone(),
+                                    muted,
+                                };
+                                for (pid, p) in &session.participants {
+                                    if *pid != participant_id {
+                                        ws_send_or_drop(&p.ws_tx, msg.clone());
+                                    }
+                                }
+                            }
+                        }
+                        // Hub-wide fanout — peers in OTHER voice channels (or just
+                        // viewing the sidebar) get the update via NATS → hub →
+                        // presence-WS. Without this the mic indicator next to a
+                        // participant's name only updates while you're in their call.
+                        if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
+                            publish_mute(nats, hub_id, uid, &kind, muted).await;
+                        }
+                    }
+
+                    ClientMessage::DeafenChanged { deafened } => {
+                        tracing::info!(%participant_id, %deafened, "deafen changed");
+                        let mut inner = state.inner.lock();
+                        if let Some(session) = inner.sessions.get_mut(&session_id) {
+                            if let Some(me) = session.participants.get_mut(&participant_id) {
+                                me.deafened = deafened;
+                            }
+                            // In-session broadcast only. Unlike mute, we don't
+                            // fan deafen out via NATS to the presence WS —
+                            // outside the active voice channel the headphone-off
+                            // icon would be ambient noise (nobody's reading the
+                            // sidebar to find out who can't hear them right now).
+                            // Easy to add later if product asks; one extra
+                            // `publish_deafen` next to `publish_mute` upstairs.
+                            let msg = ServerMessage::ParticipantDeafened {
+                                participant_id,
+                                deafened,
+                            };
+                            for (pid, p) in &session.participants {
+                                if *pid != participant_id {
+                                    ws_send_or_drop(&p.ws_tx, msg.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    ClientMessage::Leave => {
+                        tracing::info!(%participant_id, %user_id, "participant leaving");
+                        sfu_send_or_drop(
+                            &sfu_pool,
+                            session_id,
+                            SfuCommand::Leave {
+                                session_id,
+                                participant_id,
+                            },
+                        );
+                        break;
+                    }
                 }
             }
 
-            ClientMessage::Leave => {
-                tracing::info!(%participant_id, %user_id, "participant leaving");
-                sfu_send_or_drop(
-                    &sfu_pool,
-                    session_id,
-                    SfuCommand::Leave {
-                        session_id,
-                        participant_id,
-                    },
+            // 2. Server → client. SFU pushes ServerMessages onto ws_tx;
+            //    we drain ws_rx here and serialise onto the socket. Same
+            //    path the old spawned send_task used, just inlined so
+            //    ws_sender doesn't have to be moved into a second task
+            //    (which would block us from sending the heartbeat Ping
+            //    from the main loop).
+            outbound = ws_rx.recv() => {
+                let Some(server_msg) = outbound else { break };
+                let text = match serde_json::to_string(&server_msg) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        tracing::error!("failed to serialize server message: {e}");
+                        continue;
+                    }
+                };
+                if ws_sender.send(Message::Text(text.into())).await.is_err() {
+                    break;
+                }
+            }
+
+            // 3. Heartbeat ping. tungstenite auto-handles the inbound
+            //    Pong reply on the peer side; we just need to keep
+            //    traffic flowing both ways so a silent-but-alive client
+            //    (no trickle ICE, no mute toggle) still resets the
+            //    peer's watchdog and ours.
+            _ = ping_interval.tick() => {
+                if ws_sender.send(Message::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
+
+            // 4. Idle watchdog. No inbound frame for HEARTBEAT_IDLE_TIMEOUT
+            //    → peer is gone in a way TCP didn't notice. Bail and let
+            //    cleanup publish the occupancy clear.
+            _ = &mut watchdog => {
+                tracing::warn!(
+                    %participant_id,
+                    "WS heartbeat timeout — assuming dead connection"
                 );
+                metrics::counter!("matehub_video_ws_heartbeat_timeouts_total").increment(1);
                 break;
             }
         }
     }
 
     // Cleanup
-    send_task.abort();
 
     // Send leave to SFU (in case WS dropped without explicit leave)
     sfu_send_or_drop(

@@ -38,6 +38,23 @@ pub fn routes(pool: PgPool) -> Router {
 #[derive(Serialize)]
 struct StatusResponse {
     needs_setup: bool,
+    // When setup is done, surface the hub's identity so unauthenticated UI
+    // (the login page) doesn't have to guess. Snowflake doesn't fit in a JS
+    // number, so `hub_id` ships as a string -- same wire shape every other
+    // i64 takes via `serde_i64::as_string` elsewhere. Absent when the
+    // wizard hasn't run yet.
+    //
+    // Why this lives on /setup/status instead of a new /hubs/current:
+    // the wizard endpoint is the only one a fresh-deploy SPA can call
+    // without an auth token, and a one-shot fetch covering both "is the
+    // app set up?" and "which hub am I?" keeps the unauthenticated
+    // surface area minimal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hub_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hub_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hub_name: Option<String>,
 }
 
 async fn status(State(pool): State<PgPool>) -> Result<Json<StatusResponse>, StatusCode> {
@@ -46,8 +63,36 @@ async fn status(State(pool): State<PgPool>) -> Result<Json<StatusResponse>, Stat
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    if !any_member {
+        return Ok(Json(StatusResponse {
+            needs_setup: true,
+            hub_id: None,
+            hub_slug: None,
+            hub_name: None,
+        }));
+    }
+
+    // Box deploys have exactly one hub. SaaS multi-tenant uses a subdomain
+    // resolver instead and never hits this endpoint with the "give me the
+    // hub" expectation. `LIMIT 1` keeps the response shape predictable if
+    // the multi-tenant case ever leaks here -- the SPA gets *a* hub, not a
+    // crash.
+    type HubRow = (i64, String, String);
+    let hub: Option<HubRow> = sqlx::query_as("SELECT id, slug, name FROM hubs ORDER BY id LIMIT 1")
+        .fetch_optional(&pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (hub_id, hub_slug, hub_name) = match hub {
+        Some((id, slug, name)) => (Some(id.to_string()), Some(slug), Some(name)),
+        None => (None, None, None),
+    };
+
     Ok(Json(StatusResponse {
-        needs_setup: !any_member,
+        needs_setup: false,
+        hub_id,
+        hub_slug,
+        hub_name,
     }))
 }
 
@@ -187,11 +232,40 @@ async fn setup_admin(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // ── 5. #general text channel ──────────────────────────────
+    //
+    // The runtime path (api::channels::create_channel) writes both the
+    // channel row AND a channel_permissions row granting MEMBER_CHANNEL
+    // bits to the everyone group; without that everyone row, non-admin
+    // members hit `chat::access::check_uncached` with no matching row in
+    // `channel_permissions JOIN member_groups` and get 0 effective bits,
+    // i.e. a 403 on /messages. Admin sidesteps it via `is_admin = true`.
+    //
+    // This first-run wizard used to skip the permissions step (the seed
+    // path had it, the runtime path was fixed separately, this one was
+    // missed). On a box install the symptom was: alice signs up as admin
+    // → invites Bob through the new invite-link flow → Bob redeems,
+    // lands in `everyone` + `guests`, but every text channel returns 403
+    // because no group has any allow_bits on it. Both INSERTs live in
+    // the same tx so a #general write that can't be granted MEMBER bits
+    // rolls back the whole hub bootstrap instead of leaving a broken
+    // half-state.
+    let general_channel_id = snowflake::next_id();
     sqlx::query(
         "INSERT INTO channels (id, hub_id, name, type, position) VALUES ($1, $2, 'general', 'text', 0)",
     )
-    .bind(snowflake::next_id())
+    .bind(general_channel_id)
     .bind(hub_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    sqlx::query(
+        "INSERT INTO channel_permissions (channel_id, group_id, allow_bits, deny_bits)
+         VALUES ($1, $2, $3, 0)",
+    )
+    .bind(general_channel_id)
+    .bind(everyone_group_id)
+    .bind(bits::MEMBER_CHANNEL)
     .execute(&mut *tx)
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

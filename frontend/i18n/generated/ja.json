@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "リンクを共有、一時ゲストパスを送信、またはログインを予約します。"
+      ],
+      "Undeafen": [
+        "音声を有効にする"
+      ],
+      "Deafen (mute all)": [
+        "全員ミュート"
+      ],
+      "Volume": [
+        "音量"
+      ],
+      "Audio options for %s": [
+        "%s の音声オプション"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "ハブ識別子を取得できません — サーバー接続を確認してください"
+      ],
+      "Preparing...": [
+        "準備中..."
+      ],
+      "Microphone muted": [
+        "マイクミュート"
+      ],
+      "Deafened": [
+        "音声オフ"
+      ],
+      "Volume muted for you": [
+        "あなたにはミュート"
       ]
     }
   }

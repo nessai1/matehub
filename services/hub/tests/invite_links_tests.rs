@@ -105,6 +105,7 @@ async fn force_expired(invite_token: &str) {
 // ── Create endpoint ──────────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn create_returns_token_and_signup_url() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -134,6 +135,7 @@ async fn create_returns_token_and_signup_url() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn create_rejects_past_expiry() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -155,6 +157,7 @@ async fn create_rejects_past_expiry() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn create_rejects_zero_max_uses() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -176,6 +179,7 @@ async fn create_rejects_zero_max_uses() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn create_forbidden_for_member_without_invite_permission() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -198,6 +202,7 @@ async fn create_forbidden_for_member_without_invite_permission() {
 // ── Preview endpoint ─────────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn preview_returns_link_metadata() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -230,6 +235,7 @@ async fn preview_returns_link_metadata() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn preview_after_expiry_returns_410() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -261,6 +267,7 @@ async fn preview_after_expiry_returns_410() {
 // ── Redeem endpoint ──────────────────────────────────────────────
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_creates_user_and_memberships() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -319,6 +326,7 @@ async fn redeem_creates_user_and_memberships() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn sixth_redeem_on_max_5_returns_410() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -362,6 +370,7 @@ async fn sixth_redeem_on_max_5_returns_410() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_after_expiry_returns_410() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -395,6 +404,7 @@ async fn redeem_after_expiry_returns_410() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_after_revoke_returns_410() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -443,6 +453,7 @@ async fn redeem_after_revoke_returns_410() {
 /// rolls back the increment. If this test ever fails, an attacker could
 /// exhaust a link without registering by spamming colliding usernames.
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn username_collision_does_not_consume_slot() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -492,6 +503,7 @@ async fn username_collision_does_not_consume_slot() {
 }
 
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_validates_input() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -570,6 +582,7 @@ async fn redeem_validates_input() {
 /// exactly 3 succeed and the rest get 410. If this fails, the counter
 /// would over-shoot — turning the cap into a soft limit.
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn concurrent_redeem_respects_cap() {
     let base = common::spawn_app().await;
     let admin = admin_token(&base).await;
@@ -632,6 +645,7 @@ async fn concurrent_redeem_respects_cap() {
 /// "alice\u{202E}" — visually indistinguishable from real "alice" — and
 /// the chat log shows two indistinguishable users.
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_rejects_unicode_display_name_attacks() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();
@@ -694,6 +708,7 @@ async fn redeem_rejects_unicode_display_name_attacks() {
 /// that exists but check the *response code mapping*, which proves the
 /// constraint-name match works).
 #[tokio::test]
+#[serial_test::serial(setup_db)]
 async fn redeem_email_collision_returns_email_taken_code() {
     let base = common::spawn_app().await;
     let client = reqwest::Client::new();

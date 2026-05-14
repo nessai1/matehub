@@ -488,10 +488,10 @@
         "Aucun micro détecté"
       ],
       "Mute": [
-        "Couper le micro"
+        "Couper"
       ],
       "Unmute": [
-        "Activer le micro"
+        "Réactiver"
       ],
       "No camera detected": [
         "Aucune caméra détectée"
@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Partagez un lien, envoyez un pass invité temporaire ou pré-allouez un identifiant."
+      ],
+      "Undeafen": [
+        "Réactiver l'audio"
+      ],
+      "Deafen (mute all)": [
+        "Couper tout l'audio"
+      ],
+      "Volume": [
+        "Volume"
+      ],
+      "Audio options for %s": [
+        "Options audio pour %s"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "Identifiant du hub indisponible — vérifiez la connexion au serveur"
+      ],
+      "Preparing...": [
+        "Préparation..."
+      ],
+      "Microphone muted": [
+        "Microphone coupé"
+      ],
+      "Deafened": [
+        "N'entend rien"
+      ],
+      "Volume muted for you": [
+        "Coupé pour vous"
       ]
     }
   }

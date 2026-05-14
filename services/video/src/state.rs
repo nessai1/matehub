@@ -71,6 +71,13 @@ pub struct Participant {
     pub ws_tx: mpsc::Sender<ServerMessage>,
     pub video_muted: bool,
     pub audio_muted: bool,
+    /// Discord-style "I can't hear the call right now". Doesn't change
+    /// SFU forwarding (audio still flows to the deafened client, their
+    /// browser silences it via a local GainNode), but other participants
+    /// see a headphone-off icon on this user's tile and know not to
+    /// expect a response. Replayed to late joiners alongside the
+    /// audio/video mute states (see `ws.rs` bootstrap-replay).
+    pub deafened: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

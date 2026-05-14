@@ -491,7 +491,7 @@
         "Silenciar"
       ],
       "Unmute": [
-        "Activar micrófono"
+        "Activar"
       ],
       "No camera detected": [
         "No se detectó cámara"
@@ -783,6 +783,33 @@
       ],
       "Share a link, send a temporary guest pass, or pre-allocate a login.": [
         "Comparte un enlace, envía un pase de invitado temporal o reserva un usuario."
+      ],
+      "Undeafen": [
+        "Activar audio"
+      ],
+      "Deafen (mute all)": [
+        "Silenciar todo"
+      ],
+      "Volume": [
+        "Volumen"
+      ],
+      "Audio options for %s": [
+        "Opciones de audio para %s"
+      ],
+      "Hub identifier unavailable — check your connection to the server": [
+        "Identificador de hub no disponible — verifica la conexión al servidor"
+      ],
+      "Preparing...": [
+        "Preparando..."
+      ],
+      "Microphone muted": [
+        "Micrófono silenciado"
+      ],
+      "Deafened": [
+        "Sin audio"
+      ],
+      "Volume muted for you": [
+        "Silenciado para ti"
       ]
     }
   }

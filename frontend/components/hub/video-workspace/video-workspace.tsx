@@ -39,8 +39,10 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     isMicEnabled,
     isCamEnabled,
     isScreenSharing,
+    isDeafened,
     toggleMic,
     toggleCamera,
+    toggleDeafen,
     publishScreen,
     unpublishScreen,
     leaveVoice,
@@ -101,6 +103,11 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
       audioTrack: null,
       videoTrack: localVideoTrack,
       isMicMuted: !isMicEnabled,
+      // Local user's own deafen state lives in the context. Mirrored
+      // here so the self-tile gets the same headphone-off badge other
+      // participants see — useful when the user forgot they deafened
+      // themselves three minutes ago.
+      isDeafened,
       isSpeaking: false, // we don't self-detect speaking
       isLocal: true,
     };
@@ -117,6 +124,7 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
         audioTrack: p.audioTrack,
         videoTrack: p.videoTrack,
         isMicMuted: p.isMicMuted,
+        isDeafened: p.isDeafened,
         isSpeaking: p.isSpeaking,
         isLocal: false,
       };
@@ -146,6 +154,7 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
           audioTrack: null,
           videoTrack: null,
           isMicMuted: true,
+          isDeafened: false,
           isSpeaking: false,
           isLocal: false,
           ringing: true,
@@ -194,6 +203,11 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
     localScreenVideoTrack,
     isCamEnabled,
     isMicEnabled,
+    // Self-deafen flips a context flag that ALSO needs to propagate
+    // into the local tile's `isDeafened` field. Forgetting it here
+    // made self-deafen-with-mic-already-off invisible (mic toggle is
+    // what was incidentally re-triggering the memo before).
+    isDeafened,
     outgoingCallChannelId,
     channelId,
     activeVoiceChannelId,
@@ -388,10 +402,12 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
               isMicEnabled={isMicEnabled}
               isCamEnabled={isCamEnabled}
               isScreenSharing={isScreenSharing}
+              isDeafened={isDeafened}
               onToggleMic={() => void toggleMic()}
               onToggleCamera={() => void toggleCamera()}
               onStartShare={() => setShareDialogOpen(true)}
               onStopShare={() => void unpublishScreen()}
+              onToggleDeafen={toggleDeafen}
               onLeave={leaveVoice}
             />
           </div>

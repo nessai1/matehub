@@ -33,11 +33,29 @@ die()  { printf '%s[up] %s%s\n'   "$ANSI_RED"    "$*" "$ANSI_RESET" >&2; exit 1;
 [[ -f "$COMPOSE_FILE" ]]  || die "$COMPOSE_FILE missing -- archive is incomplete"
 command -v docker >/dev/null 2>&1 || die "docker missing -- run ./setup.sh first"
 
-# Source .env so DOMAIN / MATEHUB_OBSERVABILITY etc. are available to
-# this script for printing URLs. Compose reads the file independently.
-set -a; # shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# Read individual keys from .env without sourcing it.
+#
+# `.env` is the docker-compose key=value format, NOT a bash script. Some
+# values (notably the bcrypt password hash, format `$2a$<cost>$<salt><hash>`)
+# contain literal `$` runs that bash would interpret as positional-arg
+# expansions during `source` -- e.g. `$2` is "the second positional
+# argument", which under `set -u` is unbound and aborts the script.
+# Quoting helps but only if every operator who edits .env knows to do
+# it; safer to never source the file at all.
+read_env() {
+    # Strip CR (if .env was edited on Windows) and trim trailing spaces.
+    # Take the first match for the key; later occurrences win in compose,
+    # but we keep the first as a sane default for our own metadata fields.
+    local key="$1"
+    grep -E "^${key}=" "$ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '\r'
+}
+
+DOMAIN="$(read_env DOMAIN)"
+REGISTRY_URL="$(read_env REGISTRY_URL)"
+MATEHUB_OBSERVABILITY="$(read_env MATEHUB_OBSERVABILITY)"
+OBSERVABILITY_USER="$(read_env OBSERVABILITY_USER)"
+GRAFANA_ADMIN_USER="$(read_env GRAFANA_ADMIN_USER)"
+GRAFANA_ADMIN_PASSWORD="$(read_env GRAFANA_ADMIN_PASSWORD)"
 
 [[ -n "${DOMAIN:-}" ]] || die "DOMAIN empty in .env -- re-run ./setup.sh"
 
