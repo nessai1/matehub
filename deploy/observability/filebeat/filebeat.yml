@@ -16,10 +16,39 @@ filebeat.autodiscover:
     - type: docker
       # Only pick up containers explicitly labelled as matehub services.
       # Keeps the index clean and easy to reason about.
+      #
+      # Note: Filebeat 8.x flattens Docker label keys by translating dots to
+      # underscores, so the label `matehub.service` is exposed as
+      # `docker.container.labels.matehub_service`. Using the dotted form
+      # silently matches nothing (Filebeat parses each dot as a nested-field
+      # separator, and there's no `matehub` object in labels — only the
+      # literal flattened key). Symptom: autodiscover starts, 0 inputs
+      # loaded, 0 harvesters, empty ES — exactly what we hit on alpha002.
       templates:
+        # We tried label-based matching first (`matehub.service` is set
+        # on every matehub-* compose service). Three flavours all failed
+        # silently with "Enabled inputs: 0" and no harvesters:
+        #
+        #   docker.container.labels.matehub.service    — dots parsed as path
+        #   docker.container.labels.matehub_service    — namespace mismatch
+        #   container.labels.matehub_service           — same
+        #
+        # Filebeat 8.15 docker autodiscover does something weird around
+        # dotted label keys we couldn't pin down. Match on the compose
+        # container-name prefix instead: it's `matehub-box-<service>-N`
+        # for every service we care about, and `docker.container.name`
+        # works cleanly in condition.
+        #
+        # One template entry per service so we can hard-code the `service`
+        # field name without a regex/script processor (those need the JS
+        # plugin which isn't always built in). Verbose but explicit.
+        #
+        # Trade-off: if the compose project name ever changes from
+        # `matehub-box`, this stops matching. Update the prefixes below
+        # if you rename the project. New service? Add an entry here too.
         - condition:
-            contains:
-              docker.container.labels.matehub.service: ""
+            regexp:
+              docker.container.name: "^matehub-box-hub-"
           config:
             - type: container
               paths:
@@ -30,11 +59,78 @@ filebeat.autodiscover:
                     target: ""
                     overwrite_keys: true
                     add_error_key: true
-                # Pull labels into top-level fields for easy aggregation.
                 - add_fields:
                     target: ""
                     fields:
-                      service: ${data.docker.container.labels.matehub.service}
+                      service: hub
+        - condition:
+            regexp:
+              docker.container.name: "^matehub-box-chat-"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: true
+                - add_fields:
+                    target: ""
+                    fields:
+                      service: chat
+        - condition:
+            regexp:
+              docker.container.name: "^matehub-box-video-"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: true
+                - add_fields:
+                    target: ""
+                    fields:
+                      service: video
+        - condition:
+            regexp:
+              docker.container.name: "^matehub-box-transcoder-"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: true
+                - add_fields:
+                    target: ""
+                    fields:
+                      service: transcoder
+        - condition:
+            regexp:
+              docker.container.name: "^matehub-box-frontend-"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.docker.container.id}/*.log
+              processors:
+                - decode_json_fields:
+                    fields: ["message"]
+                    target: ""
+                    overwrite_keys: true
+                    add_error_key: true
+                - add_fields:
+                    target: ""
+                    fields:
+                      service: frontend
 
 # Fallback for locally-run (host) services shipping to filebeat via UDP/TCP:
 # uncomment if needed. Default path is docker-only.
