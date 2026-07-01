@@ -239,6 +239,7 @@ export function CallDebugPanel({ client }: CallDebugPanelProps) {
             onClear={clear}
             onClose={() => setPos((p) => ({ ...p, open: false }))}
           />
+          <CallIdBar sessionId={diagnostics?.sessionId ?? null} />
           <DebugSummary diagnostics={diagnostics} lookupName={lookupName} />
           <DebugLogFeed logs={logs} />
         </div>
@@ -307,6 +308,44 @@ function PanelHeader({
         </IconBtn>
       </div>
     </div>
+  );
+}
+
+// ── Call ID bar ────────────────────────────────────────────────────────────
+// The call id (session UUID) is the one thing to hand to whoever's debugging:
+// with ROOM_DEBUG on, it keys the full server+client capture. Prominent and
+// one-click copyable so it's never fished out of the JSON dump.
+
+function CallIdBar({ sessionId }: { sessionId: string | null }) {
+  const [copied, setCopied] = useState(false);
+  if (!sessionId) return null;
+  const copy = () => {
+    navigator.clipboard
+      .writeText(sessionId)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {});
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={t("Copy call ID")}
+      className="flex h-7 shrink-0 select-none items-center gap-2 px-3 text-left transition-colors hover:bg-white/5"
+      style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}
+    >
+      <span className="text-[10px] uppercase tracking-wide text-slate-400">
+        {t("Call ID")}
+      </span>
+      <span className="font-mono text-[11px] text-slate-200">{sessionId}</span>
+      {copied ? (
+        <Check className="ml-auto h-3.5 w-3.5 text-emerald-400" />
+      ) : (
+        <Copy className="ml-auto h-3.5 w-3.5 text-slate-400" />
+      )}
+    </button>
   );
 }
 

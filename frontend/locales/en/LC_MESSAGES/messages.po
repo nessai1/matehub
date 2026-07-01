@@ -844,3 +844,9 @@ msgstr "Unmute"
 
 msgid "Mute"
 msgstr "Mute"
+
+msgid "Call ID"
+msgstr "Call ID"
+
+msgid "Copy call ID"
+msgstr "Copy call ID"

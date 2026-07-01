@@ -23,31 +23,90 @@
 //! filter applies (e.g. `info,sqlx=warn` for Postgres-heavy services).
 
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
+
+/// An extra capture sink layered on top of the normal stdout subscriber.
+///
+/// Used by the video service's `ROOM_DEBUG` mode to tee a debug-level JSON
+/// stream into a per-call capture file while stdout keeps its usual `info`
+/// verbosity. The two layers carry independent filters, so the capture file
+/// can be noisier than the console without changing operator-facing output.
+pub struct CaptureLayer {
+    /// `EnvFilter` directive for the capture layer, e.g.
+    /// `"matehub_video=debug,str0m=warn"`. Independent of `RUST_LOG`.
+    pub filter: String,
+    /// Where formatted JSON events are written (a non-blocking sink).
+    pub writer: BoxMakeWriter,
+}
 
 /// Initialize the global tracing subscriber. Call once at process start,
 /// before any log macros fire. Subsequent calls panic (subscriber is
 /// install-once).
 pub fn init_tracing(default_filter: &str) {
+    init_tracing_with_capture(default_filter, None);
+}
+
+/// Like [`init_tracing`], but optionally adds a second, independently-filtered
+/// JSON layer (see [`CaptureLayer`]). With `capture == None` the setup is
+/// byte-for-byte identical to the historical `init_tracing` — services that
+/// don't opt in are completely unaffected.
+pub fn init_tracing_with_capture(default_filter: &str, capture: Option<CaptureLayer>) {
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
 
     let format = std::env::var("LOG_FORMAT").unwrap_or_default();
 
+    let Some(capture) = capture else {
+        // No capture sink: preserve the exact original single-subscriber
+        // setup so hub/chat/etc. keep identical behaviour.
+        if format == "json" {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .json()
+                // Hoist fields from the event itself to top-level so Kibana
+                // shows them as first-class columns without a parse step.
+                .flatten_event(true)
+                // Include the current-span fields (call_id, hub_id,
+                // request_id, etc). `with_span_list(false)` keeps only the
+                // innermost span — we don't need the whole stack per record.
+                .with_current_span(true)
+                .with_span_list(false)
+                .init();
+        } else {
+            tracing_subscriber::fmt().with_env_filter(env_filter).init();
+        }
+        return;
+    };
+
+    // Capture enabled: layered registry. The capture layer always emits JSON
+    // (machine-readable, span fields hoisted) at its own filter; the stdout
+    // layer keeps the operator-chosen format and filter. Per-layer filters
+    // mean stdout stays `info` while the file gets `debug`.
+    use tracing_subscriber::prelude::*;
+    let capture_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .flatten_event(true)
+        .with_current_span(true)
+        .with_span_list(false)
+        .with_writer(capture.writer)
+        .with_filter(EnvFilter::new(capture.filter));
+
+    let registry = tracing_subscriber::registry().with(capture_layer);
     if format == "json" {
-        tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .json()
-            // Hoist fields from the event itself to top-level so Kibana
-            // shows them as first-class columns without a parse step.
-            .flatten_event(true)
-            // Include the current-span fields (call_id, hub_id, request_id,
-            // etc). `with_span_list(false)` keeps only the innermost span —
-            // we don't need the whole stack in each record.
-            .with_current_span(true)
-            .with_span_list(false)
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .flatten_event(true)
+                    .with_current_span(true)
+                    .with_span_list(false)
+                    .with_filter(env_filter),
+            )
             .init();
     } else {
-        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+        registry
+            .with(tracing_subscriber::fmt::layer().with_filter(env_filter))
+            .init();
     }
 }
 

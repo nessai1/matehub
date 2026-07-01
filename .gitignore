@@ -28,6 +28,10 @@ Thumbs.db
 # Logs
 *.log
 
+# ROOM_DEBUG=1 per-call capture output (server ndjson + client bundles).
+# Local debugging artifacts — never committed.
+room-debug/
+
 # Box-deploy credential. Lives at scripts/box/puller.json for local
 # pack-archive runs; the file itself is a YC SA pull-only key file and
 # must NEVER be committed. CI builds materialise it from the

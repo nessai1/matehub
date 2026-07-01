@@ -819,3 +819,9 @@ msgstr "ミュート解除"
 
 msgid "Mute"
 msgstr "ミュート"
+
+msgid "Call ID"
+msgstr "通話ID"
+
+msgid "Copy call ID"
+msgstr "通話IDをコピー"

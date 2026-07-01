@@ -24,7 +24,8 @@ pub async fn spawn_app() -> String {
     });
 
     // No NATS in tests — voice-occupancy publish is a no-op.
-    let state = matehub_video::state::AppState::new(pool, None);
+    // No ROOM_DEBUG capture in tests either.
+    let state = matehub_video::state::AppState::new(pool, None, None);
     let app = matehub_video::api::routes(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

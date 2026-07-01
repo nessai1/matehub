@@ -12,10 +12,24 @@ export interface DebugLogEntry {
 const MAX_LOG_ENTRIES = 500;
 const DIAGNOSTICS_POLL_MS = 1000;
 
+/** Self-describing debug snapshot — identical shape whether copied to the
+ *  clipboard or uploaded to the server's ROOM_DEBUG sink. */
+export interface DebugBundle {
+  userId: string | null;
+  sessionId: string | null;
+  participantId: string | null;
+  timestamp: string;
+  userAgent: string | null;
+  diagnostics: VideoDiagnostics | null;
+  logs: DebugLogEntry[];
+}
+
 interface UseVideoDebugReturn {
   logs: DebugLogEntry[];
   diagnostics: VideoDiagnostics | null;
-  /** Dump {timestamp, diagnostics, logs} as JSON into clipboard. */
+  /** Assemble the current {identity, diagnostics, logs} snapshot. */
+  buildBundle: () => DebugBundle;
+  /** Dump the snapshot as JSON into clipboard. */
   copyToClipboard: () => Promise<boolean>;
   /** Wipe the collected log ring buffer. */
   clear: () => void;
@@ -89,11 +103,11 @@ export function useVideoDebug(client: VideoClient | null): UseVideoDebugReturn {
     };
   }, [client, append]);
 
-  const copyToClipboard = useCallback(async () => {
+  const buildBundle = useCallback((): DebugBundle => {
     const d = diagRef.current;
-    const payload = {
-      // Hoist identity to the top so a pasted dump answers "whose is this?"
-      // before you even scroll.
+    return {
+      // Hoist identity to the top so a pasted/uploaded dump answers "whose is
+      // this?" before you even scroll.
       userId: d?.userId ?? null,
       sessionId: d?.sessionId ?? null,
       participantId: d?.participantId ?? null,
@@ -102,21 +116,24 @@ export function useVideoDebug(client: VideoClient | null): UseVideoDebugReturn {
       diagnostics: d,
       logs: logsRef.current,
     };
+  }, []);
+
+  const copyToClipboard = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(buildBundle(), null, 2));
       return true;
     } catch (e) {
       console.error("[useVideoDebug] clipboard copy failed", e);
       return false;
     }
-  }, []);
+  }, [buildBundle]);
 
   const clear = useCallback(() => {
     logsRef.current = [];
     setLogs([]);
   }, []);
 
-  return { logs, diagnostics, copyToClipboard, clear };
+  return { logs, diagnostics, buildBundle, copyToClipboard, clear };
 }
 
 // MediaStreamTrack / MediaStream don't serialize — strip them down to ids

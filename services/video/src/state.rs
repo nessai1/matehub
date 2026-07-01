@@ -34,6 +34,10 @@ pub struct AppState {
     /// service. `None` when NATS isn't reachable — video still works, but the
     /// sidebar roster falls back to polling.
     pub nats: Option<async_nats::Client>,
+    /// Per-call debug capture. `Some` only when `ROOM_DEBUG=1`. The HTTP
+    /// bundle endpoint uses it to persist client diagnostics; the session
+    /// create response advertises its presence so clients know to upload.
+    pub debug_capture: Option<Arc<crate::debug_capture::DebugCapture>>,
 }
 
 pub struct AppStateInner {
@@ -42,7 +46,11 @@ pub struct AppStateInner {
 }
 
 impl AppState {
-    pub fn new(sfu_pool: SfuPool, nats: Option<async_nats::Client>) -> Self {
+    pub fn new(
+        sfu_pool: SfuPool,
+        nats: Option<async_nats::Client>,
+        debug_capture: Option<Arc<crate::debug_capture::DebugCapture>>,
+    ) -> Self {
         Self {
             inner: Arc::new(Mutex::new(AppStateInner {
                 sessions: HashMap::new(),
@@ -50,6 +58,7 @@ impl AppState {
             })),
             sfu_pool,
             nats,
+            debug_capture,
         }
     }
 }
@@ -95,6 +104,10 @@ pub struct SessionResponse {
     pub session_id: SessionId,
     pub ws_url: String,
     pub created: bool,
+    /// True when the server runs with `ROOM_DEBUG=1`. The client uploads its
+    /// debug bundle to `/v1/sessions/{id}/debug` only when this is set, so a
+    /// normal (non-debug) deployment sees no extra traffic.
+    pub debug_capture: bool,
 }
 
 #[derive(Serialize)]
