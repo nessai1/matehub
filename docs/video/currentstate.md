@@ -6,6 +6,61 @@
 
 ---
 
+## Update (2026-07-02): forwarding → RTP passthrough — DONE, проверено живыми звонками
+
+Медиа-форвардинг переведён со str0m **sample-mode** (`Event::MediaData` +
+`Writer::write`) на **RTP passthrough** (`Rtc::builder().set_rtp_mode(true)`,
+`Event::RtpPacket` на входе, `StreamTx::write_rtp` на выходе). Контрольный
+звонок c4896cd7: 30fps стабильно, `packetsLost:0`, `nackCount:0`, `pliCount:0`.
+
+**Почему:** sample-mode депакетизировал и **заново пакетизировал** VP8/H264 на
+egress, ломая межкадровые ссылки → кросс-браузерные артефакты декодирования при
+нулевой потере пакетов. RTP passthrough релэит payload издателя
+**byte-identical**.
+
+**v1 — single-layer.** Полная история миграции (8 слоёв багов, снятых по
+ROOM_DEBUG-звонкам) — в `rtp-passthrough-handoff.md`. Инварианты, на которых
+стоит форвардинг (`sfu/mod.rs::forward_rtp` + event loop):
+
+- **PT ремап** через `codec_config().match_params()` — каждый Rtc негоциирует
+  PT независимо; запись с чужим PT → str0m молча дропает («Media is missing
+  PT») = чёрное видео.
+- **Seq offset-rewrite** (`TrackOut::egress_seq_base`):
+  `egress = START + (ingress_ext_seq − base)`. Сохраняет порядок и
+  относительные позиции (str0m отдаёт пакеты в порядке ПРИБЫТИЯ, де-RTX'нутые
+  резенды приходят поздно — счётчик по приходу ломал сборку кадров).
+- **`StreamTx::set_unpaced(true)`** перед записью — дефолтный leaky-bucket
+  пейсер душит релэй без BWE-рейта.
+- **Header extensions НЕ пробрасываются** — MID/RID/TWCC/abs-send-time
+  транспортно-скоуплены; протухший MID издателя после `remote_acked_ssrc`
+  заставлял demuxer Chrome перепривязывать SSRC → видео умирало через ~1с.
+  Копируются только end-to-end: audio_level, voice_activity,
+  video_orientation, video_content_type.
+- **Poll-контракт str0m** (два бага contract violation):
+  (а) `poll_output` — консюмящая очередь; дренаж, выбрасывающий
+  `Output::Event`, съедает чужие RtpPacket/KeyframeRequest → форвардинг
+  пишет в `pending_flush`, дренируемый через полный обработчик
+  (`flush_pending_writes`); (б) rtp_mode держит входящий пакет в
+  **однослотовом** `pending_packet` — обязателен poll до Timeout после
+  КАЖДОГО `handle_input` (`poll_target` сразу за `handle_command`), иначе
+  батч датаграмм затирает сам себя (терялось ~2/3 медиа, невидимо для
+  RR/NACK).
+- PLI идёт через `StreamRx::request_keyframe` (`direct_api`), не Writer;
+  троттлится (`request_keyframe_throttled`).
+
+**Что осталось:**
+- `pkt.payload.clone()` на каждого подписчика (bug #4 ниже) → Phase 2:
+  `Arc<[u8]>`.
+- Simulcast layer-select (`selected_rid`/`next_layer` живут, но в v1 форвард их
+  не применяет) → step 2: per-subscriber выбор SSRC + RTP munging.
+- SDK: публиковать треки через `addTransceiver(direction:'sendonly')` — сейчас
+  join-ответ делает publish-m-line'ы sendrecv → фантомные ontrack у клиента
+  (безвредны, SDK их игнорит).
+- Закрыт open-question #1 из `str0m-analysis.md`: passthrough это
+  `set_rtp_mode(true)`, а **не** `enable_raw_packets`.
+
+---
+
 ## 1. Что реализовано фактически
 
 ### Stage 1 (MVP) — DONE

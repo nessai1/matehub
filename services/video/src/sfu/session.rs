@@ -151,19 +151,17 @@ impl SfuSession {
         let Some(publisher) = self.participants.get_mut(&publisher_pid) else {
             return false;
         };
-        let Some(mut writer) = publisher.rtc.writer(publisher_mid) else {
+        // RTP mode: keyframe requests go through the receive stream, not the
+        // Writer API (which is disabled). `request_keyframe` is infallible —
+        // it just arms a pending PLI/FIR that str0m emits on the next poll.
+        let mut da = publisher.rtc.direct_api();
+        let Some(rx) = da.stream_rx_by_mid(publisher_mid, None) else {
             return false;
         };
-        if writer
-            .request_keyframe(None, KeyframeRequestKind::Pli)
-            .is_ok()
-        {
-            self.last_keyframe_at
-                .insert((publisher_pid, publisher_mid), now);
-            true
-        } else {
-            false
-        }
+        rx.request_keyframe(KeyframeRequestKind::Pli);
+        self.last_keyframe_at
+            .insert((publisher_pid, publisher_mid), now);
+        true
     }
 
     /// Drop every forwarding entry touching `gone` — as publisher (key) or
@@ -266,14 +264,6 @@ pub struct TrackIn {
     /// screen tracks are explicitly marked via a `publish_track` signal
     /// arriving before the SDP offer (§5.2 screen-share design doc).
     pub source: Source,
-    /// Has the high simulcast layer (rid="h") ever been received from the
-    /// publisher? Flips true on the first `h` packet and never goes back.
-    /// Drives the start-up fallback: while `h` hasn't shown up yet (BWE
-    /// hasn't ramped on the sender), the SFU forwards `l` so subscribers
-    /// see something instead of a black screen for the first few seconds.
-    /// Once `h` is live we drop `l` again — adaptive per-subscriber layer
-    /// pick is a separate, larger feature.
-    pub seen_high_layer: bool,
     /// Smoothed loudness on a 0..127 scale (higher = louder). Built from
     /// the audio-level RTP header extension (RFC 6464). Only updated for
     /// audio tracks; left at 0 for video. Drives the top-K speaker filter
@@ -298,6 +288,18 @@ pub struct TrackOut {
     /// estimates.
     pub selected_rid: Option<&'static str>,
     pub last_rid_change_at: Instant,
+    /// Base for egress RTP sequence rewrite: the publisher's extended seq_no of
+    /// the FIRST packet forwarded on this stream. Egress seq is then
+    /// `EGRESS_SEQ_START + (pkt.seq_no - base)`, which PRESERVES the publisher's
+    /// sequence order and relative gaps while rebasing to a clean low start.
+    ///
+    /// Why not a per-packet counter: str0m's RTP-mode ingress delivers packets
+    /// in ARRIVAL order (no reorder buffer), and de-RTX'd retransmissions arrive
+    /// late. A delivery-order counter would assign a late-but-lower-seq packet a
+    /// higher egress seq, breaking the seq↔frame relationship — the receiver
+    /// can't reassemble multi-packet frames (frozen video, PLI storm). Rebasing
+    /// off the original seq keeps out-of-order packets orderable at the receiver.
+    pub egress_seq_base: Option<u64>,
 }
 
 impl TrackOut {
@@ -512,6 +514,7 @@ mod tests {
             state: TrackOutState::ToOpen,
             selected_rid: None,
             last_rid_change_at: Instant::now(),
+            egress_seq_base: None,
         };
         assert_eq!(t.open_mid(), None);
 
