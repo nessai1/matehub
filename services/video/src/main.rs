@@ -1,10 +1,12 @@
 mod api;
 mod config;
+mod debug_capture;
 mod sfu;
 mod signaling;
 mod state;
 
 use std::net::UdpSocket;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -12,6 +14,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use config::Config;
+use debug_capture::DebugCapture;
 use sfu::SfuPool;
 use state::AppState;
 
@@ -22,7 +25,10 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    matehub_common::observability::init_tracing("info,str0m=warn");
+    // ROOM_DEBUG=1 turns on per-call capture: a debug-level JSON tee of server
+    // logs plus an endpoint for client debug bundles, both keyed by call id.
+    // Off by default — zero overhead and the tracing setup is unchanged.
+    let debug_capture = init_observability();
 
     let config = Config::from_env();
 
@@ -82,7 +88,7 @@ async fn main() -> Result<()> {
     );
     tracing::info!(shards = num_shards, cmd_buffer, "SFU pool started");
 
-    let state = AppState::new(sfu_pool, nats);
+    let state = AppState::new(sfu_pool, nats, debug_capture);
 
     let (metrics_layer, metrics_handle) = matehub_common::observability::metrics_layer_and_handle();
 
@@ -111,4 +117,50 @@ async fn main() -> Result<()> {
 
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Install tracing and, when `ROOM_DEBUG=1`, the per-call capture pipeline.
+/// Returns the capture handle (for the HTTP bundle endpoint) or `None`.
+///
+/// Env:
+/// * `ROOM_DEBUG=1` — enable capture.
+/// * `ROOM_DEBUG_DIR` — capture root (default `room-debug`).
+/// * `ROOM_DEBUG_FILTER` — capture-file log filter (default
+///   `matehub_video=debug,str0m=warn`).
+fn init_observability() -> Option<Arc<DebugCapture>> {
+    const STDOUT_FILTER: &str = "info,str0m=warn";
+
+    if std::env::var("ROOM_DEBUG").as_deref() != Ok("1") {
+        matehub_common::observability::init_tracing(STDOUT_FILTER);
+        return None;
+    }
+
+    let dir = std::env::var("ROOM_DEBUG_DIR").unwrap_or_else(|_| "room-debug".into());
+    // Run id keeps each process's server log in its own file so restarts don't
+    // interleave. Time-based; chrono is already a dependency.
+    let run_id = chrono::Utc::now().format("%Y%m%dT%H%M%S%3fZ").to_string();
+
+    match DebugCapture::init(PathBuf::from(&dir), &run_id) {
+        Ok((handle, writer)) => {
+            let filter = std::env::var("ROOM_DEBUG_FILTER")
+                .unwrap_or_else(|_| "matehub_video=debug,str0m=warn".into());
+            matehub_common::observability::init_tracing_with_capture(
+                STDOUT_FILTER,
+                Some(matehub_common::observability::CaptureLayer { filter, writer }),
+            );
+            tracing::warn!(
+                dir = %handle.dir().display(),
+                run_id,
+                "ROOM_DEBUG capture ENABLED — per-call server+client bundles will be written"
+            );
+            Some(handle)
+        }
+        Err(e) => {
+            // Can't open the capture dir — fall back to normal logging rather
+            // than refuse to start. Loud about it so it's not a silent miss.
+            matehub_common::observability::init_tracing(STDOUT_FILTER);
+            tracing::error!(dir = %dir, error = %e, "ROOM_DEBUG requested but capture init failed — running without capture");
+            None
+        }
+    }
 }

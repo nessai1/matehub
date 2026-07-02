@@ -655,6 +655,9 @@ async fn handle_ws(
                 if session.participants.is_empty() {
                     let session = inner.sessions.remove(&session_id).unwrap();
                     inner.channel_to_session.remove(&session.channel_id);
+                    if let Some(capture) = state.debug_capture.as_ref() {
+                        capture.forget_session(session_id);
+                    }
                     metrics::counter!("matehub_video_session_destroys_total").increment(1);
                     tracing::info!("session destroyed (last participant left)");
                 }

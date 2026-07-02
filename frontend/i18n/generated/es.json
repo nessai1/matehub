@@ -810,6 +810,12 @@
       ],
       "Volume muted for you": [
         "Silenciado para ti"
+      ],
+      "Call ID": [
+        "ID de llamada"
+      ],
+      "Copy call ID": [
+        "Copiar ID de llamada"
       ]
     }
   }

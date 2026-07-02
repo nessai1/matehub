@@ -819,3 +819,9 @@ msgstr "Réactiver"
 
 msgid "Mute"
 msgstr "Couper"
+
+msgid "Call ID"
+msgstr "ID d'appel"
+
+msgid "Copy call ID"
+msgstr "Copier l'ID d'appel"

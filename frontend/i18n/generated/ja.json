@@ -810,6 +810,12 @@
       ],
       "Volume muted for you": [
         "あなたにはミュート"
+      ],
+      "Call ID": [
+        "通話ID"
+      ],
+      "Copy call ID": [
+        "通話IDをコピー"
       ]
     }
   }

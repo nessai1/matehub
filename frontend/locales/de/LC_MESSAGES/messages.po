@@ -819,3 +819,9 @@ msgstr "Stummschaltung aufheben"
 
 msgid "Mute"
 msgstr "Stummschalten"
+
+msgid "Call ID"
+msgstr "Anruf-ID"
+
+msgid "Copy call ID"
+msgstr "Anruf-ID kopieren"

@@ -819,3 +819,9 @@ msgstr "Включить звук"
 
 msgid "Mute"
 msgstr "Выключить звук"
+
+msgid "Call ID"
+msgstr "ID звонка"
+
+msgid "Copy call ID"
+msgstr "Скопировать ID звонка"

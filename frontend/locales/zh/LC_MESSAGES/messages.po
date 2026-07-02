@@ -819,3 +819,9 @@ msgstr "取消静音"
 
 msgid "Mute"
 msgstr "静音"
+
+msgid "Call ID"
+msgstr "通话 ID"
+
+msgid "Copy call ID"
+msgstr "复制通话 ID"

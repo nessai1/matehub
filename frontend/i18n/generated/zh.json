@@ -810,6 +810,12 @@
       ],
       "Volume muted for you": [
         "对你静音"
+      ],
+      "Call ID": [
+        "通话 ID"
+      ],
+      "Copy call ID": [
+        "复制通话 ID"
       ]
     }
   }

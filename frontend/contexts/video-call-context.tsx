@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { useVideoClient } from "@/hooks/use-video-client";
 import { ParticipantVolumeStore } from "@/hooks/use-participant-volume";
+import { DebugUploader } from "@/components/hub/debug-uploader";
 import { useAuth } from "@/lib/auth";
 import { playCallSound } from "@/lib/call-sounds";
 import { t } from "@/i18n";
@@ -87,6 +88,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   );
   // Session id allocated by the SFU for that channel.
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // True when the video service runs with ROOM_DEBUG=1 (reported on session
+  // create). Gates the per-call debug bundle upload — off in normal
+  // deployments, so no extra traffic.
+  const [debugCapture, setDebugCapture] = useState(false);
   // Set when SFU kicks us via force_disconnected; useEffect below reacts
   // to it (call leaveVoice + toast). Going through state — instead of
   // calling leaveVoice directly from the SDK callback — keeps the closure
@@ -166,6 +171,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
         }
         const data = await resp.json();
         setSessionId(data.session_id);
+        setDebugCapture(data.debug_capture === true);
         setActiveVoiceChannelId(channelId);
         playCallSound("join_call");
       } catch (e) {
@@ -180,6 +186,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     playCallSound("leave_call");
     vc.disconnect();
     setSessionId(null);
+    setDebugCapture(false);
     setActiveVoiceChannelId(null);
     // Reset per-call deafen + volume state. Carrying them between calls
     // would surprise the user — "why is X quiet in this completely
@@ -298,6 +305,15 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   return (
     <VideoCallContext.Provider value={value}>
+      {/* Headless: uploads per-call debug bundles only when the server runs
+          with ROOM_DEBUG. Mounted here (not in the panel) so capture runs
+          regardless of whether anyone opened the debug panel. */}
+      <DebugUploader
+        client={vc.client}
+        sessionId={sessionId}
+        serverUrl={VIDEO_SERVER_URL}
+        enabled={debugCapture}
+      />
       {children}
     </VideoCallContext.Provider>
   );
