@@ -111,6 +111,13 @@ async fn upload_debug_bundle(
     let Some(capture) = state.debug_capture.as_ref() else {
         return StatusCode::NOT_FOUND;
     };
+    // Only accept bundles for sessions that actually exist: the route is
+    // unauthenticated, so without this gate any caller could mint directories
+    // and up-to-4MiB files under arbitrary UUIDs (and grow the capture's
+    // per-(session, participant) seq map) for as long as ROOM_DEBUG is on.
+    if !state.inner.lock().sessions.contains_key(&session_id) {
+        return StatusCode::NOT_FOUND;
+    }
     let participant = participant_id_from_bundle(&body).unwrap_or_else(|| "unknown".to_string());
     capture.record_client_bundle(session_id, &participant, body.to_vec());
     StatusCode::NO_CONTENT

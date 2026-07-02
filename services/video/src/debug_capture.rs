@@ -126,6 +126,13 @@ impl DebugCapture {
             metrics::counter!("matehub_video_room_debug_drops_total").increment(1);
         }
     }
+
+    /// Evict a destroyed session's upload counters. Without this the
+    /// per-(session, participant) seq map only ever grows — one entry per
+    /// unique pair for the life of the process.
+    pub fn forget_session(&self, session: Uuid) {
+        self.seq.lock().retain(|(sid, _), _| *sid != session);
+    }
 }
 
 /// Drains the capture queue and persists everything. Runs until the channel
@@ -239,8 +246,15 @@ impl Drop for LineWriter {
             return;
         }
         let buf = std::mem::take(&mut self.buf);
-        // Drop-on-full: never block the thread that emitted the event.
-        let _ = self.tx.try_send(CaptureMsg::ServerLine(buf));
+        // Drop-on-full: never block the thread that emitted the event. Server
+        // lines dominate the queue (per-packet `video rtp in/out`), so a
+        // silent drop shows up as a gap in server-*.ndjson that reads exactly
+        // like "the SFU never forwarded these packets" — count it, so a
+        // capture with drops_total > 0 is known-incomplete. Full only:
+        // Disconnected during shutdown is not a lost line worth alarming on.
+        if let Err(TrySendError::Full(_)) = self.tx.try_send(CaptureMsg::ServerLine(buf)) {
+            metrics::counter!("matehub_video_room_debug_drops_total").increment(1);
+        }
     }
 }
 

@@ -61,7 +61,17 @@ export function DebugUploader({
     };
 
     const interval = setInterval(() => post(false), UPLOAD_INTERVAL_MS);
+    // React does NOT run effect cleanups on page unload — on tab close the
+    // document just dies, so the cleanup's post(true) below only covers
+    // in-app leave (unmount). `pagehide` is the reliable unload signal
+    // (fires on tab close, navigation and bfcache entry); keepalive lets
+    // the request outlive the document. Without this we lose the final ~5s
+    // of logs + the last diagnostics snapshot — usually the most
+    // interesting part of a call that died together with its tab.
+    const onPageHide = () => post(true);
+    window.addEventListener("pagehide", onPageHide);
     return () => {
+      window.removeEventListener("pagehide", onPageHide);
       clearInterval(interval);
       post(true);
     };

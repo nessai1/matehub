@@ -20,9 +20,7 @@ use uuid::Uuid;
 
 use crate::signaling::ServerMessage;
 
-pub use session::{
-    SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState, next_layer,
-};
+pub use session::{SfuParticipant, SfuSession, Source, TrackIn, TrackOut, TrackOutState};
 
 /// Drop-on-full send to a per-WS channel. Same intent as the helper in
 /// api/ws.rs — slow consumers don't back-pressure the media thread. Kept
@@ -40,9 +38,12 @@ fn ws_try_send(tx: &mpsc::Sender<ServerMessage>, msg: ServerMessage) {
 pub type ParticipantId = Uuid;
 pub type SessionId = Uuid;
 
-/// Starting RTP sequence number for every rewritten egress stream. Small so the
-/// first packet has ROC 0 (str0m warns on a non-zero-ROC first write_rtp).
-const EGRESS_SEQ_START: u64 = 1;
+/// Starting RTP sequence number for every rewritten egress stream. The 10_000
+/// headroom absorbs ingress reorder that extends BELOW the first-arrived seq
+/// (str0m's `extend_u16` misorder window is 100) without clamping; still well
+/// under 65_536 so the first write has ROC 0 (str0m warns on non-zero-ROC
+/// first `write_rtp`, and SRTP would need out-of-band ROC signalling).
+const EGRESS_SEQ_START: u64 = 10_000;
 
 /// Command sent from WebSocket handler to the SFU loop.
 #[derive(Debug)]
@@ -357,14 +358,12 @@ pub struct SfuShard {
     /// Media forwarding stats (logged periodically)
     stats_audio_fwd: u64,
     stats_video_fwd: u64,
-    /// Diagnostics for the artifact hunt (ROOM_DEBUG capture reads these off
-    /// the periodic stats line). `discontig` = video frames str0m emitted with
-    /// `contiguous == false` (an ingest gap on publisher→SFU — the SFU then
-    /// re-numbers egress cleanly, so the receiver sees no loss yet decodes a
-    /// broken reference → artifacts). `write_err` = `writer.write` failures.
-    /// A non-zero `discontig` with artifacts confirms laundered ingest loss;
-    /// zero `discontig` + artifacts points at str0m's own repacketization.
-    stats_video_discontig: u64,
+    /// `write_rtp` failures on egress (per-subscriber write the target's
+    /// str0m rejected). The sample-mode-era `discontig` counter is gone:
+    /// `MediaData.contiguous` does not exist in rtp_mode, so it could only
+    /// ever read zero — and its "zero means repacketization" interpretation
+    /// guide would have hard-wired the wrong diagnosis. Ingress gaps are
+    /// visible in the per-packet `video rtp in` trace instead.
     stats_video_write_err: u64,
     /// Round two of the artifact hunt. `written` = video frames handed to at
     /// least one subscriber's writer. Compare against `stats_video_fwd`
@@ -493,7 +492,6 @@ impl SfuShard {
             pending_flush: HashSet::new(),
             stats_audio_fwd: 0,
             stats_video_fwd: 0,
-            stats_video_discontig: 0,
             stats_video_write_err: 0,
             stats_video_written: 0,
             stats_video_no_writer: 0,
@@ -614,11 +612,6 @@ impl SfuShard {
                             shard = self.shard_index,
                             audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
                             video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
-                            // Artifact diagnostics: video frames with a broken
-                            // ingest reference chain, and egress write failures.
-                            // Non-zero discontig + artifacts = laundered loss;
-                            // zero discontig + artifacts = str0m repacketization.
-                            video_discontig = self.stats_video_discontig,
                             video_write_err = self.stats_video_write_err,
                             // video_in vs video_out localises silent frame
                             // drops in the forward loop; no_writer/no_pt say why.
@@ -636,7 +629,6 @@ impl SfuShard {
                     }
                     self.stats_audio_fwd = 0;
                     self.stats_video_fwd = 0;
-                    self.stats_video_discontig = 0;
                     self.stats_video_write_err = 0;
                     self.stats_video_written = 0;
                     self.stats_video_no_writer = 0;
@@ -956,9 +948,8 @@ impl SfuShard {
                     kind: *kind,
                     source: *source,
                     state: TrackOutState::ToOpen,
-                    selected_rid: None,
-                    last_rid_change_at: Instant::now(),
-                    egress_seq_base: None,
+                    egress_seq_anchor: None,
+                    egress_seq_high: 0,
                 });
             }
             tracing::info!(
@@ -1292,51 +1283,15 @@ impl SfuShard {
             session.recompute_top_audio();
         }
 
-        // Adaptive simulcast layer pick. For each subscriber's video
-        // TrackOuts, decide whether they should be on `h` or `l` given
-        // their last BWE estimate. On a flip, queue a keyframe request
-        // against the publisher so the new layer starts decoding ASAP.
-        let mut keyframe_requests: Vec<(SessionId, ParticipantId, Mid)> = Vec::new();
-        for (session_id, session) in self.sessions.iter_mut() {
-            // Snapshot bitrates first to avoid holding a mutable borrow
-            // on participants while iterating + mutating their TrackOuts.
-            let bitrates: HashMap<ParticipantId, u64> = session
-                .participants
-                .iter()
-                .map(|(pid, p)| (*pid, p.egress_bitrate_bps))
-                .collect();
-            for participant in session.participants.values_mut() {
-                let Some(bps) = bitrates.get(&participant.id).copied() else {
-                    continue;
-                };
-                for t in participant.tracks_out.iter_mut() {
-                    if t.kind != MediaKind::Video {
-                        continue;
-                    }
-                    let next = next_layer(t.selected_rid, bps, t.last_rid_change_at, now);
-                    if next != t.selected_rid {
-                        // Upgrades to `h` need an I-frame on the new layer
-                        // to start decoding without artifacts. Downgrades
-                        // to `l` already have keyframes flowing (l GOP is
-                        // typically much shorter), so skip the request.
-                        let upgraded_to_h = next == Some("h");
-                        t.selected_rid = next;
-                        t.last_rid_change_at = now;
-                        if upgraded_to_h {
-                            keyframe_requests.push((*session_id, t.origin, t.origin_mid));
-                        }
-                    }
-                }
-            }
-        }
-        // Drain queued keyframe requests through the throttle so a session
-        // upgrading 30 subscribers in one tick still only fires one PLI
-        // per (publisher, mid).
-        for (session_id, origin_pid, origin_mid) in keyframe_requests {
-            if let Some(session) = self.sessions.get_mut(&session_id) {
-                session.request_keyframe_throttled(origin_pid, origin_mid);
-            }
-        }
+        // NOTE: no adaptive layer pick here yet. A previous version ran
+        // `next_layer` over every video TrackOut each tick and fired a PLI on
+        // every l→h flip — but the forwarder ignores `selected_rid` in v1
+        // (single-layer passthrough), so the only observable effect was a
+        // spurious PLI per video mid ~5s after every subscription plus one per
+        // BWE threshold crossing, taxing publishers with full I-frames for
+        // switches that never happened. The machinery (`next_layer`,
+        // `selected_rid`, BWE capture) stays for step 2, which will also make
+        // the forwarder consume the decision.
 
         // Collect zombies: ICE disconnected + no media for the configured
         // window. At 500 participants this is a single O(N) scan per tick.
@@ -1535,9 +1490,8 @@ impl SfuShard {
                                             kind: e.kind,
                                             source,
                                             state: TrackOutState::ToOpen,
-                                            selected_rid: None,
-                                            last_rid_change_at: Instant::now(),
-                                            egress_seq_base: None,
+                                            egress_seq_anchor: None,
+                                            egress_seq_high: 0,
                                         });
                                         newly_queued.push(*pid);
                                     }
@@ -1549,11 +1503,12 @@ impl SfuShard {
                         }
                     }
                     Event::RtpPacket(pkt) => {
-                        // Resolve which ingress track (mid) this packet belongs
-                        // to via its SSRC. str0m repairs RTX internally, so we
-                        // only see media SSRCs here; an unmapped SSRC (e.g. a
-                        // stream torn down mid-flight) is skipped.
-                        let mid = self
+                        // Resolve which ingress track (mid, rid) this packet
+                        // belongs to via its SSRC. str0m repairs RTX
+                        // internally, so we only see media SSRCs here; an
+                        // unmapped SSRC (e.g. a stream torn down mid-flight)
+                        // is skipped.
+                        let midrid = self
                             .sessions
                             .get_mut(&session_id)
                             .and_then(|s| s.participants.get_mut(&source_pid))
@@ -1561,10 +1516,25 @@ impl SfuShard {
                                 p.rtc
                                     .direct_api()
                                     .stream_rx(&pkt.header.ssrc)
-                                    .map(|s| s.mid())
+                                    .map(|s| (s.mid(), s.rid()))
                             });
-                        if let Some(mid) = mid {
-                            self.forward_rtp(session_id, source_pid, mid, &pkt);
+                        if let Some((mid, rid)) = midrid {
+                            // Simulcast ingress gate: v1 forwards exactly ONE
+                            // layer per mid. Screen share publishes two
+                            // (`sendEncodings` rid h/l in the SDK); the
+                            // forwarder resolves only to mid, so without this
+                            // gate both layers' independent seq/timestamp
+                            // spaces would interleave on the subscriber's
+                            // single egress SSRC — undecodable at zero wire
+                            // loss. Non-simulcast streams have no rid and pass
+                            // as-is. Per-subscriber layer select is step 2.
+                            let is_forwarded_layer = match rid {
+                                None => true,
+                                Some(rid) => &*rid == "h",
+                            };
+                            if is_forwarded_layer {
+                                self.forward_rtp(session_id, source_pid, mid, &pkt);
+                            }
                         }
                     }
                     Event::EgressBitrateEstimate(kind) => {
@@ -1657,16 +1627,11 @@ impl SfuShard {
             let Some(p) = session.participants.get_mut(&source_pid) else {
                 return;
             };
-            let Some(track) = p.tracks_in.iter().find(|t| t.mid == source_mid) else {
+            let Some(track) = p.tracks_in.iter_mut().find(|t| t.mid == source_mid) else {
                 return;
             };
             let kind = track.kind;
             if kind == MediaKind::Audio {
-                let track = p
-                    .tracks_in
-                    .iter_mut()
-                    .find(|t| t.mid == source_mid)
-                    .unwrap();
                 let voice_active = pkt.header.ext_vals.voice_activity == Some(true);
                 if let Some(level_dbov) = pkt.header.ext_vals.audio_level {
                     if voice_active {
@@ -1783,13 +1748,15 @@ impl SfuShard {
                 }
             };
 
-            // Egress sequence number: rebase the publisher's extended seq to a
-            // low per-stream start, PRESERVING order and relative gaps. str0m
-            // delivers RTP-mode packets in arrival order (de-RTX'd resends land
-            // late), so a delivery-order counter would misorder them and break
-            // multi-packet frame reassembly. Rebasing off the original seq keeps
-            // late/out-of-order packets orderable at the receiver. See
-            // `TrackOut::egress_seq_base`.
+            // Egress sequence number: rebase the publisher's extended seq via
+            // a signed per-stream offset, PRESERVING order and relative gaps.
+            // str0m delivers RTP-mode packets in arrival order (de-RTX'd
+            // resends land late), so a delivery-order counter would misorder
+            // them and break multi-packet frame reassembly. Signed offset (not
+            // `saturating_sub`) lets a reordered packet that extends BELOW the
+            // first-arrived seq map below EGRESS_SEQ_START instead of clamping
+            // onto it as a duplicate; on ingress SSRC change we re-anchor past
+            // the highest seq sent. See `TrackOut::egress_seq_anchor`.
             let seq_no: str0m::rtp::SeqNo = {
                 let Some(t) = target
                     .tracks_out
@@ -1798,11 +1765,30 @@ impl SfuShard {
                 else {
                     continue;
                 };
-                let ingress: u64 = *pkt.seq_no;
-                let base = *t.egress_seq_base.get_or_insert(ingress);
-                EGRESS_SEQ_START
-                    .wrapping_add(ingress.saturating_sub(base))
-                    .into()
+                let ingress = *pkt.seq_no as i64;
+                let offset = match t.egress_seq_anchor {
+                    Some((ssrc, offset)) if ssrc == pkt.header.ssrc => offset,
+                    Some(_) => {
+                        // Publisher restarted with a new SSRC on the same mid:
+                        // str0m's seq extension starts over, the old offset is
+                        // meaningless. Continue right after what we sent.
+                        let offset = (t.egress_seq_high + 1) as i64 - ingress;
+                        t.egress_seq_anchor = Some((pkt.header.ssrc, offset));
+                        offset
+                    }
+                    None => {
+                        let offset = EGRESS_SEQ_START as i64 - ingress;
+                        t.egress_seq_anchor = Some((pkt.header.ssrc, offset));
+                        offset
+                    }
+                };
+                // max(1) is a belt-and-braces floor: START's headroom already
+                // covers str0m's misorder window, so a hit means a broken
+                // ingress extension — better one clamped packet than a huge
+                // u64 wrap the receiver reads as astronomical loss.
+                let egress = (ingress + offset).max(1) as u64;
+                t.egress_seq_high = t.egress_seq_high.max(egress);
+                egress.into()
             };
 
             // Header extensions do NOT pass through: MID/RID name m-lines of

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use str0m::Rtc;
 use str0m::change::SdpPendingOffer;
 use str0m::media::{KeyframeRequestKind, MediaKind, Mid};
+use str0m::rtp::Ssrc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -52,22 +53,27 @@ pub const AUDIO_TOP_K: usize = 3;
 /// Above it, the filter trims the long tail of silent participants.
 pub const AUDIO_FILTER_MIN_PUBLISHERS: usize = AUDIO_TOP_K + 1;
 
-// ── Adaptive simulcast layer pick ─────────────────────────────
+// ── Adaptive simulcast layer pick (step 2 — not wired into the forwarder
+// yet, only exercised by unit tests; hence the dead_code allows) ──────
 // Threshold scheme: a clear gap between "comfortably fits h" and "must
 // drop to l" prevents flapping when BWE oscillates near a single value.
 // Numbers are conservative for a typical screen-share at ~5Mbps h-layer +
 // camera/audio overhead — adjust if profile expectations change.
 
 /// Below this BWE estimate, force the subscriber to `l`.
+#[allow(dead_code)]
 pub const BWE_DOWNGRADE_BPS: u64 = 800_000;
 /// Above this BWE estimate, allow the subscriber back onto `h`.
+#[allow(dead_code)]
 pub const BWE_UPGRADE_BPS: u64 = 1_500_000;
 /// Minimum dwell time in a layer before we'll consider switching again.
 /// Prevents flapping on borderline BWE oscillation.
+#[allow(dead_code)]
 pub const LAYER_HYSTERESIS: Duration = Duration::from_secs(5);
 
-/// Decide the next selected_rid given the current state. Pure function
+/// Decide the next layer (rid) given the current state. Pure function
 /// so it's unit-testable without standing up an Rtc.
+#[allow(dead_code)]
 pub fn next_layer(
     current: Option<&'static str>,
     bwe_bps: u64,
@@ -281,25 +287,32 @@ pub struct TrackOut {
     /// and lets the SDK render the right tile shape.
     pub source: Source,
     pub state: TrackOutState,
-    /// Adaptive simulcast: which layer (rid) this subscriber is currently
-    /// receiving. None = no decision yet (defaults to "h" with l-fallback
-    /// in the forwarder). Updated by the per-tick BWE-driven recompute;
-    /// hysteresis on `last_rid_change_at` prevents flapping on borderline
-    /// estimates.
-    pub selected_rid: Option<&'static str>,
-    pub last_rid_change_at: Instant,
-    /// Base for egress RTP sequence rewrite: the publisher's extended seq_no of
-    /// the FIRST packet forwarded on this stream. Egress seq is then
-    /// `EGRESS_SEQ_START + (pkt.seq_no - base)`, which PRESERVES the publisher's
-    /// sequence order and relative gaps while rebasing to a clean low start.
+    /// Anchor for egress RTP sequence rewrite: `(ingress SSRC, signed offset)`.
+    /// Egress seq is `ingress_ext_seq + offset`, which PRESERVES the
+    /// publisher's sequence order and relative gaps while rebasing to a clean
+    /// low start (`EGRESS_SEQ_START` on the first packet).
     ///
     /// Why not a per-packet counter: str0m's RTP-mode ingress delivers packets
     /// in ARRIVAL order (no reorder buffer), and de-RTX'd retransmissions arrive
     /// late. A delivery-order counter would assign a late-but-lower-seq packet a
     /// higher egress seq, breaking the seq↔frame relationship — the receiver
-    /// can't reassemble multi-packet frames (frozen video, PLI storm). Rebasing
-    /// off the original seq keeps out-of-order packets orderable at the receiver.
-    pub egress_seq_base: Option<u64>,
+    /// can't reassemble multi-packet frames (frozen video, PLI storm).
+    ///
+    /// Why signed offset and not `START + (seq - base)`: a reordered packet
+    /// with ext seq BELOW the first-arrived one (str0m's `extend_u16` extends
+    /// backwards within its misorder window) must map to an egress seq below
+    /// START — `saturating_sub` would clamp it onto START, a duplicate the
+    /// receiver discards. `EGRESS_SEQ_START` carries headroom for exactly this.
+    ///
+    /// Why the SSRC in the anchor: a publisher restarting its stream with a
+    /// new SSRC on the same mid resets str0m's seq extension — the old offset
+    /// would fold the fresh seq space into garbage (permanent freeze or a
+    /// giant fake-loss jump). On SSRC change we re-anchor to continue right
+    /// after the highest egress seq sent so far (`egress_seq_high`).
+    pub egress_seq_anchor: Option<(Ssrc, i64)>,
+    /// Highest egress seq written on this track — the re-anchor point for
+    /// ingress SSRC changes.
+    pub egress_seq_high: u64,
 }
 
 impl TrackOut {
@@ -512,9 +525,8 @@ mod tests {
             kind: MediaKind::Audio,
             source: Source::Camera,
             state: TrackOutState::ToOpen,
-            selected_rid: None,
-            last_rid_change_at: Instant::now(),
-            egress_seq_base: None,
+            egress_seq_anchor: None,
+            egress_seq_high: 0,
         };
         assert_eq!(t.open_mid(), None);
 
