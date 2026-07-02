@@ -10,7 +10,7 @@
 # Targets / SERVICE values:
 #   hub         -- API + Vite SPA bundle + migrations
 #   chat        -- API only
-#   video       -- SFU (str0m, needs libssl)
+#   video       -- SFU (str0m 0.21, crypto via aws-lc-rs -- no OpenSSL)
 #   transcoder  -- ffmpeg worker
 #   general     -- SaaS control plane + migrations + mail templates
 #
@@ -22,7 +22,9 @@
 #     build-args:
 #       SERVICE: hub
 #
-# Rust targets stay on debian-slim because str0m needs OpenSSL at runtime.
+# Rust targets stay on debian-slim. libssl is no longer a str0m constraint
+# (0.21 uses aws-lc-rs, statically built) -- the runtime libssl3 below serves
+# other crates that still link OpenSSL dynamically (reqwest native-tls).
 
 # Global ARG so it's visible after FROM in stages that re-declare it.
 ARG SERVICE
@@ -65,8 +67,10 @@ ENV MATEHUB_VERSION=${VERSION}
 
 WORKDIR /app
 
+# pkg-config/libssl-dev: crates that link system OpenSSL (reqwest native-tls).
+# cmake: aws-lc-sys (str0m 0.21 crypto backend) builds AWS-LC from source.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends pkg-config libssl-dev && \
+    apt-get install -y --no-install-recommends pkg-config libssl-dev cmake && \
     rm -rf /var/lib/apt/lists/*
 
 # Workspace manifests + shared crate first so the dep layer caches.

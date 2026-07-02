@@ -1,5 +1,44 @@
 # Video Service — Current State (2026-04-18)
 
+---
+
+## Update (2026-07-02): str0m 0.7.0 → 0.21.0 — CODE DONE, ЖДЁТ ЖИВОЙ ВЕРИФИКАЦИИ
+
+Апгрейд через 14 версий (Phase 3 шаг 1, пререквизит Phase 2.5 desktop-клиента).
+Изменения в коде минимальны — наша API-поверхность узкая и стабильная:
+
+- `Rtc::builder().build()` → `.build(Instant::now())` (0.16 breaking).
+- `write_rtp(8 args)` → `RtpWrite`-билдер (0.20 breaking). `write_rtp` теперь
+  **infallible** — валидация ушла на poll-тайм (`warn!("Media is missing PT")`
+  в send.rs), поэтому счётчик `stats_video_write_err` удалён; egress-проблемы
+  видны через `no_pt`/`no_writer` + `video rtp in/out` трейсы.
+- `BweKind` стал `#[non_exhaustive]` — добавлен wildcard-arm (НЕ `return`:
+  выход из poll-цикла бросил бы Rtc недренированным — класс бага №6).
+- Payload теперь `Arc<[u8]>` на входе и выходе: `pkt.payload.clone()` на
+  подписчика — refcount bump, не копия. Perf-баг #4 закрыт апстримом.
+- **Крипто: OpenSSL полностью ушёл из str0m.** DTLS = dimpl (pure Rust,
+  крейт Алгестена), шифры = aws-lc-rs (`default-features = false,
+  features = ["aws-lc-rs"]`; дефолтная фича `examples` тянула rouille).
+  Dockerfile: `cmake` добавлен в builder (aws-lc-sys собирает AWS-LC);
+  runtime `libssl3` остаётся для reqwest native-tls, но не для видео.
+
+Инварианты passthrough перепроверены по исходникам 0.21 — все живы:
+- `pending_packet` — **всё ещё однослотовый** (session.rs:97): poll после
+  КАЖДОГО handle_command обязателен, дисциплина не ослабляется.
+- MID-подмена только до `remote_acked_ssrc` (send.rs:445) — свежие ext_vals
+  на egress обязательны, как и были.
+- RTX де-мультиплексируется на ингрессе; `set_unpaced` на месте;
+  `match_params` PT-ремап на месте (0.12 даже чинил в нём баг).
+- `extend_u16` окно misorder — полдиапазона u16; EGRESS_SEQ_START=10_000
+  headroom покрывает.
+
+CI-гейт локально: fmt / clippy `-D warnings` / 33 тест-сьюта / фронт
+lint+typecheck — зелёные.
+
+**Главный риск апгрейда — не API, а dimpl**: новая DTLS-имплементация в
+рукопожатии с браузерами. ПЕРЕД мержем обязателен живой ROOM_DEBUG-звонок
+(2 участника, камеры): DTLS connected, 30fps, packetsLost≈0, screen share.
+
 > Снимок состояния services/video на момент аудита. Фиксирует что сделано из
 > Stage 1 / Stage 2, статус known bugs из `bugs.md`, и perf audit кода `sfu/mod.rs`.
 > Этот файл — working doc: обновляется по мере фиксов.

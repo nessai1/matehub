@@ -23,7 +23,10 @@ tonic = "0.13"
 prost = "0.13"
 
 # WebRTC (video service)
-str0m = "0.7"
+# default-features off: drops the `examples` feature (rouille web server).
+# Crypto: aws-lc-rs backend — DTLS is dimpl (pure Rust), ciphers from AWS-LC.
+# No OpenSSL in the tree anymore (was a str0m<=0.13 constraint).
+str0m = { version = "0.21", default-features = false, features = ["aws-lc-rs"] }
 
 # Crypto
 ring = "0.17"

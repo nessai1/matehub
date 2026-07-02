@@ -40,9 +40,10 @@ pub type SessionId = Uuid;
 
 /// Starting RTP sequence number for every rewritten egress stream. The 10_000
 /// headroom absorbs ingress reorder that extends BELOW the first-arrived seq
-/// (str0m's `extend_u16` misorder window is 100) without clamping; still well
-/// under 65_536 so the first write has ROC 0 (str0m warns on non-zero-ROC
-/// first `write_rtp`, and SRTP would need out-of-band ROC signalling).
+/// (str0m's `extend_u16` accepts backwards extension within half the u16
+/// range) without clamping; still well under 65_536 so the first write has
+/// ROC 0 (str0m warns on non-zero-ROC first `write_rtp`, and SRTP would need
+/// out-of-band ROC signalling).
 const EGRESS_SEQ_START: u64 = 10_000;
 
 /// Command sent from WebSocket handler to the SFU loop.
@@ -358,13 +359,11 @@ pub struct SfuShard {
     /// Media forwarding stats (logged periodically)
     stats_audio_fwd: u64,
     stats_video_fwd: u64,
-    /// `write_rtp` failures on egress (per-subscriber write the target's
-    /// str0m rejected). The sample-mode-era `discontig` counter is gone:
-    /// `MediaData.contiguous` does not exist in rtp_mode, so it could only
-    /// ever read zero — and its "zero means repacketization" interpretation
-    /// guide would have hard-wired the wrong diagnosis. Ingress gaps are
-    /// visible in the per-packet `video rtp in` trace instead.
-    stats_video_write_err: u64,
+    // NOTE: the sample-mode-era `discontig` counter is gone (`MediaData.
+    // contiguous` doesn't exist in rtp_mode), and `write_err` went with the
+    // str0m 0.21 upgrade — `write_rtp` is infallible since 0.20 (validation
+    // happens at poll time). Egress problems now surface as `no_pt` /
+    // `no_writer`, plus the per-packet `video rtp in/out` traces.
     /// Round two of the artifact hunt. `written` = video frames handed to at
     /// least one subscriber's writer. Compare against `stats_video_fwd`
     /// (frames str0m emitted from publishers): a gap means the forward loop
@@ -492,7 +491,6 @@ impl SfuShard {
             pending_flush: HashSet::new(),
             stats_audio_fwd: 0,
             stats_video_fwd: 0,
-            stats_video_write_err: 0,
             stats_video_written: 0,
             stats_video_no_writer: 0,
             stats_video_no_pt: 0,
@@ -612,7 +610,6 @@ impl SfuShard {
                             shard = self.shard_index,
                             audio_pps = (self.stats_audio_fwd as f32 / elapsed) as u32,
                             video_pps = (self.stats_video_fwd as f32 / elapsed) as u32,
-                            video_write_err = self.stats_video_write_err,
                             // video_in vs video_out localises silent frame
                             // drops in the forward loop; no_writer/no_pt say why.
                             video_in = self.stats_video_fwd,
@@ -629,7 +626,6 @@ impl SfuShard {
                     }
                     self.stats_audio_fwd = 0;
                     self.stats_video_fwd = 0;
-                    self.stats_video_write_err = 0;
                     self.stats_video_written = 0;
                     self.stats_video_no_writer = 0;
                     self.stats_video_no_pt = 0;
@@ -865,7 +861,7 @@ impl SfuShard {
         let mut rtc = Rtc::builder()
             .set_local_ice_credentials(creds)
             .set_rtp_mode(true)
-            .build();
+            .build(Instant::now());
 
         // Add one host candidate per local interface we know about.
         // ICE on the browser then has multiple real paths to try instead of
@@ -1542,13 +1538,17 @@ impl SfuShard {
                         // it into the layer-pick decision in tick(). TWCC
                         // is the modern signal; REMB is legacy fallback for
                         // older endpoints. Both come in as `Bitrate` (bps).
-                        let bps = match kind {
-                            BweKind::Twcc(b) | BweKind::Remb(_, b) => b.as_u64(),
-                        };
-                        if let Some(session) = self.sessions.get_mut(&session_id)
+                        // BweKind is #[non_exhaustive] since the 0.21 upgrade;
+                        // ignore future variants — TWCC/REMB are the only BWE
+                        // signals we act on. (No `return` here: bailing out of
+                        // the poll loop on an unknown variant would leave the
+                        // Rtc undrained — same class of bug as the drain-loop
+                        // incident, see flush_pending_writes docs.)
+                        if let BweKind::Twcc(b) | BweKind::Remb(_, b) = kind
+                            && let Some(session) = self.sessions.get_mut(&session_id)
                             && let Some(p) = session.participants.get_mut(&source_pid)
                         {
-                            p.egress_bitrate_bps = bps;
+                            p.egress_bitrate_bps = b.as_u64();
                         }
                     }
                     Event::KeyframeRequest(req) => {
@@ -1825,22 +1825,21 @@ impl SfuShard {
                 // ALREADY paced, so we forward as-arrived and let str0m emit
                 // immediately. Idempotent flag; set every write is cheap.
                 tx.set_unpaced(true);
-                if let Err(e) = tx.write_rtp(
-                    egress_pt,
-                    seq_no,
-                    pkt.header.timestamp,
-                    pkt.timestamp,
-                    pkt.header.marker,
-                    ext_vals,
-                    is_video, // nackable: video yes, audio no
-                    pkt.payload.clone(),
-                ) {
-                    if is_video {
-                        self.stats_video_write_err += 1;
-                    }
-                    tracing::trace!(pid = %target_pid, "rtp write skip: {e}");
-                    continue;
-                }
+                // Since 0.20 write_rtp is infallible (validation happens at
+                // poll time); the payload is Arc<[u8]>, so the per-subscriber
+                // clone below is a refcount bump, not a copy.
+                tx.write_rtp(
+                    str0m::rtp::RtpWrite::new(
+                        egress_pt,
+                        seq_no,
+                        pkt.header.timestamp,
+                        pkt.timestamp,
+                        pkt.payload.clone(),
+                    )
+                    .marker(pkt.header.marker)
+                    .ext_vals(ext_vals)
+                    .nackable(is_video), // video yes, audio no
+                );
             }
             if is_video {
                 wrote_any = true;
