@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- getUserMedia внутри WKWebView (войс/камера в веб-интерфейсе хаба):
+       без этих ключей TCC убивает процесс при первом запросе захвата. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>MateHub needs microphone access for voice calls.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>MateHub needs camera access for video calls.</string>
+</dict>
+</plist>

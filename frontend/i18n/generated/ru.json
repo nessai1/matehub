@@ -816,6 +816,21 @@
       ],
       "Copy call ID": [
         "Скопировать ID звонка"
+      ],
+      "Primary display": [
+        "Основной дисплей"
+      ],
+      "Source": [
+        "Источник"
+      ],
+      "System audio capture is not available in the desktop app yet.": [
+        "Захват системного звука в десктоп-приложении пока недоступен."
+      ],
+      "Pick a quality profile and a source. Sharing runs through the native MateHub engine.": [
+        "Выберите профиль качества и источник. Трансляция идёт через нативный движок MateHub."
+      ],
+      "Capture system audio": [
+        "Захватывать системный звук"
       ]
     }
   }

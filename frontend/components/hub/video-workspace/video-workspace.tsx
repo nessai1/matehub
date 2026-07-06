@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { CallDebugPanel } from "@/components/hub/call-debug-panel";
 import { isVideoTraceEnabled, onVideoTraceChange } from "@/lib/video-trace";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useNativeScreenShare } from "@/hooks/use-native-screen-share";
 import { ScreenShareProfileDialog } from "@/components/hub/screen-share-profile-dialog";
 import { cn } from "@/lib/utils";
 import { VideoGrid, PAGE_SIZE } from "./video-grid";
@@ -50,6 +51,12 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
   } = useVideoCall();
   const { outgoingCallChannelId } = useIncomingCall();
   const { channels } = useChannels();
+
+  // Нативная оболочка (desktop app): screen share идёт мимо getDisplayMedia
+  // через нативный движок. В браузере хук просто отдаёт available=false.
+  const nativeShare = useNativeScreenShare();
+  const nativeSharing = nativeShare.available && nativeShare.sharing;
+  const screenSharing = isScreenSharing || nativeSharing;
 
   const [layout, setLayout] = useState<LayoutMode>("grid");
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -401,12 +408,16 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
             <VideoCallControls
               isMicEnabled={isMicEnabled}
               isCamEnabled={isCamEnabled}
-              isScreenSharing={isScreenSharing}
+              isScreenSharing={screenSharing}
               isDeafened={isDeafened}
               onToggleMic={() => void toggleMic()}
               onToggleCamera={() => void toggleCamera()}
               onStartShare={() => setShareDialogOpen(true)}
-              onStopShare={() => void unpublishScreen()}
+              onStopShare={() =>
+                nativeSharing
+                  ? void nativeShare.stop()
+                  : void unpublishScreen()
+              }
               onToggleDeafen={toggleDeafen}
               onLeave={leaveVoice}
             />
@@ -417,7 +428,17 @@ export function VideoWorkspace({ channel }: VideoWorkspaceProps) {
       <ScreenShareProfileDialog
         open={shareDialogOpen}
         onOpenChange={setShareDialogOpen}
-        onConfirm={(profile) => void publishScreen(profile)}
+        onConfirm={(profile, target, systemAudio) => {
+          if (nativeShare.available && session && activeVoiceChannelId) {
+            void nativeShare.start(profile, target, systemAudio, {
+              hubId: session.hubId,
+              channelId: activeVoiceChannelId,
+              token: session.token,
+            });
+          } else {
+            void publishScreen(profile);
+          }
+        }}
       />
 
       <DebugPanelGate client={client} />

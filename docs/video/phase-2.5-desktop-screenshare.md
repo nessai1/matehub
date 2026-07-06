@@ -1,6 +1,12 @@
 # Phase 2.5 — Desktop-приложение для качественного screen share
 
-> **Status:** research зафиксирован 2026-07-02, реализация не начата.
+> **Status:** research зафиксирован 2026-07-02. Реализован десктоп-клиент
+> 2026-07-03/04: оболочка на веб-фронте хаба + нативный медиа-стек —
+> screen-share, **HW-энкодеры** (VideoToolbox/NVENC + OpenH264 fallback),
+> **системный звук** (Opus) и **нативный войс** (микрофон + приём/микс), CI по
+> тегам `desktop/{mac,windows,linux}-*`. Подробности и статус верификации —
+> `desktop-share.md`. Впереди: deep-link auth, нативный приём удалённого видео,
+> live-верификация медиа на 3 платформах.
 > Стыкуется с Phase 3 (см. §7). Наследует use case из `screen-share.md` §1
 > (motion-heavy gameplay, 1–5 зрителей, <300ms glass-to-glass, system audio).
 

@@ -1,0 +1,67 @@
+[package]
+name = "matehub-desktop-share"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+# Намеренно ОТДЕЛЬНЫЙ workspace (см. exclude в корневом Cargo.toml):
+# scap/openh264/tauri тянут платформенные системные зависимости
+# (ScreenCaptureKit / PipeWire / WebKitGTK), которым нечего делать в CI
+# сервисов. Версия str0m остаётся единой: matehub-rtc-client — path-зависимость
+# из корневого workspace.
+[workspace]
+
+[lib]
+name = "matehub_desktop_share_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+matehub-rtc-client = { path = "../../../crates/matehub-rtc-client" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+parking_lot = "0.12"
+url = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Захват экрана: ScreenCaptureKit (macOS 13+) / Windows.Graphics.Capture
+# (Win10 1903+) / PipeWire portal (Linux). Прод-пользователь — Cap.so.
+# Пропатчен (см. [patch.crates-io] ниже): upstream не прокидывает
+# exclude_current_process_audio → аудио-фидбэк с собственного вывода.
+scap = "0.1.0-beta.1"
+# Software H.264 — универсальный fallback (собирается везде без железа).
+# `source`-фича собирает OpenH264 из исходников.
+openh264 = "0.9.3"
+# Аудио: Opus кодек (системный звук + микрофон/приём нативного войса).
+opus = "0.3"
+bytemuck = "1"
+# Нативный войс: захват микрофона и воспроизведение (CoreAudio/WASAPI/ALSA).
+cpal = "0.15"
+# Lock-free SPSC кольца между realtime-колбэками cpal и рабочими потоками.
+ringbuf = "0.4"
+
+# HW-энкодер H.264 на macOS: VideoToolbox — системный фреймворк, собирается
+# на любом Mac и в CI (macos runner), работает без дискретной GPU.
+[target.'cfg(target_os = "macos")'.dependencies]
+shiguredo_video_toolbox = "2026.1.1"
+
+[features]
+# NVENC (Windows/Linux + NVIDIA). shiguredo_nvcodec грузит CUDA-драйвер через
+# dlopen — собирается на GPU-less раннере, падает в рантайме при отсутствии
+# железа (→ graceful fallback на OpenH264). Включается при сборке win/linux.
+nvenc = ["dep:shiguredo_nvcodec"]
+
+[dependencies.shiguredo_nvcodec]
+version = "2026.2.0"
+optional = true
+
+# Вендоренная копия scap с однострочным патчем: honour
+# exclude_current_process_audio (macOS) — иначе системный аудио-захват тянет
+# собственный вывод приложения (плеер войса) в петлю. src без .github/banner
+# (4.9M gif). См. vendor/scap/src/capturer/engine/mac/mod.rs.
+[patch.crates-io]
+scap = { path = "../vendor/scap" }

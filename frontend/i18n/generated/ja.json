@@ -816,6 +816,21 @@
       ],
       "Copy call ID": [
         "通話IDをコピー"
+      ],
+      "Primary display": [
+        "メインディスプレイ"
+      ],
+      "Source": [
+        "ソース"
+      ],
+      "System audio capture is not available in the desktop app yet.": [
+        "システム音声のキャプチャはデスクトップアプリではまだ利用できません。"
+      ],
+      "Pick a quality profile and a source. Sharing runs through the native MateHub engine.": [
+        "品質プロファイルとソースを選択してください。共有はネイティブの MateHub エンジンを使用します。"
+      ],
+      "Capture system audio": [
+        "システム音声をキャプチャ"
       ]
     }
   }

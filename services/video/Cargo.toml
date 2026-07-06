@@ -57,7 +57,7 @@ mimalloc = { version = "0.1", default-features = false }
 
 # Enumerate local interfaces — we advertise every non-loopback IP as a host
 # candidate so ICE nomination doesn't fall back to peer-reflexive.
-if-addrs = "0.14"
+if-addrs.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

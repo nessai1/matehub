@@ -816,6 +816,21 @@
       ],
       "Copy call ID": [
         "Copier l'ID d'appel"
+      ],
+      "Primary display": [
+        "Écran principal"
+      ],
+      "Source": [
+        "Source"
+      ],
+      "System audio capture is not available in the desktop app yet.": [
+        "La capture audio du système n'est pas encore disponible dans l'application de bureau."
+      ],
+      "Pick a quality profile and a source. Sharing runs through the native MateHub engine.": [
+        "Choisissez un profil de qualité et une source. Le partage utilise le moteur natif de MateHub."
+      ],
+      "Capture system audio": [
+        "Capturer l'audio du système"
       ]
     }
   }

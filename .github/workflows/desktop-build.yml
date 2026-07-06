@@ -1,0 +1,173 @@
+# Desktop Screen Share builds (Phase 2.5).
+#
+# Триггер — теги вида:
+#   desktop/mac-v0.1.0      → macOS (aarch64 + x86_64, unsigned)
+#   desktop/windows-v0.1.0  → Windows x64 (NSIS + MSI)
+#   desktop/linux-v0.1.0    → Linux x64 (deb + AppImage + rpm)
+#
+# Артефакты прикрепляются к GitHub Release тега (softprops, как в
+# release.yml) и дублируются в workflow artifacts на 14 дней.
+#
+# Подпись/нотаризация НЕ выполняется (dev-сборки). Для прод-подписи
+# добавить секреты: APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY / APPLE_ID /
+# APPLE_TEAM_ID (macOS), WINDOWS_CERTIFICATE (Windows) — см.
+# https://v2.tauri.app/distribute/
+
+name: Desktop Build
+
+on:
+  push:
+    tags:
+      - "desktop/mac-*"
+      - "desktop/windows-*"
+      - "desktop/linux-*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: apps/desktop-share
+
+jobs:
+  build-mac:
+    if: startsWith(github.ref_name, 'desktop/mac-')
+    runs-on: macos-latest # arm64; x86_64 собирается кросс-таргетом
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          cache-on-failure: true
+          cache-workspaces: apps/desktop-share/src-tauri
+
+      # nasm ×3 ускоряет сборку OpenH264 из исходников
+      - name: Install nasm
+        run: brew install nasm
+
+      - name: Install Tauri CLI
+        run: npm ci
+
+      - name: Build (unsigned)
+        run: npx tauri build --target ${{ matrix.target }}
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matehub-screen-share-${{ matrix.target }}
+          retention-days: 14
+          path: |
+            apps/desktop-share/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            apps/desktop-share/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop-share/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+
+  build-windows:
+    if: startsWith(github.ref_name, 'desktop/windows-')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-on-failure: true
+          cache-workspaces: apps/desktop-share/src-tauri
+
+      # aws-lc-sys (крипта str0m) требует NASM на x86_64-windows;
+      # cmake (для libopus/aws-lc FIPS-путей) на раннере уже есть.
+      - name: Install NASM
+        run: choco install -y nasm
+
+      - name: Add NASM to PATH
+        run: echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Append
+        working-directory: .
+
+      - name: Install Tauri CLI
+        run: npm ci
+
+      - name: Build (unsigned)
+        # nvenc: shiguredo_nvcodec грузит CUDA через dlopen — собирается
+        # на GPU-less раннере, в рантайме падает на OpenH264 без NVIDIA.
+        run: npx tauri build -- --features nvenc
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matehub-screen-share-x86_64-windows
+          retention-days: 14
+          path: |
+            apps/desktop-share/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop-share/src-tauri/target/release/bundle/msi/*.msi
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop-share/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop-share/src-tauri/target/release/bundle/msi/*.msi
+
+  build-linux:
+    if: startsWith(github.ref_name, 'desktop/linux-')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-on-failure: true
+          cache-workspaces: apps/desktop-share/src-tauri
+
+      - name: Install system dependencies
+        working-directory: .
+        run: |
+          sudo apt-get update
+          # Tauri v2 core
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf
+          # scap: PipeWire portal capture (pipewire-rs → bindgen → clang)
+          sudo apt-get install -y \
+            libpipewire-0.3-dev libspa-0.2-dev libdbus-1-dev \
+            clang pkg-config nasm
+          # opus (audiopus_sys: система через pkg-config, иначе cmake-сборка),
+          # cpal микрофон нативного войса (ALSA)
+          sudo apt-get install -y \
+            libopus-dev cmake libasound2-dev
+
+      - name: Install Tauri CLI
+        run: npm ci
+
+      - name: Build (unsigned)
+        # nvenc: dlopen CUDA — компилируется без GPU, рантайм-fallback на OpenH264.
+        run: npx tauri build -- --features nvenc
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: matehub-screen-share-x86_64-linux
+          retention-days: 14
+          path: |
+            apps/desktop-share/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop-share/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/desktop-share/src-tauri/target/release/bundle/rpm/*.rpm
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/desktop-share/src-tauri/target/release/bundle/deb/*.deb
+            apps/desktop-share/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/desktop-share/src-tauri/target/release/bundle/rpm/*.rpm

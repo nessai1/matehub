@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-leave-voice"
+description = "Enables the leave_voice command without any pre-configured scope."
+commands.allow = ["leave_voice"]
+
+[[permission]]
+identifier = "deny-leave-voice"
+description = "Denies the leave_voice command without any pre-configured scope."
+commands.deny = ["leave_voice"]

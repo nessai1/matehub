@@ -13,6 +13,7 @@ import { ParticipantVolumeStore } from "@/hooks/use-participant-volume";
 import { DebugUploader } from "@/components/hub/debug-uploader";
 import { useAuth } from "@/lib/auth";
 import { playCallSound } from "@/lib/call-sounds";
+import { getNativeBridge } from "@/lib/native-bridge";
 import { t } from "@/i18n";
 import type {
   Participant,
@@ -133,14 +134,40 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
 
   const vc = useVideoClient(videoOpts);
 
-  // Auto-connect once the session id lands.
+  // Десктоп-оболочка: войсом владеет нативный клиент (WebRTC в webview
+  // ненадёжен, на Linux сломан). Браузерный путь остаётся для веба.
+  const nativeBridge = useMemo(() => getNativeBridge(), []);
+
+  // Auto-connect once the session id lands. На десктопе вместо браузерного
+  // PC поднимаем нативный войс — иначе двойной вход в звонок (два слота,
+  // двойной звук).
   useEffect(() => {
-    if (sessionId && activeVoiceChannelId) {
+    if (!activeVoiceChannelId) return;
+    if (nativeBridge) {
+      if (session) {
+        void nativeBridge
+          .joinVoice({
+            baseUrl: `${window.location.origin}/api/video`,
+            hubId: session.hubId,
+            channelId: activeVoiceChannelId,
+            token: session.token,
+          })
+          .catch((e) => console.error("native joinVoice failed", e));
+      }
+    } else if (sessionId) {
       void vc.connect();
     }
     // vc.connect is stable by useCallback inside the hook
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, activeVoiceChannelId]);
+  }, [sessionId, activeVoiceChannelId, nativeBridge]);
+
+  // Зеркалим mic/deafen UI-состояние в нативный войс (аддитивно; в браузере
+  // nativeBridge === null и эффекты — no-op).
+  useEffect(() => {
+    if (nativeBridge && activeVoiceChannelId) {
+      void nativeBridge.setMute(!vc.isMicEnabled);
+    }
+  }, [nativeBridge, activeVoiceChannelId, vc.isMicEnabled]);
 
   const joinVoice = useCallback(
     async (channelId: string) => {
@@ -184,6 +211,9 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
   const leaveVoice = useCallback(() => {
     if (!activeVoiceChannelId) return;
     playCallSound("leave_call");
+    if (nativeBridge) {
+      void nativeBridge.leaveVoice().catch(() => {});
+    }
     vc.disconnect();
     setSessionId(null);
     setDebugCapture(false);
@@ -193,7 +223,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     // different channel where I never adjusted them?".
     setIsDeafened(false);
     participantVolumeStore.reset();
-  }, [activeVoiceChannelId, vc, participantVolumeStore]);
+  }, [activeVoiceChannelId, vc, participantVolumeStore, nativeBridge]);
 
   const toggleDeafen = useCallback(() => {
     const next = !isDeafened;
@@ -210,6 +240,10 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     // if the WS isn't open yet (this can't happen in the toggle path,
     // but the guard is cheap and matches the rest of the call sites).
     vc.client?.setDeafened(next);
+    // Десктоп: глушим воспроизведение в нативном войсе.
+    if (nativeBridge) {
+      void nativeBridge.setDeafen(next).catch(() => {});
+    }
     // Discord-style coupling: deafening also mutes your own mic. The
     // intuition is "stop participating in the call" — leaking your
     // side comments while you can't hear anyone is the failure mode
@@ -224,7 +258,7 @@ export function VideoCallProvider({ children }: { children: ReactNode }) {
     if (next && vc.isMicEnabled) {
       void vc.toggleMic({ silent: true });
     }
-  }, [isDeafened, vc]);
+  }, [isDeafened, vc, nativeBridge]);
 
   const setParticipantVolume = useCallback(
     (userId: string, volume: number) => {

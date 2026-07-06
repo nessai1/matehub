@@ -7,7 +7,12 @@ members = [
     "services/general",
     "services/transcoder",
     "packages/common-rust",
+    "crates/matehub-rtc-client",
 ]
+# The Tauri desktop app lives outside the workspace on purpose: it drags in
+# platform capture/encode/webview deps (scap, openh264, tauri) that the
+# services CI image has no business building. It has its own lockfile.
+exclude = ["apps/desktop-share/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -71,6 +76,7 @@ chrono = { version = "0.4", features = ["serde"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 criterion = { version = "0.5", features = ["html_reports"] }
 socket2 = "0.5"
+if-addrs = "0.14"
 
 # Fast WebSocket (hot-path for gateway)
 fastwebsockets = { version = "0.10", features = ["upgrade", "unstable-split", "with_axum"] }

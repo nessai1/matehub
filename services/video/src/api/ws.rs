@@ -36,7 +36,19 @@ struct WsQuery {
     /// service. user_id is derived from the verified claims, NOT trusted
     /// from a separate query param.
     token: Option<String>,
+    /// Optional device qualifier for auxiliary connections of the SAME
+    /// user (Phase 2.5 desktop screen-share publisher). participant_id
+    /// is derived from (session, user, device), so the companion joins as
+    /// a second participant instead of kicking the user's primary session
+    /// (join-collision replace in `handle_join`). Whitelist, not free-form:
+    /// a user multiplying their participants is a resource-abuse vector.
+    /// Absent/unknown values → primary connection (today's behaviour).
+    device: Option<String>,
 }
+
+/// Allowed auxiliary device qualifiers. Only the native screen-share
+/// publisher for now.
+const ALLOWED_DEVICES: &[&str] = &["screen"];
 
 /// Validate a WS token and return the authenticated user_id. None means
 /// reject the upgrade. Sources of truth, in order:
@@ -141,17 +153,21 @@ async fn ws_upgrade(
         return (StatusCode::UNAUTHORIZED, "missing or invalid token").into_response();
     };
     let user_snowflake = user_id.parse::<i64>().ok();
+    let device = query
+        .device
+        .filter(|d| ALLOWED_DEVICES.contains(&d.as_str()));
 
     let span = tracing::info_span!(
         "call",
         call_id = %session_id,
         user_id = %user_id,
+        device = device.as_deref().unwrap_or(""),
         hub_id = Empty,
         participant_id = Empty,
     );
 
     ws.on_upgrade(move |socket| {
-        handle_ws(socket, state, session_id, user_id, user_snowflake).instrument(span)
+        handle_ws(socket, state, session_id, user_id, user_snowflake, device).instrument(span)
     })
     .into_response()
 }
@@ -191,9 +207,13 @@ fn sfu_send_or_drop(pool: &crate::sfu::SfuPool, sid: SessionId, cmd: SfuCommand)
 /// "anonymous" stays on v4 (collision-free) — only authenticated sessions
 /// get the deterministic id. Once JWT auth is mandatory we can drop this
 /// branch.
-fn derive_participant_id(session_id: SessionId, user_id: &str) -> Uuid {
+fn derive_participant_id(session_id: SessionId, user_id: &str, device: Option<&str>) -> Uuid {
     if user_id == "anonymous" {
         Uuid::new_v4()
+    } else if let Some(device) = device {
+        // Auxiliary connection (desktop screen publisher). '\n' can't
+        // occur in user ids, so the seed can't collide with a plain user.
+        Uuid::new_v5(&session_id, format!("{user_id}\n{device}").as_bytes())
     } else {
         Uuid::new_v5(&session_id, user_id.as_bytes())
     }
@@ -205,8 +225,12 @@ async fn handle_ws(
     session_id: SessionId,
     user_id: String,
     user_snowflake: Option<i64>,
+    device: Option<String>,
 ) {
-    let participant_id = derive_participant_id(session_id, &user_id);
+    let participant_id = derive_participant_id(session_id, &user_id, device.as_deref());
+    // Auxiliary device connections must not touch hub-wide presence: the
+    // user's occupancy/mute state belongs to their primary session.
+    let is_primary = device.is_none();
     Span::current().record("participant_id", tracing::field::display(&participant_id));
     let (ws_tx, mut ws_rx) = mpsc::channel::<ServerMessage>(WS_TX_BUFFER);
 
@@ -301,8 +325,9 @@ async fn handle_ws(
         metrics::counter!("matehub_video_participant_joins_total").increment(1);
     }
 
-    // Tell the hub: this user is now in this voice channel.
-    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
+    // Tell the hub: this user is now in this voice channel. Auxiliary
+    // device connections stay silent — the user is already "in".
+    if let (true, Some(nats), Some(uid)) = (is_primary, state.nats.as_ref(), user_snowflake) {
         publish_occupancy(nats, hub_id, uid, Some(channel_id), session_id).await;
     }
 
@@ -525,7 +550,11 @@ async fn handle_ws(
                         // viewing the sidebar) get the update via NATS → hub →
                         // presence-WS. Without this the mic indicator next to a
                         // participant's name only updates while you're in their call.
-                        if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
+                        // Auxiliary device connections must not flip the user's
+                        // hub-wide mic/cam state.
+                        if let (true, Some(nats), Some(uid)) =
+                            (is_primary, state.nats.as_ref(), user_snowflake)
+                        {
                             publish_mute(nats, hub_id, uid, &kind, muted).await;
                         }
                     }
@@ -672,8 +701,10 @@ async fn handle_ws(
         }
     }
 
-    // Tell the hub: this user left the voice channel.
-    if let (Some(nats), Some(uid)) = (state.nats.as_ref(), user_snowflake) {
+    // Tell the hub: this user left the voice channel. Auxiliary device
+    // connections stay silent — otherwise a companion disconnect would
+    // mark the user "left" while their primary session is still in the call.
+    if let (true, Some(nats), Some(uid)) = (is_primary, state.nats.as_ref(), user_snowflake) {
         publish_occupancy(nats, hub_id, uid, None, session_id).await;
     }
 
@@ -687,8 +718,8 @@ mod tests {
     #[test]
     fn derive_participant_id_is_stable_for_same_user() {
         let session = Uuid::new_v4();
-        let a = derive_participant_id(session, "alice");
-        let b = derive_participant_id(session, "alice");
+        let a = derive_participant_id(session, "alice", None);
+        let b = derive_participant_id(session, "alice", None);
         assert_eq!(a, b, "same (session, user) must produce same pid");
     }
 
@@ -696,8 +727,8 @@ mod tests {
     fn derive_participant_id_differs_per_user() {
         let session = Uuid::new_v4();
         assert_ne!(
-            derive_participant_id(session, "alice"),
-            derive_participant_id(session, "bob"),
+            derive_participant_id(session, "alice", None),
+            derive_participant_id(session, "bob", None),
         );
     }
 
@@ -708,8 +739,8 @@ mod tests {
         let s1 = Uuid::new_v4();
         let s2 = Uuid::new_v4();
         assert_ne!(
-            derive_participant_id(s1, "alice"),
-            derive_participant_id(s2, "alice"),
+            derive_participant_id(s1, "alice", None),
+            derive_participant_id(s2, "alice", None),
         );
     }
 
@@ -719,9 +750,35 @@ mod tests {
         // otherwise the second WS would clobber the first's slot
         // unintentionally.
         let session = Uuid::new_v4();
-        let a = derive_participant_id(session, "anonymous");
-        let b = derive_participant_id(session, "anonymous");
+        let a = derive_participant_id(session, "anonymous", None);
+        let b = derive_participant_id(session, "anonymous", None);
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn derive_participant_id_device_gets_own_slot() {
+        // Companion (device=screen) должен жить ПАРАЛЛЕЛЬНО основной
+        // сессии того же юзера, а не выбивать её через join-collision.
+        let session = Uuid::new_v4();
+        let primary = derive_participant_id(session, "alice", None);
+        let screen = derive_participant_id(session, "alice", Some("screen"));
+        assert_ne!(primary, screen);
+        // И стабилен при реконнекте.
+        assert_eq!(
+            screen,
+            derive_participant_id(session, "alice", Some("screen"))
+        );
+    }
+
+    #[test]
+    fn derive_participant_id_device_cannot_collide_with_other_user() {
+        // Сепаратор '\n' не встречается в user_id: юзер "alice\nscreen"
+        // невозможен, значит сид ("alice", screen) уникален.
+        let session = Uuid::new_v4();
+        assert_ne!(
+            derive_participant_id(session, "alice", Some("screen")),
+            derive_participant_id(session, "alicescreen", None),
+        );
     }
 
     #[test]

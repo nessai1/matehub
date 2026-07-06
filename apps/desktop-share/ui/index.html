@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MateHub</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <div class="hero">
+        <h1>MateHub</h1>
+        <p class="subtitle">Connect to a hub to get started</p>
+      </div>
+
+      <section id="permission-banner" class="banner hidden">
+        <span>
+          Screen recording permission is required for native screen share.
+        </span>
+        <button id="request-permission" type="button">Grant</button>
+      </section>
+
+      <form id="connect-form">
+        <label for="hub-url">Hub address</label>
+        <div class="row">
+          <input
+            id="hub-url"
+            type="text"
+            placeholder="https://yourhub.matehub.io"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+          <button id="connect" type="submit">Connect</button>
+        </div>
+        <p id="connect-error" class="error hidden"></p>
+      </form>
+
+      <section id="recent" class="hidden">
+        <h2>Recent hubs</h2>
+        <ul id="hub-list"></ul>
+      </section>
+    </main>
+    <script src="main.js" defer></script>
+  </body>
+</html>

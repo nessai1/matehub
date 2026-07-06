@@ -35,20 +35,34 @@ matehub/
 │   ├── lib/                   # Утилиты (cn, etc.)
 │   └── package.json
 │
-└── packages/                  # TypeScript SDK'и (npm workspace packages)
-    ├── sdk-video/             # @matehub/sdk-video -- WebRTC client library
-    │   ├── src/
-    │   │   ├── client.ts      # VideoClient class
-    │   │   ├── types.ts       # VideoClientOptions, SessionInfo, etc.
-    │   │   └── index.ts       # Public API exports
-    │   └── package.json
-    └── sdk-chat/              # @matehub/sdk-chat  -- Chat client library
-        ├── src/
-        │   ├── client.ts      # ChatClient class
-        │   ├── types.ts       # ChatClientOptions, Message, etc.
-        │   └── index.ts
-        └── package.json
+├── packages/                  # TypeScript SDK'и (npm workspace packages)
+│   ├── sdk-video/             # @matehub/sdk-video -- WebRTC client library
+│   │   ├── src/
+│   │   │   ├── client.ts      # VideoClient class
+│   │   │   ├── types.ts       # VideoClientOptions, SessionInfo, etc.
+│   │   │   └── index.ts       # Public API exports
+│   │   └── package.json
+│   └── sdk-chat/              # @matehub/sdk-chat  -- Chat client library
+│       ├── src/
+│       │   ├── client.ts      # ChatClient class
+│       │   ├── types.ts       # ChatClientOptions, Message, etc.
+│       │   └── index.ts
+│       └── package.json
+│
+├── crates/                    # Rust-библиотеки (Cargo workspace members)
+│   └── matehub-rtc-client/    # str0m-обвязка нативного паблишера (desktop + load-rig)
+│
+└── apps/                      # Десктопные приложения (ВНЕ cargo workspace)
+    └── desktop-share/         # Tauri: нативный screen share (docs/video/desktop-share.md)
+        ├── ui/                # статический webview (без бандлера)
+        └── src-tauri/         # capture (scap) + encode (openh264) + publish
 ```
+
+**Важно:** `apps/desktop-share/src-tauri` -- отдельный cargo workspace
+(корневой `Cargo.toml` его `exclude`'ит), потому что тянет платформенные
+зависимости (ScreenCaptureKit/PipeWire/WebKitGTK), которых нет в CI-образе
+сервисов. У него свой `Cargo.lock` (коммитится). Сборка -- по тегам
+`desktop/{mac,windows,linux}-*` (`.github/workflows/desktop-build.yml`).
 
 ---
 
@@ -61,7 +75,8 @@ matehub/
 ```toml
 # Cargo.toml (root)
 [workspace]
-members = ["services/video", "services/chat", "services/hub"]
+members = ["services/video", "services/chat", "services/hub", "crates/matehub-rtc-client"]
+exclude = ["apps/desktop-share/src-tauri"]  # платформенные deps, свой lockfile
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

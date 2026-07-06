@@ -825,3 +825,21 @@ msgstr "Anruf-ID"
 
 msgid "Copy call ID"
 msgstr "Anruf-ID kopieren"
+
+
+# ── Desktop screen share ─────────────────────────────
+msgid "Primary display"
+msgstr "Primärer Bildschirm"
+
+msgid "Source"
+msgstr "Quelle"
+
+msgid "System audio capture is not available in the desktop app yet."
+msgstr "Systemaudio-Aufnahme ist in der Desktop-App noch nicht verfügbar."
+
+msgid "Pick a quality profile and a source. Sharing runs through the native MateHub engine."
+msgstr "Wählen Sie ein Qualitätsprofil und eine Quelle. Die Übertragung läuft über die native MateHub-Engine."
+
+
+msgid "Capture system audio"
+msgstr "Systemaudio aufnehmen"

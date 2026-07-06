@@ -1,5 +1,9 @@
 # Rust
 /target/
+# Desktop app — отдельный workspace со своим target (Cargo.lock коммитится,
+# как и корневой: бинарная поставка = воспроизводимая сборка).
+apps/desktop-share/src-tauri/target/
+apps/desktop-share/src-tauri/gen/
 # Cargo.lock IS committed: this workspace ships binaries (services/*) and
 # every CI/release build must use the exact dependency versions we tested
 # locally. Only library crates published to crates.io should ignore it.

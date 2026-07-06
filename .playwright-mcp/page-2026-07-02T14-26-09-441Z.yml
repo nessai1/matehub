@@ -1,0 +1,47 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - alert [ref=e6]:
+      - img [ref=e8]
+      - alert [ref=e10]:
+        - generic [ref=e13]: Sign in before continuing.
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - img "GitLab Enterprise Edition" [ref=e16]
+        - heading "GitLab Enterprise Edition" [level=1] [ref=e17]
+      - generic [ref=e19]:
+        - tablist [ref=e20]:
+          - tab "LDAP" [selected] [ref=e21] [cursor=pointer]
+          - tab "Standard" [ref=e22] [cursor=pointer]
+        - tabpanel "LDAP" [ref=e24]:
+          - generic [ref=e25]:
+            - generic [ref=e26]:
+              - generic [ref=e27]: Username
+              - textbox "Username" [active] [ref=e28]
+            - generic [ref=e29]:
+              - generic [ref=e30]: Password
+              - generic [ref=e31]:
+                - textbox "Password" [ref=e32]
+                - button "Show password" [ref=e33] [cursor=pointer]:
+                  - img [ref=e34]
+            - generic [ref=e37]:
+              - checkbox "Remember me" [ref=e38]
+              - generic [ref=e39] [cursor=pointer]: Remember me
+            - button "Sign in" [ref=e40] [cursor=pointer]:
+              - generic [ref=e41]: Sign in
+  - generic [ref=e42]:
+    - separator [ref=e43]
+    - generic [ref=e44]:
+      - generic [ref=e45]:
+        - link "Explore" [ref=e46] [cursor=pointer]:
+          - /url: /explore
+        - link "Help" [ref=e47] [cursor=pointer]:
+          - /url: /help
+        - link "About GitLab" [ref=e48] [cursor=pointer]:
+          - /url: https://about.gitlab.com
+        - link "GitLab community forum" [ref=e49] [cursor=pointer]:
+          - /url: https://forum.gitlab.com
+      - combobox "English" [ref=e51] [cursor=pointer]:
+        - img [ref=e52]
+        - generic [ref=e54]:
+          - generic [ref=e55]: English
+          - img [ref=e56]
